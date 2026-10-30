@@ -3,6 +3,8 @@
 .env.*
 !.env.example
 .aws/
+.claude/settings.local.json
+CLAUDE.local.md
 
 # OS・エディタの一時ファイル
 .DS_Store
