@@ -11,3 +11,6 @@ CLAUDE.local.md
 *~
 *.swp
 *.swo
+
+# Nix・direnvのキャッシュ
+.direnv/

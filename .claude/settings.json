@@ -15,6 +15,7 @@
   },
   "sandbox": {
     "enabled": true,
-    "allowUnsandboxedCommands": false
+    "allowUnsandboxedCommands": false,
+    "failIfUnavailable": true
   }
 }
