@@ -6,12 +6,15 @@
       "Read(./.env)",
       "Read(./.env.*)",
       "Read(./.aws/**)",
+      "Read(~/.aws/**)",
       "Edit(./.env)",
       "Edit(./.env.*)",
-      "Edit(./.aws/**)"
+      "Edit(./.aws/**)",
+      "Edit(~/.aws/**)"
     ]
   },
   "sandbox": {
-    "enabled": true
+    "enabled": true,
+    "allowUnsandboxedCommands": false
   }
 }
