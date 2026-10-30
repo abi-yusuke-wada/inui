@@ -25,13 +25,30 @@ inuiでは、自然言語からユーザーのIntentを判定し、必要な業�
 
 [Nix](https://nixos.org/)（Flakes有効）と [direnv](https://direnv.net/) を利用します。構成と判断理由は [ADR-0002](docs/adr/0002-development-environment.md) にまとめます。
 
+初回は、使用するシェルにdirenvのフックを設定してから `direnv allow` を実行します。フック設定後は、ディレクトリ移動時に開発環境が現在のシェルへ自動で反映されます。他のシェルの設定は [direnvのドキュメント](https://direnv.net/docs/hook.html) を参照してください。
+
 ```sh
+# bashの例（初回のみ。設定後にシェルを開き直す）
+echo 'eval "$(direnv hook bash)"' >> ~/.bashrc
+
 cd inui
-direnv allow   # 初回のみ。以降はディレクトリ移動時に自動で開発環境に入る
-node --version
+direnv allow   # 初回のみ
+node --version # devShellのNode.js 24が表示されることを確認
 ```
 
 direnvを使わない場合は `nix develop` で開発環境に入ります。
+
+### Linuxでのサンドボックスの前提条件
+
+CLIのサンドボックスは、devShellが提供する `bubblewrap`（`bwrap`）でユーザー名前空間を使います。Ubuntu 24.04以降ではAppArmorが非特権のユーザー名前空間を制限している場合があり、`bwrap` があってもサンドボックス内のコマンドが失敗します。devShell内で次を確認してください。
+
+```sh
+which bwrap   # /nix/store/...-bubblewrap-.../bin/bwrap が表示される
+sysctl kernel.apparmor_restrict_unprivileged_userns   # 1 なら制限あり
+bwrap --ro-bind / / --dev /dev --proc /proc --unshare-all true && echo ok
+```
+
+最後のコマンドが失敗する場合は、ホスト側でユーザー名前空間を許可する必要があります。設定方法（`bwrap` 用のAppArmorプロファイル追加や上記sysctlの変更）は組織のセキュリティ方針に従って判断してください。WSL2では通常この制限はありません。
 
 ## 現在のステータス
 
