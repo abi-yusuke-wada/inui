@@ -40,10 +40,11 @@ direnvを使わない場合は `nix develop` で開発環境に入ります。
 
 ### Linuxでのサンドボックスの前提条件
 
-CLIのサンドボックスは、devShellが提供する `bubblewrap`（`bwrap`）でユーザー名前空間を使います。Ubuntu 24.04以降ではAppArmorが非特権のユーザー名前空間を制限している場合があり、`bwrap` があってもサンドボックス内のコマンドが失敗します。devShell内で次を確認してください。
+CLIのサンドボックスには、devShellが提供する `bubblewrap`（`bwrap`）と `socat` の両方が必要です。`bwrap` はユーザー名前空間を使います。Ubuntu 24.04以降ではAppArmorが非特権のユーザー名前空間を制限している場合があり、`bwrap` があってもサンドボックス内のコマンドが失敗します。devShell内で次を確認してください。
 
 ```sh
-which bwrap   # /nix/store/...-bubblewrap-.../bin/bwrap が表示される
+command -v bwrap   # /nix/store/...-bubblewrap-.../bin/bwrap が表示される
+command -v socat   # /nix/store/...-socat-.../bin/socat が表示される
 sysctl kernel.apparmor_restrict_unprivileged_userns   # 1 なら制限あり
 bwrap --ro-bind / / --dev /dev --proc /proc --unshare-all true && echo ok
 ```
