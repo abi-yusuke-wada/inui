@@ -27,6 +27,7 @@ ADR-0001で、フロントエンドはReact + TypeScript、APIはTypeScript + Ho
   - pnpm（パッケージマネージャー）
   - `bubblewrap`・`socat`（Linux・WSLのみ。CLIのサンドボックス実行用）
 - サンドボックスが利用できない場合は起動を止める設定とし、保護なしで実行しない。
+- ビルド・実行・テスト等のコマンドは `Makefile` に集約する。pnpmのscriptsだけに置く案と比べ、Nixの検証やサンドボックスの確認などNode.js以外のコマンドも同じ入口から実行でき、READMEや開発支援CLIへの案内を `make <ターゲット>` に統一できる。GNU MakeはdevShell（`mkShell` の標準環境）に含まれ、追加費用はない。
 
 ## 影響
 

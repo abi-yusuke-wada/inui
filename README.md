@@ -38,18 +38,26 @@ node --version # devShellのNode.js 24が表示されることを確認
 
 direnvを使わない場合は `nix develop` で開発環境に入ります。
 
+### コマンド
+
+ビルド・実行・テスト等のコマンドは `Makefile` に集約します。devShell内で `make` を実行するとターゲット一覧を表示します。
+
+| コマンド | 内容 |
+| --- | --- |
+| `make check` | 開発環境の定義（`nix flake check`）と差分の空白を検証する |
+| `make sandbox-check` | CLIのサンドボックスの前提条件を確認する |
+
+アプリのビルド・起動等のターゲットは、Issue #4の実装に合わせて追加します。
+
 ### Linuxでのサンドボックスの前提条件
 
-CLIのサンドボックスには、devShellが提供する `bubblewrap`（`bwrap`）と `socat` の両方が必要です。`bwrap` はユーザー名前空間を使います。Ubuntu 24.04以降ではAppArmorが非特権のユーザー名前空間を制限している場合があり、`bwrap` があってもサンドボックス内のコマンドが失敗します。devShell内で次を確認してください。
+CLIのサンドボックスには、devShellが提供する `bubblewrap`（`bwrap`）と `socat` の両方が必要です。`bwrap` はユーザー名前空間を使います。Ubuntu 24.04以降ではAppArmorが非特権のユーザー名前空間を制限している場合があり、`bwrap` があってもサンドボックス内のコマンドが失敗します。devShell内で `make sandbox-check` を実行し、次を確認してください。
 
-```sh
-command -v bwrap   # /nix/store/...-bubblewrap-.../bin/bwrap が表示される
-command -v socat   # /nix/store/...-socat-.../bin/socat が表示される
-sysctl kernel.apparmor_restrict_unprivileged_userns   # 1 なら制限あり
-bwrap --ro-bind / / --dev /dev --proc /proc --unshare-all true && echo ok
-```
+- `bwrap`・`socat` がNixストア（`/nix/store/...`）のパスで表示される
+- `kernel.apparmor_restrict_unprivileged_userns` が `1` なら、AppArmorによる制限あり
+- 最後に「サンドボックスの前提条件を満たしています」と表示される
 
-最後のコマンドが失敗する場合は、ホスト側でユーザー名前空間を許可する必要があります。設定方法（`bwrap` 用のAppArmorプロファイル追加や上記sysctlの変更）は組織のセキュリティ方針に従って判断してください。WSL2では通常この制限はありません。
+`bwrap` の起動で失敗する場合は、ホスト側でユーザー名前空間を許可する必要があります。設定方法（`bwrap` 用のAppArmorプロファイル追加や上記sysctlの変更）は組織のセキュリティ方針に従って判断してください。WSL2では通常この制限はありません。
 
 ## 現在のステータス
 
