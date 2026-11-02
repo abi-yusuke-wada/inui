@@ -1,6 +1,9 @@
 approval_policy = "on-request"
 default_permissions = "inui"
 
+[features]
+network_proxy = true
+
 [permissions.inui]
 description = "作業領域の編集を許可し、機密ファイルの読み書きを拒否する"
 extends = ":workspace"
@@ -18,3 +21,10 @@ glob_scan_max_depth = 8
 ".aws" = "deny"
 "**/.env" = "deny"
 "**/.env.*" = "deny"
+
+[permissions.inui.network]
+enabled = true
+
+[permissions.inui.network.domains]
+"github.com" = "allow"
+"api.github.com" = "allow"
