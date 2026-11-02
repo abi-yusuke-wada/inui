@@ -26,6 +26,13 @@
             pkgs.bubblewrap
             pkgs.socat
           ];
+          # CLIのサンドボックスは起動時に存在しないディレクトリを拒否できないため、
+          # 拒否対象の .aws を作業領域とホームに事前に用意する（既存の権限は変更しない）
+          shellHook = ''
+            for dir in "$(git rev-parse --show-toplevel 2>/dev/null || pwd)/.aws" "$HOME/.aws"; do
+              [ -d "$dir" ] || mkdir -m 700 "$dir"
+            done
+          '';
         };
       });
     };

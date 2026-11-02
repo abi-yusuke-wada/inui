@@ -38,7 +38,7 @@ direnv allow   # 初回のみ
 node --version # devShellのNode.js 24が表示されることを確認
 ```
 
-direnvを使わない場合は `nix develop` で開発環境に入ります。この場合 `.envrc` は実行されないため、初回に `mkdir -m 700 ~/.aws` で `~/.aws` を作成してから入ってください（CLIのサンドボックスは、起動時に存在しないディレクトリを拒否できないため）。
+direnvを使わない場合は `nix develop` で開発環境に入ります。
 
 ### コマンド
 
@@ -57,7 +57,7 @@ CLIのサンドボックスには、devShellが提供する `bubblewrap`（`bwra
 
 - `bwrap`・`socat` がNixストア（`/nix/store/...`）のパスで表示される
 - `kernel.apparmor_restrict_unprivileged_userns` が `1` なら、AppArmorによる制限あり
-- `~/.aws` が存在する（direnvが開発環境に入るときに作成する）
+- 作業領域の `.aws` と `~/.aws` が存在する（開発環境に入るときに `flake.nix` の `shellHook` が作成する）
 - 作業領域外を指すシンボリックリンクがない
 - 最後に「サンドボックスの前提条件を満たしています」と表示される
 
