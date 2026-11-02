@@ -16,12 +16,22 @@
       "Read(**/.env)",
       "Read(**/.env.*)",
       "Edit(**/.env)",
-      "Edit(**/.env.*)"
+      "Edit(**/.env.*)",
+      "Read(~/.config/gh/**)",
+      "Edit(~/.config/gh/**)"
+    ],
+    "ask": [
+      "Bash(gh *)",
+      "Bash(git push *)"
     ]
   },
   "sandbox": {
     "enabled": true,
     "allowUnsandboxedCommands": false,
-    "failIfUnavailable": true
+    "failIfUnavailable": true,
+    "excludedCommands": [
+      "gh *",
+      "git push *"
+    ]
   }
 }

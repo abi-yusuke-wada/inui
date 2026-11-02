@@ -1,9 +1,6 @@
 approval_policy = "on-request"
 default_permissions = "inui"
 
-[features]
-network_proxy = true
-
 [permissions.inui]
 description = "作業領域の編集を許可し、機密ファイルの読み書きを拒否する"
 extends = ":workspace"
@@ -12,14 +9,14 @@ extends = ":workspace"
 # Linux / WSLの再帰glob展開は、プロセス起動時にこの深さまで行う。
 glob_scan_max_depth = 8
 "~/.aws" = "deny"
-# GitHubへの送信を許可するため、作業に不要な認証情報も読み取りを拒否する。
-# ~/.config/gh はGitHub CLI・Gitの認証に必要なため対象外とする（ADR-0002）。
+# 作業に不要な認証情報の読み取りを拒否する。GitHubのトークンを含む ~/.config/gh も対象とする（ADR-0002）。
 "~/.ssh" = "deny"
 "~/.gnupg" = "deny"
 "~/.netrc" = "deny"
 "~/.git-credentials" = "deny"
 "~/.claude/.credentials.json" = "deny"
 "~/.codex/auth.json" = "deny"
+"~/.config/gh" = "deny"
 "~/**/.env" = "deny"
 "~/**/.env.*" = "deny"
 
@@ -29,10 +26,3 @@ glob_scan_max_depth = 8
 ".aws" = "deny"
 "**/.env" = "deny"
 "**/.env.*" = "deny"
-
-[permissions.inui.network]
-enabled = true
-
-[permissions.inui.network.domains]
-"github.com" = "allow"
-"api.github.com" = "allow"

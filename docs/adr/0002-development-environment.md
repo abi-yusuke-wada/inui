@@ -55,16 +55,21 @@ Linux・WSLの再帰globは `glob_scan_max_depth = 8` とし、各サンドボ�
 
 Codex CLI 0.165.0 / LinuxのNix環境で、プロファイルの強制指定をせずに `codex sandbox -- ...` を実行して検証した。プロジェクト内・入れ子・ホーム配下のプロジェクト外のダミー `.env`、プロジェクトとホームの `.aws` 内のダミー、シンボリックリンク経由について、Pythonの読み取り・`cat`・書き込みが拒否された。通常ファイルの読み書きと作業領域外の書き込み拒否も確認した。実際の機密情報は使用せず、作成した一時ファイルは削除済み。macOS・Windowsと、外部MCPツール等の別の実行経路は未検証とする。
 
-## GitHubへの通信（2026-11-02追加）
+## GitHubへの通信と認証情報（2026-11-02追加・同日改定）
 
-GitHub CLIとGitが情報取得に失敗し、このCodex実行環境ではIPv4・IPv6のソケット作成が `EPERM`、GitHubの名前解決が失敗することを確認した。`inui` プロファイルには通信許可がなく、ネットワーク無効の既定値を継承していた。
+当初、Codexの実行環境からGitHub CLI・Gitで情報を取得できなかったため、`features.network_proxy` と `permissions.inui.network` で `github.com`・`api.github.com` への通信を許可した。再起動後にGitHub CLI・Gitの取得が成功し、許可外の `example.com` が拒否されることを確認した。
 
-プロジェクト設定で `features.network_proxy = true` と `permissions.inui.network.enabled = true` を併用し、許可リストにはHTTPSのGit操作用の `github.com` とGitHub CLIのAPI用の `api.github.com` を指定する。通信だけを有効化する案は、プロキシがなければドメイン制限が効かず直接通信を許可するため採用しない。プロキシを使って接続先を限定し、既存の機密ファイルdeny・`:workspace` の継承・`on-request` を維持する。追加のサービス・依存関係・クラウド費用はない。[OpenAI公式の通信設定](https://learn.chatgpt.com/docs/permissions#network-permissions)
+しかし、`:workspace` はファイルシステム全体の読み取りを許可するため、外部のIssue等に含まれる悪意ある指示により、GitHubのトークン（`~/.config/gh`）を読み取って許可済みのGitHubへ送る経路ができる。攻撃者が自身のトークンを指示に含めれば、`github.com` への通信だけで作業領域の内容を持ち出すこともできる。利用者の判断により、最も安全な構成を採用し、通信許可を取り消した。
 
-Codexでの設定読み込みとTOML構文、許可先が上記2ホストだけであること、既存のファイル制御が変更されていないことを確認した。起動済みのセッションの通信制限はファイル編集だけでは変わらないため、信頼済みのプロジェクトでCodexを再起動して確認した。再起動後に、GitHub CLI・Gitの取得が成功し、許可外の `example.com` が拒否されることを確認済み。上位の管理ポリシーによる制限があればそちらに従う。Nix daemonへのUnixソケット接続は、このGitHub用の通信許可とは別に扱う。
+| 案 | 防げること | できなくなる作業 |
+| --- | --- | --- |
+| 認証情報の一部を拒否し、GitHubへの通信を許可する（当初案） | GitHubのトークン以外の認証情報の読み取り | なし。トークンの読み取りと送信の経路が残る |
+| 読み取り専用のトークンをCodexに渡す | トークンを使った書き込み | Codexからの返信・push。攻撃者のトークンを使った持ち出しは残る |
+| Codexの通信を無効にし、Claudeは `gh`・`git push` を毎回の承認でサンドボックス外で実行する（採用） | トークンの読み取りと、承認していない送信 | CodexはGitHubの情報を取得できない。ClaudeのGitHub操作は毎回の承認が必要になる |
 
-### 送信を許可することによる認証情報の保護
+決定内容は次のとおり。追加の費用はなく、承認の手間が増える。
 
-`:workspace` はファイルシステム全体の読み取りを許可するため、GitHubへの送信を許可すると、外部のIssue等に含まれる悪意ある指示により、読み取れる認証情報が許可済みのGitHubへ送られる経路ができる。このため、作業に不要な認証情報（`~/.ssh`・`~/.gnupg`・`~/.netrc`・`~/.git-credentials`、各CLIの認証ファイル `~/.claude/.credentials.json`・`~/.codex/auth.json`）の読み取りを拒否する。`codex sandbox` で、存在する対象の読み取りが拒否され、通常ファイルの読み取りとサンドボックス内のGitHub CLIの動作に影響がないことを確認した（内容は出力していない）。
-
-GitHub CLI・Gitの認証に使う `~/.config/gh` は、今回の通信許可の目的そのものに必要なため拒否しない。`api.github.com` への書き込みも、PRへの返信やレビュー依頼に必要なため制限しない。したがって、GitHubのトークンを読み取ってGitHubへ送る経路は残る。この残存リスクは、トークンの権限を必要最小限にすること、`approval_policy = "on-request"` を維持すること、外部の文章に含まれる指示に従わないことで抑える。拒否対象にない場所へ新しい認証情報を置く場合は、この拒否リストへ追加する。
+- Codex: 通信の許可を削除し、ネットワーク無効の既定値に戻す。GitHubのトークンを含む `~/.config/gh` と、作業に不要な認証情報（`~/.ssh`・`~/.gnupg`・`~/.netrc`・`~/.git-credentials`、各CLIの認証ファイル `~/.claude/.credentials.json`・`~/.codex/auth.json`）の読み取りを拒否する。`codex sandbox` で、存在する対象の読み取りと `api.github.com` への通信が拒否され、通常ファイルは読めることを確認した（内容は出力していない）。
+- Claude: 共有設定で `~/.config/gh` の読み取り・編集を拒否する。`gh` と `git push` はトークンを使うため、サンドボックスの対象外（`excludedCommands`）として実行し、`ask` で毎回利用者の承認を求める。個人設定の確認なしの許可は削除する。
+- PRへの返信・レビュー依頼等のGitHub操作はClaudeが担当し、Codexは使わない。
+- GitHubのトークンは、このリポジトリだけを対象とする権限の狭いトークンに置き換えることを推奨する。
