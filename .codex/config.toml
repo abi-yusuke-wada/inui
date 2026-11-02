@@ -12,6 +12,14 @@ extends = ":workspace"
 # Linux / WSLの再帰glob展開は、プロセス起動時にこの深さまで行う。
 glob_scan_max_depth = 8
 "~/.aws" = "deny"
+# GitHubへの送信を許可するため、作業に不要な認証情報も読み取りを拒否する。
+# ~/.config/gh はGitHub CLI・Gitの認証に必要なため対象外とする（ADR-0002）。
+"~/.ssh" = "deny"
+"~/.gnupg" = "deny"
+"~/.netrc" = "deny"
+"~/.git-credentials" = "deny"
+"~/.claude/.credentials.json" = "deny"
+"~/.codex/auth.json" = "deny"
 "~/**/.env" = "deny"
 "~/**/.env.*" = "deny"
 

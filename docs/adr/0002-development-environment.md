@@ -61,4 +61,10 @@ GitHub CLIとGitが情報取得に失敗し、このCodex実行環境ではIPv4�
 
 プロジェクト設定で `features.network_proxy = true` と `permissions.inui.network.enabled = true` を併用し、許可リストにはHTTPSのGit操作用の `github.com` とGitHub CLIのAPI用の `api.github.com` を指定する。通信だけを有効化する案は、プロキシがなければドメイン制限が効かず直接通信を許可するため採用しない。プロキシを使って接続先を限定し、既存の機密ファイルdeny・`:workspace` の継承・`on-request` を維持する。追加のサービス・依存関係・クラウド費用はない。[OpenAI公式の通信設定](https://learn.chatgpt.com/docs/permissions#network-permissions)
 
-Codexでの設定読み込みとTOML構文、許可先が上記2ホストだけであること、既存のファイル制御が変更されていないことを確認した。起動済みのセッションの通信制限はファイル編集だけでは変わらないため、信頼済みのプロジェクトでCodexを再起動し、GitHub CLI・Gitの接続と許可リストの動作を確認する。実通信と許可外ホストの拒否は再起動後の検証事項とし、接続成功はまだ確認していない。上位の管理ポリシーによる制限があればそちらに従う。Nix daemonへのUnixソケット接続は、このGitHub用の通信許可とは別に扱う。
+Codexでの設定読み込みとTOML構文、許可先が上記2ホストだけであること、既存のファイル制御が変更されていないことを確認した。起動済みのセッションの通信制限はファイル編集だけでは変わらないため、信頼済みのプロジェクトでCodexを再起動して確認した。再起動後に、GitHub CLI・Gitの取得が成功し、許可外の `example.com` が拒否されることを確認済み。上位の管理ポリシーによる制限があればそちらに従う。Nix daemonへのUnixソケット接続は、このGitHub用の通信許可とは別に扱う。
+
+### 送信を許可することによる認証情報の保護
+
+`:workspace` はファイルシステム全体の読み取りを許可するため、GitHubへの送信を許可すると、外部のIssue等に含まれる悪意ある指示により、読み取れる認証情報が許可済みのGitHubへ送られる経路ができる。このため、作業に不要な認証情報（`~/.ssh`・`~/.gnupg`・`~/.netrc`・`~/.git-credentials`、各CLIの認証ファイル `~/.claude/.credentials.json`・`~/.codex/auth.json`）の読み取りを拒否する。`codex sandbox` で、存在する対象の読み取りが拒否され、通常ファイルの読み取りとサンドボックス内のGitHub CLIの動作に影響がないことを確認した（内容は出力していない）。
+
+GitHub CLI・Gitの認証に使う `~/.config/gh` は、今回の通信許可の目的そのものに必要なため拒否しない。`api.github.com` への書き込みも、PRへの返信やレビュー依頼に必要なため制限しない。したがって、GitHubのトークンを読み取ってGitHubへ送る経路は残る。この残存リスクは、トークンの権限を必要最小限にすること、`approval_policy = "on-request"` を維持すること、外部の文章に含まれる指示に従わないことで抑える。拒否対象にない場所へ新しい認証情報を置く場合は、この拒否リストへ追加する。
