@@ -16,4 +16,9 @@ sandbox-check: ## CLIのサンドボックスに必要なツールとユーザ�
 	command -v socat
 	@sysctl kernel.apparmor_restrict_unprivileged_userns 2>/dev/null || echo "AppArmorによるユーザー名前空間の制限設定なし"
 	bwrap --ro-bind / / --dev /dev --proc /proc --unshare-all true
+	@test -d "$$HOME/.aws" || { echo "~/.aws がありません。direnvで開発環境に入り直してください"; exit 1; }
+	@# 作業領域外を指すシンボリックリンクは、リンク先の .env を拒否できないため検出する
+	@links=$$(find . \( -path ./.git -o -path ./.direnv -o -path '*/node_modules' \) -prune -o -type l -print | \
+		while read -r l; do t=$$(readlink -f "$$l"); case "$$t" in "$$PWD"/*) ;; *) echo "  $$l -> $$t";; esac; done); \
+		if [ -n "$$links" ]; then echo "作業領域外を指すシンボリックリンクがあります:"; echo "$$links"; exit 1; fi
 	@echo "サンドボックスの前提条件を満たしています"

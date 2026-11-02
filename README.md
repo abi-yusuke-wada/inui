@@ -57,6 +57,8 @@ CLIのサンドボックスには、devShellが提供する `bubblewrap`（`bwra
 
 - `bwrap`・`socat` がNixストア（`/nix/store/...`）のパスで表示される
 - `kernel.apparmor_restrict_unprivileged_userns` が `1` なら、AppArmorによる制限あり
+- `~/.aws` が存在する（direnvが開発環境に入るときに作成する）
+- 作業領域外を指すシンボリックリンクがない
 - 最後に「サンドボックスの前提条件を満たしています」と表示される
 
 `bwrap` の起動で失敗する場合は、ホスト側でユーザー名前空間を許可する必要があります。設定方法（`bwrap` 用のAppArmorプロファイル追加や上記sysctlの変更）は組織のセキュリティ方針に従って判断してください。WSL2では通常この制限はありません。
