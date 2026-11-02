@@ -17,8 +17,65 @@
       <span class="meta-item">2026年11月2日（月）09:00</span>
       <span class="meta-sep" aria-hidden="true">·</span>
       <span class="meta-item">検証ユーザー</span>
+      <button type="button" class="help-toggle" id="help-toggle"
+              aria-controls="help-panel" aria-expanded="false">
+        <span class="help-toggle-icon" aria-hidden="true">?</span>ヘルプ
+      </button>
     </div>
   </header>
+
+  <!-- オンボーディング用のヘルプサイドバー -->
+  <aside id="help-panel" class="help-panel" aria-labelledby="help-title" hidden>
+    <div class="help-head">
+      <h2 id="help-title" class="help-title">inuiの使い方</h2>
+      <button type="button" class="help-close" id="help-close" aria-label="ヘルプを閉じる">×</button>
+    </div>
+    <div class="help-body">
+      <p class="help-lead">やりたいことを文章で入力すると、必要な画面がすぐに表示されます。メニューを探す必要はありません。</p>
+
+      <section class="help-section">
+        <h3>使い方</h3>
+        <ol class="help-steps">
+          <li><span class="step-no">1</span><div><strong>やりたいことを入力</strong><p>「明日の予定を見せて」のように、普段の言葉で入力して送信します。</p></div></li>
+          <li><span class="step-no">2</span><div><strong>表示された画面で操作</strong><p>内容を確認し、必要に応じて選択・変更します。</p></div></li>
+          <li><span class="step-no">3</span><div><strong>保存ボタンで確定</strong><p>入力しただけでは保存されません。保存は必ずボタンで確定します。</p></div></li>
+        </ol>
+      </section>
+
+      <section class="help-section">
+        <h3>できること</h3>
+        <dl class="help-features">
+          <dt>アンケートに回答する</dt>
+          <dd><button type="button" class="chip" data-example="アンケートに回答したい">アンケートに回答したい</button></dd>
+          <dt>指定した日の予定を確認する</dt>
+          <dd>
+            <button type="button" class="chip" data-example="今日のスケジュールを確認したい">今日のスケジュールを確認したい</button>
+            <button type="button" class="chip" data-example="2026年11月4日の予定を見たい">2026年11月4日の予定を見たい</button>
+          </dd>
+          <dt>表示テーマを変更する</dt>
+          <dd><button type="button" class="chip" data-example="見た目の設定を開いて">見た目の設定を開いて</button></dd>
+        </dl>
+        <p class="help-note">例をクリックすると、そのまま試せます。</p>
+      </section>
+
+      <section class="help-section">
+        <h3>できないこと</h3>
+        <ul class="help-list">
+          <li>予定の登録・編集・削除</li>
+          <li>アンケートの作成・集計</li>
+          <li>文書の検索・管理</li>
+        </ul>
+      </section>
+
+      <section class="help-section">
+        <h3>うまく表示されないときは</h3>
+        <ul class="help-list">
+          <li>「何を」したいかを含めて入力してください。</li>
+          <li>予定は「今日」「明日」「11月4日」のように日付を添えてください。</li>
+        </ul>
+      </section>
+    </div>
+  </aside>
 
   <main class="app-main">
     <section class="intent" aria-labelledby="intent-title">

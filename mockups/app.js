@@ -218,8 +218,34 @@
     if (text) run(text);
   });
 
+  // ヘルプサイドバー。初回は開いた状態で表示し、閉じたことは閲覧者のブラウザに記憶する。
+  const helpPanel = document.getElementById("help-panel");
+  const helpToggle = document.getElementById("help-toggle");
+  const HELP_KEY = "inui-mock-help-dismissed";
+  const narrow = () => window.matchMedia("(max-width: 1099px)").matches;
+  const setHelp = (open) => {
+    helpPanel.hidden = !open;
+    helpToggle.setAttribute("aria-expanded", String(open));
+    document.body.classList.toggle("help-open", open);
+    if (!open) {
+      try { localStorage.setItem(HELP_KEY, "1"); } catch { /* 保存できなくても動作は継続 */ }
+    }
+  };
+  helpToggle.addEventListener("click", () => setHelp(helpPanel.hidden));
+  document.getElementById("help-close").addEventListener("click", () => { setHelp(false); helpToggle.focus(); });
+  document.addEventListener("keydown", (e) => {
+    if (e.key === "Escape" && !helpPanel.hidden) { setHelp(false); helpToggle.focus(); }
+  });
+  let dismissed = false;
+  try { dismissed = localStorage.getItem(HELP_KEY) === "1"; } catch { /* 読めなければ初回扱い */ }
+  if (!dismissed) setHelp(true);
+
   document.querySelectorAll("[data-example]").forEach((b) =>
-    b.addEventListener("click", () => run(b.dataset.example)));
+    b.addEventListener("click", () => {
+      // 狭い画面ではサイドバーが結果を覆うため、例を試したら閉じる
+      if (narrow() && b.closest("#help-panel")) setHelp(false);
+      run(b.dataset.example);
+    }));
 
   // モック専用パネル
   document.querySelectorAll("[data-mock]").forEach((b) =>
