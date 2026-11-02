@@ -61,4 +61,4 @@ CLIのサンドボックスには、devShellが提供する `bubblewrap`（`bwra
 
 ## 現在のステータス
 
-MVPの範囲と完了条件は整理済みです。現在は [ADR](docs/adr/0001-mvp-hosting-and-storage.md) で技術構成と接続・運用方式を整理しています。アプリケーションは未実装です。
+MVPの範囲と完了条件、技術構成（[ADR-0001](docs/adr/0001-mvp-hosting-and-storage.md)）と開発環境（[ADR-0002](docs/adr/0002-development-environment.md)）は決定済みです。次はPoCの実装に進みます。アプリケーションは未実装です。

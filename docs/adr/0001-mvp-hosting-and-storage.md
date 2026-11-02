@@ -1,7 +1,7 @@
 # ADR-0001: MVPの技術構成と運用方針を決定する
 
-- 状態: 一部決定。フロント・API実行基盤・DB・GitHub Actions・ECRの利用方針・MCPとJEVの役割・アプリ側のアクセス制御は合意済み。GatewayはOSSの自己管理負担を理由に見直し提案中で、AWS API Gateway + Lambdaを推奨案とする。新しい入口の採用は未確定。Konnectは保留する。
-- 記録日・料金確認日: 2026-10-30
+- 状態: 決定。フロント・API実行基盤・DB・GitHub Actions・ECRの利用方針・MCPとJEVの役割・アプリ側のアクセス制御に加え、HTTP入口としてAWS API Gateway（HTTP API）+ Lambdaを採用する（2026-11-02）。Kong Gateway OSSは不採用とし、Konnectは保留する。
+- 記録日・料金確認日: 2026-10-30（HTTP入口の決定: 2026-11-02）
 - 関連: [Issue #2](https://github.com/abi-yusuke-wada/inui/issues/2)、[MVPのスコープ](../../MVP.md)
 
 ## 背景と合意済みの条件
@@ -13,7 +13,7 @@
 - 基盤費用は会社の個人AWS利用枠で、月2,000円程度を目安にする。正確な利用可能額・既存使用量は未確認。
 - LLM・JEVなどのAPIキー利用料は別途相談とし、今回の基盤費用比較から除外する。DB・配信・ログ・Gatewayなどの基盤費用は比較に含める。
 - 本業とは別の研究タスクであるため、クラウド料金に加えて構築・デプロイ・CI等の作業時間も費用として評価し、自動化で手間を減らす。増額の可能性はあるが、将来の増額を前提に構成を大きくしない。
-- Kong Konnectは部署で強く推奨されているベンダーリソースだが保留する。Kong Gateway OSSを先に使う方針には一度合意したが、Lambda中心のMVPに常駐Gatewayを追加する負担を受け、AWSのマネージドなHTTP入口へ見直す提案を比較する。
+- Kong Konnectは部署で強く推奨されているベンダーリソースだが保留する。Kong Gateway OSSを先に使う方針には一度合意したが、Lambda中心のMVPに常駐Gatewayを追加する負担を受け、AWSのマネージドなHTTP入口（API Gateway HTTP API）へ見直して採用した。
 - 社内の小さなコミュニティへインターネット経由で配布する。所属部署のGitHub Organizationメンバーだけが利用できるよう、アプリ側で制御する。
 
 ## 比較した案と判断理由
@@ -23,7 +23,7 @@
 | 案 | 費用・運用のトレードオフ | 現時点の扱い |
 | --- | --- | --- |
 | AWS Lambda | 通常のオンデマンド実行はリクエスト数・実行時間に応じた課金。サーバ・OSの管理を減らせる。保存先は実行環境の外に用意し、JEVへの通信とinuiが提供するMCPの実装条件を確認する必要がある | 採用。AWSの利用枠を使い、少人数・低頻度のHTTP処理と運用の省力化を優先する |
-| Amazon EC2 | 常駐プロセスや同一サーバのRDBを扱いやすい。稼働時間に加え、EBS・公開IPv4等の費用とOS・プロセス管理の手間を比較する必要がある | APIの実行基盤としては不採用。運用の手間を抑えるためLambdaを選ぶ。Gateway用の常駐環境を追加するかも見直し中 |
+| Amazon EC2 | 常駐プロセスや同一サーバのRDBを扱いやすい。稼働時間に加え、EBS・公開IPv4等の費用とOS・プロセス管理の手間を比較する必要がある | APIの実行基盤としては不採用。運用の手間を抑えるためLambdaを選ぶ。Gateway用の常駐環境も追加しない |
 | さくら AppRun共用型 | Node.jsのコンテナを実行する候補。最小構成は0.5 vCPU・1 GiBで5円/時。ゼロスケールが可能だが、起動・稼働に料金がかかる | 今回は不採用。会社の利用枠があるAWSを使う |
 
 HonoにはLambda向けの公式アダプターがあり、TypeScriptのAPIをLambda上で実行する構成を取れる。Lambdaの採用は確定し、JEV呼び出しとMCPインターフェースの処理時間・通信条件は実装時に確認する。[HonoのLambda対応](https://hono.dev/docs/getting-started/aws-lambda)、[Lambda料金](https://aws.amazon.com/lambda/pricing/)、[Lambdaの管理範囲](https://docs.aws.amazon.com/lambda/latest/dg/lambda-functions-chapter.html)、[EC2料金](https://aws.amazon.com/ec2/pricing/on-demand/)、[AppRun料金](https://cloud.sakura.ad.jp/products/apprun-shared/)
@@ -45,7 +45,7 @@ Turso Cloudの採用と、エンジン・ドライバー・ORMの選定は区別
 公式資料では、Tursoのリモート接続クライアントはAWS Lambdaを含むサーバレス環境に対応している。AWS専用のDB連携機能を用意するのではなく、Honoの業務処理からDBのURLとTursoの認証トークンを使ってHTTPS経由でSQLを実行する構成を取れる。[TypeScriptクライアント仕様](https://docs.turso.tech/sdk/ts/reference)
 
 - Amplify HostingがReactの静的ファイルをブラウザに配信し、ブラウザは入力をHono / Lambdaの受付APIへPOSTする。ホスト側でJEVを実行時に呼び出し、判断結果を検証して許可済みの業務処理・UIを選択する。MCPはinuiが提供するインターフェースとして扱う。
-- 「APIの入口」は、外部から受付APIへリクエストを届ける公開URL・HTTP接続経路を指す。Kong OSSの採用方針は見直し提案中で、AWS API Gateway + Lambdaを推奨案とし、Function URLも比較する。受付後のIntent判定・業務処理と区別し、認証情報の受け渡し等の設定は実装時に決める。
+- 「APIの入口」は、外部から受付APIへリクエストを届ける公開URL・HTTP接続経路を指す。AWS API Gateway（HTTP API）+ Lambdaを採用し、Kong OSSは採用しない。受付後のIntent判定・業務処理と区別し、認証情報の受け渡し等の設定は実装時に決める。
 - Lambda側でIntent・Tool・引数を検証し、許可した業務処理から必要なSQLを実行する。ブラウザからDBへ直接接続せず、DBの認証情報はLambda側で管理する。秘密情報の保管・注入方法は別途決める。
 - 通常のLambda関数は、自分たちのVPCへ接続する設定を追加しなければ外部インターネットへ接続できる。Tursoへ接続するだけの目的でVPCやNAT Gatewayを追加する必要はない。会社のネットワーク要件がある場合は、その条件と追加費用を確認する。[Lambdaの外部通信](https://docs.aws.amazon.com/lambda/latest/dg/configuration-vpc.html)
 - DBの採用は確定し、実際の接続は未検証とする。構築時に、Lambdaからの読み書き・再取得、同時更新、必要なトランザクション、タイムアウト・再試行時の保存結果を確認する。DB配置と通信時間、無料枠内の利用量も検証する。
@@ -112,15 +112,24 @@ ECRの料金は保存量・転送等に応じる。公式のPrivate ECR料金例
 
 GitHub ActionsとECRの利用方針は合意済みとする。クラウドリソースの定義・構築に使う具体的なツール、ワークフロー・IAM・更新コマンドは後続で具体化する。今回はECRリポジトリ、イメージ、CI/CD、インフラを作成しない。
 
-### Gateway（OSSの採用を見直し提案中）
+### Gateway（API Gateway HTTP APIを採用）
 
 2026-10-30、一度はKong Gateway OSSを先に使う方針に合意した。その後、ユーザーからLambda中心の構成にKongの常駐環境を追加するのは過剰ではないかという指摘があり、マネージドなHTTP入口へ見直す提案を追加した。初期MVPは少人数・低頻度で、費用だけでなく構築・維持の作業時間を減らす目的を優先して再評価する。
 
-現在の推奨提案は、ブラウザからAWS API Gatewayを経由してHono / Lambdaへ渡し、Kong用の常駐環境を追加しない構成。API GatewayはAWSが稼働を管理するサービスで、API呼び出し・転送等の料金を見積もる。Kong OSS用のVM・OS・プロセスの運用を省ける、という点を評価する。採用確定とは区別する。[API Gatewayの機能と料金](https://aws.amazon.com/api-gateway/pricing/)
+採用する構成は、ブラウザからAWS API Gateway（HTTP API）を経由してHono / Lambdaへ渡し、Kong用の常駐環境を追加しない構成。API GatewayはAWSが稼働を管理するサービスで、API呼び出し・転送等の料金を見積もる。Kong OSS用のVM・OS・プロセスの運用を省ける、という点を評価する。[API Gatewayの機能と料金](https://aws.amazon.com/api-gateway/pricing/)
 
-API GatewayはLambdaへ自動的に付く必須の構成ではなく、別途設定して接続するHTTP入口の選択肢。LambdaのFunction URLなら直接のHTTP入口を提供でき、URL自体の追加料金はなく、Lambdaの実行等の料金がかかる。これも低頻度のPoC向けの代替案として残す。[LambdaのHTTP入口の比較](https://docs.aws.amazon.com/lambda/latest/dg/furls-http-invoke-decision.html)
+API GatewayはLambdaへ自動的に付く必須の構成ではなく、別途設定して接続するHTTP入口の選択肢。LambdaのFunction URLなら直接のHTTP入口を提供でき、URL自体の追加料金はなく、Lambdaの実行等の料金がかかる。30秒を超える処理がどうしても必要になった場合の代替案として残す。[LambdaのHTTP入口の比較](https://docs.aws.amazon.com/lambda/latest/dg/furls-http-invoke-decision.html)
 
 API GatewayのHTTP APIとREST APIでは機能・料金が異なる。HTTP APIを使う場合は最大統合タイムアウトが30秒であるため、JEVの処理時間やMCPの応答形式と合わせて選ぶ。GitHub所属の確認と業務権限、AI出力・Tool・UI・引数の検証は引き続きinuiが担う。[API種別の比較](https://docs.aws.amazon.com/apigateway/latest/developerguide/http-api-vs-rest.html)、[HTTP APIの制約](https://docs.aws.amazon.com/apigateway/latest/developerguide/http-api-quotas.html)
+
+#### HTTP入口の決定（2026-11-02）
+
+HTTP APIの最大統合タイムアウト30秒は、制約ではなく応答時間の設計上の上限として受け入れる。inuiは非構造的な入力に対して業務UIを返すことが目的であり、1回の応答が30秒以内に返らない時点でUXとして成立しない。同じ理由で、Lambdaの最大実行時間15分も制約にならない。Kongはタイムアウトを設定で延ばせるが、この前提ではその利点が採用理由にならず、常駐環境の費用と自己管理の負担だけが残るため採用しない。
+
+- 採用: AWS API Gateway（HTTP API）+ Hono / Lambda。
+- 応答時間: JEV・LLMの呼び出しを含めて1回の応答を30秒以内に収めることを必須とし、Issue #4で実測する。
+- 代替案: 30秒を超える処理がどうしても必要になった場合は、Function URLやレスポンスのストリーミング、非同期の受付・結果取得を比較する。タイムアウトを延ばすためだけにGatewayを追加しない。
+- REST APIは、HTTP APIに無い機能が必要になった場合に限って再検討する。
 
 #### HTTP入口の費用比較
 
@@ -137,15 +146,15 @@ API GatewayのHTTP APIとREST APIでは機能・料金が異なる。HTTP APIを
 
 この表は入口を追加する料金の比較で、アプリ全体の月額ではない。各案の通信・ログ等や、共通するLambda実行・Amplify・Turso・ECR等は別途見積もる。Kong側の冗長化・ロードバランサー・追加ストレージ等も含めていない。LLM・JEVのAPIキー利用料は合意どおり対象外。既存のVM枠を使える場合はKongの増分料金を抑えられる可能性があるが、利用できる環境は未確認。
 
-この条件では、API Gatewayは低頻度のMVPの入口費用を小さくでき、Kong用のOS・TLS・プロセス更新や復旧の作業も減らせる。新設VMの例は1 GBで月2,000円の目安の約6割、2 GBでは入口だけで目安を超える。したがって費用・作業時間の両面でAPI Gateway案を推奨する。ただし、HTTP APIの30秒制限等とJEV・MCPの通信条件を確認してから種別を選び、今回の試算だけで入口の採用を確定しない。Function URLはURL自体の追加料金がない代替案として維持する。
+この条件では、API Gatewayは低頻度のMVPの入口費用を小さくでき、Kong用のOS・TLS・プロセス更新や復旧の作業も減らせる。新設VMの例は1 GBで月2,000円の目安の約6割、2 GBでは入口だけで目安を超える。したがって費用・作業時間の両面でAPI Gateway（HTTP API）を採用する。30秒制限の扱いは前述の決定のとおり。Function URLはURL自体の追加料金がない代替案として維持する。
 
 以下に以前の比較も残す。OSS案はKonnectに接続しない公開版の自己管理で、Enterprise版とは区別する。Konnectもデータプレーンの運用範囲によって負担が異なる。
 
 | 比較案 | 増分の料金 | 得られる効果 | 実装・運用のトレードオフ |
 | --- | --- | --- | --- |
-| AWS API Gateway + Hono / Lambda（推奨提案） | API呼び出し・転送等とLambdaの実行・ログ等を見積もる | マネージドなHTTP入口を使い、Kongの常駐環境を追加しない | API種別・タイムアウト・応答形式と認証連携を確認する。AI・業務固有の検証はホスト側に残る |
-| Function URL + Hono / Lambda（代替案） | URL自体の追加料金はなく、Lambdaの実行・ログ等の料金を見積もる | 簡単なHTTP入口を用意し、Kongの常駐環境を追加しない | API Gatewayとの管理機能の差を確認し、アプリ側で必要な認証・認可・入力検証を行う |
-| Kong Gateway OSSを自己管理する（旧合意、見直し中） | OSS本体のライセンス利用料は不要。Gatewayを動かすVM・コンテナ、通信・ログ等は別に費用がかかる | ルーティング・回数制限に加え、公開版に含まれるAI ProxyとAI Prompt Guardで基本的なプロンプト検査を構成できる | 実行環境、TLS、設定配布、更新、監視、障害対応を自分たちで維持する。DB-lessでGateway用DBを省く構成も比較する |
+| AWS API Gateway + Hono / Lambda（採用） | API呼び出し・転送等とLambdaの実行・ログ等を見積もる | マネージドなHTTP入口を使い、Kongの常駐環境を追加しない | API種別・タイムアウト・応答形式と認証連携を確認する。AI・業務固有の検証はホスト側に残る |
+| Function URL + Hono / Lambda（代替案。30秒を超える処理が必要な場合） | URL自体の追加料金はなく、Lambdaの実行・ログ等の料金を見積もる | 簡単なHTTP入口を用意し、Kongの常駐環境を追加しない | API Gatewayとの管理機能の差を確認し、アプリ側で必要な認証・認可・入力検証を行う |
+| Kong Gateway OSSを自己管理する（旧合意、不採用） | OSS本体のライセンス利用料は不要。Gatewayを動かすVM・コンテナ、通信・ログ等は別に費用がかかる | ルーティング・回数制限に加え、公開版に含まれるAI ProxyとAI Prompt Guardで基本的なプロンプト検査を構成できる | 実行環境、TLS、設定配布、更新、監視、障害対応を自分たちで維持する。DB-lessでGateway用DBを省く構成も比較する |
 | 部署の共用Konnect / Gatewayを利用する（保留） | 既存契約・利用枠で追加費用を抑えられる可能性があるが未確認 | 利用可能な入力検査・制限・監視と、部署の設定・運用ノウハウを再利用できる | ルート・ポリシー・認証情報の連携と、データプレーンの管理担当を確認する。既存のアプリ側検証は継続する |
 | 新規Konnectや有料AI保護機能を追加する（保留） | 固定料金・AI機能・検査サービス・ログ・通信の追加費用を確認する | 必要な検査・ポリシーを独立して構成できる | 構築・維持・ルール調整・障害時対応が増えるため、小さなMVPでの効果と比較する |
 
@@ -177,7 +186,7 @@ OSSを採用する場合に確認する項目は、次の3点に絞る。
 2. 実際のJEV・LLM通信に検査を適用できることと、設定・自動化・維持にかかる作業時間。アプリ単独でも必要な検証は、削減できる工数に数えない。
 3. 既存MVPの正常入力を妨げず、対象とする不正入力への効果、誤検知・見逃し・追加遅延と障害時の扱いを小さな検証で確認できること。
 
-当初のOSS方針ではGatewayの実行環境を確保する費用と自己管理の手間を受け入れる判断だったが、この負担を今回見直す。マネージドなHTTP入口を採用する場合は、Kongの稼働先選定をMVPやIssue #2の前提にしない。構築・性能や保護効果の実測は今回行っていない。
+当初のOSS方針ではGatewayの実行環境を確保する費用と自己管理の手間を受け入れる判断だったが、この負担を見直し、2026-11-02にマネージドなHTTP入口の採用を決定した。Kongの稼働先選定は不要となった。構築・性能や保護効果の実測は今回行っていない。
 
 将来のKonnect移行に備え、Gatewayの設定は秘密情報の実値を含めずGitで管理し、アプリ固有の認証・認可と業務処理をホスト側に置く方針を維持する。移行のためだけの抽象化や独自管理基盤は作らない。移行時は、バージョン・プラグイン・設定形式・認証情報・管理方式の差分と費用を確認し、設定をそのまま移せるとは前提にしない。Konnectの利用条件・移行時期は、現在のIssue #2の完了条件には含めない。
 
@@ -197,11 +206,11 @@ GitHubの所属はアプリへ入れる人の条件とする。現行MVPは検�
 
 ## 決定と影響
 
-フロント配信はReact + TypeScript / Amplify Hosting、APIはTypeScript + Hono / AWS Lambda、RDBはTurso Cloudを採用する。CI/CDはGitHub Actions、デプロイ用コンテナの保管はECRを利用する方針とし、構築・CI・デプロイの自動化で研究に使える時間を確保する。inuiがMCPインターフェースを提供し、JEVはホスト処理が実行時に呼び出す。GatewayはOSSの採用方針を見直し、AWS API Gateway + Lambdaを推奨提案とする。新しいHTTP入口は採用未確定で、Konnectは保留する。
+フロント配信はReact + TypeScript / Amplify Hosting、APIはTypeScript + Hono / AWS Lambda、RDBはTurso Cloudを採用する。CI/CDはGitHub Actions、デプロイ用コンテナの保管はECRを利用する方針とし、構築・CI・デプロイの自動化で研究に使える時間を確保する。inuiがMCPインターフェースを提供し、JEVはホスト処理が実行時に呼び出す。HTTP入口はAWS API Gateway（HTTP API）を採用し、1回の応答を30秒以内に収めることを設計上の上限とする。Kong Gateway OSSは採用せず、Konnectは保留する。
 
 CDNはAmplify Hostingに任せる。配布先はインターネット経由の社内コミュニティとし、GitHub Organizationへの所属をアプリ側で確認して業務UI・APIの利用を許可する。このアクセス制御のための専用VPC・VPNや基盤側の認証サービスは採用しない。
 
-APIのサーバ運用を抑えるためLambdaを使い、Gatewayの常駐環境も追加しない案を評価する。配信・API入口・API・DBの接続設定と通信時間の検証は必要になる。DB接続と業務処理はホスト側に置き、ブラウザへDBの認証情報を渡さない。
+APIのサーバ運用を抑えるためLambdaを使い、Gatewayの常駐環境も追加しない。配信・API入口・API・DBの接続設定と通信時間の検証は必要になる。DB接続と業務処理はホスト側に置き、ブラウザへDBの認証情報を渡さない。
 
 月2,000円は予算の目安であり、この文書で確定見積もりや課金上限を保証するものではない。実行時間・リクエスト数・保存量・転送量・ログ・Gateway・適用可能な無料枠・税・為替を含めて見積もる。料金は確認日の公開情報で、導入時に再確認する。
 
@@ -209,15 +218,15 @@ APIのサーバ運用を抑えるためLambdaを使い、Gatewayの常駐環境�
 
 Issue #2では、MVPに使う技術・構成・採用理由と実装へ進める見通しを合意する。設定値や実装手順まで一括で確定する必要はない。前節までの構築時の確認事項を、すべてIssue #2の完了条件とはしない。
 
-フロント・API実行基盤・DB、CDNをHostingに任せること、GitHubの所属に基づくアプリ側のアクセス制御、この目的で専用VPCを追加しないこと、main更新時のフロント自動デプロイは決定済み。GatewayはOSSの追加運用を見直す提案中で、前回の最終確認で挙げた3点は次の状態になった。
+フロント・API実行基盤・DB、CDNをHostingに任せること、GitHubの所属に基づくアプリ側のアクセス制御、この目的で専用VPCを追加しないこと、main更新時のフロント自動デプロイは決定済み。HTTP入口はAWS API Gateway（HTTP API）の採用を決定した。前回の最終確認で挙げた3点は次の状態になった。
 
 | 確認した構成判断 | 現在の状態・後続で詰める範囲 |
 | --- | --- |
-| HTTP入口の方式と費用 | OSSの常駐環境を追加せずAWS API Gateway + Lambdaに寄せる推奨提案と、Function URLを比較する。API GatewayがLambdaの必須セットとは扱わない。マネージドな入口を採用する場合、Kongの稼働先は選定不要となる。新しい入口の採用は未確定 |
+| HTTP入口の方式と費用 | 決定。AWS API Gateway（HTTP API）+ Lambdaを採用し、30秒を応答時間の上限とする。Kongは採用せず、稼働先の選定は不要。応答時間の実測はIssue #4で行う |
 | JEV・MCPの役割と接続 | 役割は合意済み。inuiがMCPインターフェースを提供し、JEVはホスト処理から実行時に呼び出す。JEV / Choiceの具体的な接続仕様、公開Tool、通信方式・SDKの選定と実際の接続検証はIssue #4で扱う |
 | 基盤の構築・デプロイ自動化の方式 | GitHub Actionsを採用し、コンテナイメージ保管にECRを利用する基本方針は合意済み。Lambdaと採用するAPI入口のリソース定義・構築ツール、配布形式とワークフローの詳細は後続で具体化する。フロントはAmplify HostingのGit連携を維持する |
 
-現在の主要な構成判断はHTTP入口の方式と費用。Kongを使うことを前提に稼働先の選定を続けず、常駐環境の追加が今回のMVPに必要かという観点で見直す。MCP・JEVの役割とGitHub Actions・ECRの基本方針は維持し、Konnectの利用条件や移行時期は将来の検討へ引き継ぐ。実際のURL・ルート・CORS、API呼び出しやTool実装、個々のCIジョブやDB更新手順は後続で具体化する。
+Issue #2で扱う構成判断はすべて決定した。MCP・JEVの役割とGitHub Actions・ECRの基本方針は維持し、Konnectの利用条件や移行時期は将来の検討へ引き継ぐ。実際のURL・ルート・CORS、API呼び出しやTool実装、個々のCIジョブやDB更新手順は後続で具体化する。
 
 | 後続で詰める事項 | 扱う時期・範囲 |
 | --- | --- |
