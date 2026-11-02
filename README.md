@@ -38,7 +38,7 @@ direnv allow   # 初回のみ
 node --version # devShellのNode.js 24が表示されることを確認
 ```
 
-direnvを使わない場合は `nix develop` で開発環境に入ります。
+direnvを使わない場合は `nix develop` で開発環境に入ります。この場合 `.envrc` は実行されないため、初回に `mkdir -m 700 ~/.aws` で `~/.aws` を作成してから入ってください（CLIのサンドボックスは、起動時に存在しないディレクトリを拒否できないため）。
 
 ### コマンド
 
