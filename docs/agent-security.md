@@ -182,17 +182,19 @@ CLIは、起動したブランチにあるプロジェクト設定と指示フ�
 
 - `.claude/settings.json`・`.codex/config.toml` の権限の緩和や、起動時に実行されるフック
 - `AGENTS.md`・`CLAUDE.md` の指示の書き換え
-- `flake.nix` の `shellHook`。direnvは `.envrc` の変更には再承認を求めるが、`flake.nix` の変更では求めないため、ディレクトリに入っただけで実行される
+- `flake.nix` の `shellHook`。direnvの `use flake` は `flake.nix`・`flake.lock` を監視しており、承認済みの `.envrc` がある作業ディレクトリでブランチを切り替えると、次のプロンプトで変更後の `flake.nix` が再評価され、`shellHook` がホスト上で実行される。direnvが再承認を求めるのは `.envrc` の変更だけで、`flake.nix` の変更では求めない
 - `Makefile` やテストコードの変更。テストやビルドは任意のコード実行を伴う
 
-対策として、外部からのPRは、エージェントを起動する前に人間が設定ファイルの差分を確認する。
+対策として、外部からのPRは、作業ディレクトリでチェックアウトする前に、人間が設定ファイルの差分を確認する。`git fetch` と `git diff` はブランチを切り替えないため、`shellHook` は実行されない。
 
 ```sh
 git fetch origin pull/<番号>/head:pr-<番号>
 git diff main...pr-<番号> -- AGENTS.md CLAUDE.md .claude .codex .envrc flake.nix flake.lock Makefile .github
 ```
 
-差分がある場合は、そのブランチでエージェントやdirenvを起動しない。外部のコードを実行する検証は、作業用の環境とは別の隔離環境で行う。
+- 差分がある場合は、承認済みの `.envrc` がある作業ディレクトリでそのブランチをチェックアウトしない。direnvの読み込みを止めてから切り替えても、作業ディレクトリに戻った時点で再評価されるため、チェックアウト自体を避ける。
+- 差分の内容を確認して問題がないと判断した場合も、チェックアウトの前に `direnv deny` で作業ディレクトリの承認を取り消し、変更後の `flake.nix` を確認し終えてから `direnv allow` で戻す。
+- 外部のコードを実行する検証は、作業用の環境とは別の隔離環境で行う。
 
 ## 8. 人間による操作が必要な項目
 
