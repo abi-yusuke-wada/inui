@@ -1,0 +1,204 @@
+# AI開発エージェントの権限と運用
+
+inuiでCodex CLIとClaude Codeを使うときの権限設定・起動方法・検証結果・残るリスクをまとめる。共通の行動指針は [AGENTS.md](../AGENTS.md)、判断理由は [ADR-0002](adr/0002-development-environment.md) を参照する。
+
+確認時点（2026-11-02）の環境: Codex CLI 0.165.0、Claude Code 2.1.316、Ubuntu 22.04.5 LTS on WSL2（カーネル 6.18.54.1-microsoft-standard-WSL2）。DevContainerは使っていない。
+
+各対策の状態は次の4つで区別する。
+
+| 表記 | 意味 |
+| --- | --- |
+| 強制 | CLIのサンドボックス・権限設定で技術的に強制し、ダミーデータで動作を確認した |
+| 強制（未検証） | 技術的に強制する設定をしたが、動作は未確認 |
+| 指示 | AGENTS.md等によるエージェントへの指示だけで制御している |
+| GitHub設定待ち | GitHub側の設定が必要で、まだ適用されていない |
+
+## 1. 作業の段階と起動方法
+
+| 段階 | 権限 | Codex | Claude Code |
+| --- | --- | --- | --- |
+| A. 調査 | 読み取り専用 | `codex`（既定のプロファイル `inui-readonly`） | `claude --permission-mode plan` |
+| B. 実装・テスト | 作業領域への書き込み | `codex -c 'default_permissions="inui-dev"'` | `claude`（既定）。編集を自動で許可する場合は `claude --permission-mode acceptEdits` |
+| C. GitHubへの反映 | 制限付きの書き込み | 使わない（通信不可） | `gh`・`git push` を毎回承認して実行する |
+
+どちらのCLIも、devShellに入った状態（direnvまたは `nix develop`）で起動する。Codexは起動後に `/status` で権限が `inui-readonly`・`inui-dev` になっていることを確認してから作業する。`-s/--sandbox`・`--full-auto` 等の起動オプションやエイリアスがあると、プロジェクトの権限プロファイルより優先される場合がある（2026-11-02、権限プロファイルが適用されず `workspace-write` で起動したセッションでは、GitHubのトークン等を読み取れることを確認した）。調査で整理した作業スコープをユーザーと合意してから、段階Bで起動し直す。
+
+## 2. Codex CLIの実効権限
+
+設定: [.codex/config.toml](../.codex/config.toml)
+
+- `approval_policy = "on-request"`。危険な操作や権限外の操作は、モデルが承認を求める。
+- 既定のプロファイルは `inui-readonly`（組み込みの `:read-only` を継承）。実装時だけ `inui-dev`（`:workspace` を継承）をセッション単位で指定する。
+- 依頼文にあった `sandbox_mode = "read-only"` と `[sandbox_workspace_write] network_access = false` は使わない。Codex 0.165.0では、旧 `sandbox_mode`・`sandbox_workspace_write` を権限プロファイルと併用できないため、機密ファイルの拒否ができるプロファイル方式を採る。CLIの `-s/--sandbox` も旧方式の指定なので使わない。
+- どちらのプロファイルもネットワークの許可を持たない（既定で無効）。
+- 両プロファイルで、`.env`・`.env.*`、`.aws`・`~/.aws`、`~/.ssh`、`~/.gnupg`、`~/.netrc`、`~/.git-credentials`、`~/.npmrc`、`~/.config/pnpm`、`~/.docker/config.json`、`~/.config/gh`（GitHubのトークン）、`~/.claude/.credentials.json`、`~/.codex/auth.json` の読み取りを拒否する。
+- グローバル設定（`~/.codex/config.toml`）にはモデルと信頼済みプロジェクトの設定だけがあり、権限・サンドボックスの設定はない。プロジェクト設定が適用されるのは、信頼済みのプロジェクトとして開いた場合に限られる。
+- `--dangerously-bypass-approvals-and-sandbox`、`-s danger-full-access`、`-a never` は使わない（設定で禁止はできないため、指示による制御）。
+- MCPサーバーは設定していない。追加する場合は、シェルのサンドボックスでは保護されない前提で、サーバーごとに権限を確認する。
+
+## 3. Claude Codeの実効権限
+
+設定: [.claude/settings.json](../.claude/settings.json)（共有）、`.claude/settings.local.json`（個人、Git管理外）
+
+- `permissions.defaultMode = "default"`。ファイル編集・コマンド実行は承認を求める。自動編集は段階Bで明示的に指定したときだけ使う。
+- `sandbox.enabled`・`failIfUnavailable`・`allowUnsandboxedCommands: false`。Bashは常にサンドボックス内で実行し、サンドボックスが使えなければ起動しない。サンドボックスを外した再実行はできない。
+- `permissions.blockWritesOutsideWorkingDirectories`。ファイル操作ツール（Write・Edit等）による作業領域外への書き込みと、CLIの設定ファイルへの書き込みを拒否する。
+- `Read`・`Edit` の拒否ルールで、Codexと同じ機密ファイル・認証情報を対象にする。拒否ルールはサンドボックスの読み取り拒否にも反映される。
+- `gh` と `git push` はGitHubのトークンを使うため、サンドボックスの対象外（`excludedCommands`）とし、`ask` で毎回承認を求める。パイプ等で他のコマンドと組み合わせた場合はサンドボックス内で実行され、トークンを読めないため失敗する。`git -C <dir> push` のように `git push` で始まらない書き方や、引数にバッククォート・リダイレクト記号を含む `gh` もサンドボックス内で実行されるため、コマンドは単独で書き、本文は `-F body=@<ファイル>` で渡す。
+- マージ・Auto-mergeの有効化・承認（`gh pr review --approve`）・`gh auth`・リポジトリ設定・Secrets・Variables・Rulesetの変更、force push、`main` へのpush、ブランチの削除を `deny` で拒否する。コマンドの書き方を変えれば回避できるパターン照合のため、マージ禁止の主な手段はGitHub側の保護設定とする。
+- サンドボックス外で動く `gh` がローカルの機密ファイルを読んで送信しないよう、`.env` を含む引数、`@` で始まる作業領域外・ドットファイルへのファイル参照、`--body-file`・`--input` を拒否する。本文はスクラッチパッド（`/tmp` 配下）のファイルを `-F body=@<ファイル>` で渡す。これもパターン照合のため、承認時にコマンド全体を確認する。
+- `git -C <dir> push` 等の別の書き方も承認の対象にする。これらはサンドボックス内で実行されトークンを読めないため、現状でも認証付きのpushはできない（2026-11-02、`git -C` 形式のpushがサンドボックスの通信制限で失敗することを確認）。
+- `WebFetch` は毎回承認を求める。
+- `disableClaudeAiConnectors`。claude.aiのコネクタ（Gmail・Slack等のMCP）を、このプロジェクトでは読み込まない。
+- `bypassPermissions` は使わない。
+
+## 4. 動作確認の結果
+
+ダミーデータだけを使い、秘密情報の内容は出力していない。
+
+### Claude Code（2026-11-02、本設定で確認）
+
+| 項目 | 結果 | 状態 |
+| --- | --- | --- |
+| サンドボックスが起動する（WSL2、bubblewrap 0.12.0） | 起動した | 強制 |
+| サンドボックス外での再実行 | 設定で無効（`dangerouslyDisableSandbox` が使えない） | 強制 |
+| 作業領域内への書き込み | 成功 | 強制 |
+| ホームへの書き込み | 拒否（Read-only file system） | 強制 |
+| `.claude/settings.json` への書き込み | 拒否 | 強制 |
+| `~/.config/gh`・`~/.codex/auth.json`・`~/.claude/.credentials.json` の読み取り | 拒否（Permission denied） | 強制 |
+| `~/.gnupg` | 中身が0件に見える（元から空かは確認していない） | 強制（一部未検証） |
+| 実行前から存在するダミー `.env` | 読み取り・削除ともにできない | 強制 |
+| `example.com` への通信 | 拒否 | 強制 |
+| トークンの読み取りを含む `cat ~/.config/gh/...` | 実行前に権限チェックで拒否 | 強制 |
+| `gh` 単体の実行 | サンドボックス外で実行された。`ask` による確認ダイアログが毎回表示されるかは、自動判定モードとの組み合わせを含め利用者の画面で確認する | 強制（承認表示は未検証） |
+| `gh` を他のコマンドと組み合わせた実行 | サンドボックス内でトークンを読めず失敗 | 強制 |
+| Readツールによる機密ファイルの読み取り | 以前の検証で `.env` の拒否を確認。認証情報の拒否は実ファイルで試していない | 強制（一部未検証） |
+| 同じコマンドの中で新しく作った `.env` | 読み取れた | 未対応（制約） |
+
+### Codex（未実施）
+
+`codex sandbox` はClaude Codeのサンドボックス内では入れ子のユーザー名前空間を作れず起動できない。利用者のシェルで検証スクリプトを実行して確認する。結果を得るまで、Codexの各項目は「強制（未検証）」とする。
+
+## 5. 認証情報
+
+| 認証情報 | 配置 | 対策 | 状態 |
+| --- | --- | --- | --- |
+| GitHubのトークン（`gho_`、`repo`・`workflow`・`gist`・`read:org`） | `~/.config/gh` | 両CLIで読み取り拒否。Claudeの `gh` は毎回承認 | 強制（Codexは未検証） |
+| AWS | `~/.aws`（空のディレクトリ） | 両CLIで拒否 | 強制（Codexは未検証） |
+| GnuPG | `~/.gnupg` | 両CLIで拒否 | 強制（Codexは未検証） |
+| CLI自身の認証 | `~/.claude/.credentials.json`・`~/.codex/auth.json` | 両CLIのサンドボックスで拒否 | 強制（Codexは未検証） |
+| `.env` 内の値 | 作業領域・ホーム配下 | 両CLIで拒否。深さ8を超える配置と、実行中に新しく作るファイルは対象外 | 強制（制約あり） |
+| SSH鍵・npm・pnpm・Docker | 現在は存在しない | 作成された場合に備えて拒否対象に含める | 強制（未検証） |
+| VS CodeのGit認証連携（`GIT_ASKPASS`） | 環境変数 | VS Code経由で起動した場合、Git操作で認証情報を取得できる可能性がある | 未検証・未対応 |
+
+`.gitignore` で `.env`・`.env.*`・`.aws/`・個人設定を追跡対象外にしている。ただし、`.gitignore` は読み取りを防がない。
+
+## 6. GitHub側で必要な設定
+
+確認時点の状態: 個人アカウントの公開リポジトリ。Ruleset・Branch Protectionはなく、`main` は保護されていない。Auto-mergeは無効。両CLIが使うトークンは利用者本人のもので、利用者と同じ権限を持つ。
+
+### 認証主体の分離（推奨）
+
+AIが利用者本人のトークンを使う限り、GitHubからは人間の操作と区別できず、レビュー必須やマージ制限を技術的に強制できない。次のように分ける。
+
+| 用途 | 認証主体 | 権限 |
+| --- | --- | --- |
+| 調査 | 認証なし（公開リポジトリ）、または読み取り専用のfine-grained PAT | Metadata・Contents・Issues・Pull requests: Read |
+| GitHubへの反映 | inuiだけにインストールしたGitHub App、または専用のBotアカウント | Contents・Issues・Pull requests: Read/Write、Metadata: Read |
+| 管理・マージ | 利用者本人（人間） | 管理者 |
+
+ContentsのWrite権限があればブランチの更新（マージを含む）が可能なため、権限設定だけでマージを禁止できない。マージの禁止はRulesetで行う。
+
+### Ruleset案（`main`）
+
+GitHubの「Settings → Rules → Rulesets → New branch ruleset」で作成するか、内容を確認したうえで `gh api -X POST repos/abi-yusuke-wada/inui/rulesets --input ruleset.json` で登録する（AIは実行しない）。
+
+```json
+{
+  "name": "protect-main",
+  "target": "branch",
+  "enforcement": "active",
+  "conditions": { "ref_name": { "include": ["~DEFAULT_BRANCH"], "exclude": [] } },
+  "bypass_actors": [
+    { "actor_id": 5, "actor_type": "RepositoryRole", "bypass_mode": "pull_request" }
+  ],
+  "rules": [
+    { "type": "deletion" },
+    { "type": "non_fast_forward" },
+    { "type": "update" },
+    {
+      "type": "pull_request",
+      "parameters": {
+        "required_approving_review_count": 1,
+        "dismiss_stale_reviews_on_push": true,
+        "require_code_owner_review": true,
+        "require_last_push_approval": true,
+        "required_review_thread_resolution": true
+      }
+    }
+  ]
+}
+```
+
+- `deletion`・`non_fast_forward`: `main` の削除とforce pushを禁止する。
+- `update` と `bypass_actors`: `main` を更新（マージを含む）できるのを、管理者ロール（`actor_id: 5`）がPR経由で行う場合に限る。AIの認証主体には管理者権限もバイパス権限も与えない。
+- `pull_request`: PR経由の変更と、コードオーナーによる承認を必須にする。
+- 必須のCIチェック（`required_status_checks`）は、CIを作成した後に追加する。
+- 制約: 利用者本人のトークンをAIが使い続ける場合、AIは管理者として扱われ、上記の制限をバイパスできる。また、PRの作成者は自分のPRを承認できないため、AIが利用者のアカウントでPRを作るとレビュー必須の条件を満たせなくなる。いずれも、反映用の認証主体を分離してから適用する。個人アカウントのリポジトリでのロール指定は、適用時に画面で確認する。
+
+### CODEOWNERS案
+
+セキュリティ上重要な設定の変更に、利用者の承認を必須にする。`.github/CODEOWNERS` として追加する（今回は作成していない）。
+
+```text
+/AGENTS.md          @abi-yusuke-wada
+/CLAUDE.md          @abi-yusuke-wada
+/.codex/            @abi-yusuke-wada
+/.claude/           @abi-yusuke-wada
+/.github/           @abi-yusuke-wada
+/.envrc             @abi-yusuke-wada
+/flake.nix          @abi-yusuke-wada
+/flake.lock         @abi-yusuke-wada
+/Makefile           @abi-yusuke-wada
+/docs/agent-security.md @abi-yusuke-wada
+```
+
+## 7. 信頼できないブランチでエージェントを起動する場合のリスク
+
+CLIは、起動したブランチにあるプロジェクト設定と指示ファイルをそのまま読み込む。外部からのPRのブランチで起動すると、次のような変更がそのまま適用される。
+
+- `.claude/settings.json`・`.codex/config.toml` の権限の緩和や、起動時に実行されるフック
+- `AGENTS.md`・`CLAUDE.md` の指示の書き換え
+- `flake.nix` の `shellHook`。direnvは `.envrc` の変更には再承認を求めるが、`flake.nix` の変更では求めないため、ディレクトリに入っただけで実行される
+- `Makefile` やテストコードの変更。テストやビルドは任意のコード実行を伴う
+
+対策として、外部からのPRは、エージェントを起動する前に人間が設定ファイルの差分を確認する。
+
+```sh
+git fetch origin pull/<番号>/head:pr-<番号>
+git diff main...pr-<番号> -- AGENTS.md CLAUDE.md .claude .codex .envrc flake.nix flake.lock Makefile .github
+```
+
+差分がある場合は、そのブランチでエージェントやdirenvを起動しない。外部のコードを実行する検証は、作業用の環境とは別の隔離環境で行う。
+
+## 8. 人間による操作が必要な項目
+
+1. Codexの検証スクリプトを利用者のシェルで実行し、結果を確認する。
+2. 反映用の認証主体（GitHub AppまたはBot）を作成し、inuiだけに必要最小限の権限で導入する。現在のトークン（`repo`・`workflow` 等）を開発環境から外す。
+3. 認証主体の分離後に、Rulesetを適用し、CODEOWNERSを追加する。
+4. Claude Codeのサンドボックス内に作られる空のファイル（`.bashrc`・`.gitconfig`・`.mcp.json`・`.vscode` 等）は、サンドボックスが設定ファイルを保護するための目印で、ホスト側には存在しない。コミットに含めないよう、ファイルを個別に指定してコミットする。
+
+## 9. 未解決のリスク
+
+| リスク | 状態 |
+| --- | --- |
+| AIが利用者本人のトークンでGitHubを操作するため、マージ・保護設定の変更を技術的に防げない（Claudeは承認と拒否ルールで抑制） | GitHub設定待ち |
+| `main` が保護されていない | GitHub設定待ち |
+| 承認した `gh`・`git push` はサンドボックス外で動き、トークンを使える。承認時にコマンドを確認する必要がある | 指示 |
+| Bashの拒否ルールは書き方を変えると回避できる | 指示（GitHub設定で補う） |
+| Codexの各プロファイルの動作 | 未検証 |
+| 実行中に新しく作られた `.env`、深さ8を超える `.env` は拒否されない | 未対応（受容済みの制約） |
+| 作業領域外を指すシンボリックリンク経由の読み取り（Codex） | `make sandbox-check` で検出（指示） |
+| VS CodeのGit認証連携（`GIT_ASKPASS`）経由の認証情報の取得 | 未検証・未対応 |
+| 依存関係の取得など、ネットワークが必要な作業の経路 | 未対応（技術スタック決定後に検討） |
+| 信頼できないブランチでの起動による設定の差し替え | 指示（起動前の差分確認） |
