@@ -202,6 +202,10 @@
     }
   };
 
+  // 旧形式UIのページ（legacy.html）は入力フォームを持たず、同じ事前実装済みUIをメニューから直接開く。
+  window.inuiMock = { open: (intent) => show("", intent) };
+  if (!form) return;
+
   const run = (text) => {
     input.value = text;
     submit.disabled = true;
