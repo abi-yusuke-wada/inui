@@ -29,8 +29,12 @@
           # CLIのサンドボックスは起動時に存在しないディレクトリを拒否できないため、
           # 拒否対象の .aws を作業領域とホームに事前に用意する（既存の権限は変更しない）
           shellHook = ''
+            # 作成できない場合は拒否対象がないまま起動しないよう、開発環境の起動を止める
             for dir in "$(git rev-parse --show-toplevel 2>/dev/null || pwd)/.aws" "$HOME/.aws"; do
-              [ -d "$dir" ] || mkdir -m 700 "$dir"
+              if [ ! -d "$dir" ] && ! mkdir -m 700 "$dir"; then
+                echo "$dir を作成できないため、開発環境を起動しません" >&2
+                exit 1
+              fi
             done
           '';
         };
