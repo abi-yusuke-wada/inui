@@ -20,7 +20,7 @@ sandbox-check: ## CLIのサンドボックスに必要なツールとユーザ�
 	@# 作業領域外を指すシンボリックリンクは、リンク先の .env を拒否できないため検出する
 	@# リンク名は改行を含み得るため、行で分割せず -exec で1件ずつ判定する
 	@links=$$(find . \( -path ./.git -o -path ./.direnv -o -path '*/node_modules' \) -prune -o -type l \
-		-exec sh -c 'for l; do t=$$(readlink -f "$$l"); case "$$t" in "$$PWD"/*) ;; *) printf "  %s -> %s\n" "$$l" "$$t";; esac; done' sh {} +) || \
+		-exec sh -c 'r=$$(pwd -P); for l; do t=$$(readlink -f "$$l"); case "$$t" in "$$r"/*) ;; *) printf "  %s -> %s\n" "$$l" "$$t";; esac; done' sh {} +) || \
 		{ echo "シンボリックリンクの走査に失敗しました"; exit 1; }; \
 		if [ -n "$$links" ]; then echo "作業領域外を指すシンボリックリンクがあります:"; echo "$$links"; exit 1; fi
 	@echo "サンドボックスの前提条件を満たしています"
