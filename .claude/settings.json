@@ -7,6 +7,8 @@
       "Read(./.env.*)",
       "Read(./.aws/**)",
       "Read(~/.aws/**)",
+      "Read(~/**/.env)",
+      "Read(~/**/.env.*)",
       "Edit(./.env)",
       "Edit(./.env.*)",
       "Edit(./.aws/**)",

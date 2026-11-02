@@ -13,12 +13,13 @@ CLIを切り替えるときに、最新の引き継ぎ1件へ更新する。共�
 ## 検証結果
 
 - `git diff --check`、JSON・YAML構文、文書の相対リンク・文字コード・改行、個人設定のGit除外、共有ファイルの参照先を確認し、すべて成功した。料金表の計算とmainとの祖先関係も確認済み。
-- devShellでNode.js 24.22.1・pnpm 11.27.0・bwrap・socatが使え、bwrapの単体起動も成功した。
-- アプリ・基盤は未実装。devShell内でのCLIのサンドボックスによる読み取り拒否、会社側設定との組み合わせ、料金・接続の実測は未検証。
+- devShellでNode.js 24.22.1・pnpm 11.27.0・bwrap・socatが使え、`make check`・`make sandbox-check` が成功した。
+- 読み取り拒否: コミット `8c0f1e0` 時点の設定で、WSL2上のdevShell内からCLIを起動し、ダミーの `.env` がReadツールとサンドボックス内のBash（`cat .env`）の両方で拒否されることを確認した。実際の認証情報は使用していない。
+- アプリ・基盤は未実装。会社側設定との組み合わせ、料金・接続の実測は未検証。
 
 ## 未完了事項・次の作業
 
 - CLIを切り替える際は、このメモに加えて現在のブランチ・`git status`・差分を確認する。各CLIの会話履歴は自動同期しない。
 - HTTP入口の採用は未確定。[ADR-0001](adr/0001-mvp-hosting-and-storage.md) と [Issue #2](https://github.com/abi-yusuke-wada/inui/issues/2) を確認して検討を続ける。
-- devShellに入った状態でCLIを起動し直し、サンドボックスが有効なことと `.env` 等の読み取り拒否を確認する。
+- ホーム配下の `.env`（`~/**/.env`）の読み取り拒否は設定済みで、実動作は未確認。
 - アプリや基盤の構築は今回の対象外。

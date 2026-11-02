@@ -9,7 +9,7 @@ help: ## ターゲット一覧を表示する
 
 check: ## 開発環境の定義と差分の空白を検証する
 	nix flake check
-	git diff --check
+	git diff --check HEAD
 
 sandbox-check: ## CLIのサンドボックスに必要なツールとユーザー名前空間を確認する
 	command -v bwrap
