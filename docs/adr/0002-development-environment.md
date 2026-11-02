@@ -33,4 +33,5 @@ ADR-0001で、フロントエンドはReact + TypeScript、APIはTypeScript + Ho
 
 - 開発者はNixとdirenvを導入し、初回に `direnv allow` を実行する。CLIはdevShellに入った状態で起動する。
 - Lambdaで使うNode.jsランタイムとのバージョン整合は、Issue #4の構築時に確認する。
+- 社内でmacOSを使って開発する人はいないため、macOS（`aarch64-darwin`・`x86_64-darwin`）は `nix flake check --all-systems` で定義を評価できることだけを確認し、実機での動作確認はしない。nixpkgs 26.05は `x86_64-darwin` をサポートする最後のリリースである。
 - テスト・Lint等のツールやディレクトリ構成は、Issue #4の実装に合わせて追加する。

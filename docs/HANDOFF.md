@@ -6,7 +6,7 @@ CLIを切り替えるときに、最新の引き継ぎ1件へ更新する。共�
 
 - 対象: 開発支援ツール間でのコンテキスト共有、Issue #2の技術構成の検討、Issue #3の開発環境構築。
 - ブランチ: `docs/issue-2-technical-plan`。作業場所は既存のリポジトリルートを使う。
-- 変更: ADR-0001に技術構成・費用比較・採用理由・未確定事項を整理し、README・MVPから参照する。共有ルール・設定・個人設定のGit除外とCodeRabbitの日本語設定を整備した。Nix Flakes + direnvの開発環境（Node.js 24、pnpm、bubblewrap・socat）を追加し、[ADR-0002](adr/0002-development-environment.md) に記録した。
+- 変更: ADR-0001に技術構成・費用比較・採用理由・未確定事項を整理し、README・MVPから参照する。共有ルール・設定・個人設定のGit除外とCodeRabbitの日本語設定を整備した。Nix Flakes + direnvの開発環境（Node.js 24、pnpm、bubblewrap・socat）を追加し、[ADR-0002](adr/0002-development-environment.md) に記録した。コアとPoCアプリの分離を [ADR-0003](adr/0003-separate-core-from-poc-app.md) に記録し、音声入力をMVPの完了条件に追加した。
 - 方針: 進行中の作業は現在のブランチ・作業ディレクトリで継続し、別worktreeは明示的な依頼がある場合のみ作成する。
 - 状態: 初期整備と技術構成の文書化は完了。現在のブランチからmain向けPRでレビューする。HTTP入口はAPI Gateway（HTTP API）の採用を決定し、Issue #2の構成判断はすべて決定した。
 
