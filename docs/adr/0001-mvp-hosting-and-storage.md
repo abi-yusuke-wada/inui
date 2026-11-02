@@ -70,6 +70,23 @@ flowchart LR
 
 MCPの公開Tool・入出力・通信方式・SDK対応版と、JEVの具体的な製品・SDK・接続先はIssue #4で具体化する。MCPにはStreamable HTTP等の標準トランスポートがあるが、今回は通信方式やSDKを確定しない。認証・認可と引数の検証は、通常の受付APIとMCPの双方でホスト側に適用する。[MCPの通信方式](https://modelcontextprotocol.io/specification/2026-07-28/basic/transports)
 
+#### 判断理由と比較した案
+
+| 案 | 費用 | 評価 |
+| --- | --- | --- |
+| A. inuiがMCPインターフェースを提供し、JEVはホスト側から実行時に呼び出す（採用） | MCPはAPIと同じLambda内で提供する想定で、追加の基盤費用は見込まない（配置はIssue #4で確定）。JEVの利用料は合意どおり別途相談で、今回の比較の対象外 | ブラウザにAIを置かずThin Clientを保てる。JEVの判断結果をホスト側で許可リストと照合してから業務処理を実行できる |
+| B. ブラウザからJEV・LLMを直接呼び出す | 追加の基盤費用はない | ブラウザにAI処理と接続用の認証情報が載り、Thin Clientとホスト側制御の原則に反するため不採用 |
+| C. JEVに業務API・DBを直接操作させる | 追加の基盤費用はない | AIの判断結果を検証する前に業務処理や保存が実行され得るため不採用 |
+
+影響は次のとおり。
+
+- 通信経路は、ブラウザ → API Gateway → Lambda（ホスト）→ JEVとなる。ブラウザはJEVと直接通信しない。
+- JEVの応答時間は、1回の応答の30秒上限に含まれる。
+- JEVの障害・タイムアウト時は業務処理・保存を行わず、失敗を案内して再試行できる状態にする（[MVP](../../MVP.md) の失敗ケース）。
+- JEVとの接続と判断結果の検証は、PoCアプリから独立したコアに置く（[ADR-0003](0003-separate-core-from-poc-app.md)）。
+
+決定済みなのは、MCPをinuiが提供すること、JEVをホスト側から呼び出すこと、判断結果の検証をホスト側で行うことである。公開Tool、入出力、通信方式・SDK、JEVの具体的な製品・接続先、MCPを利用する側の構成は未決定で、Issue #4で具体化する。
+
 ### フロントエンドのホスティング
 
 SSRの要件は現時点でなく、事前実装済みのReact UIをAmplify Hostingで静的配信する。CDNとそのキャッシュ管理はAmplify Hostingが提供するCloudFrontに任せ、別のCDNや自前のCloudFrontディストリビューションは追加しない。今回不採用としたのはS3 + CloudFrontを個別に構築・運用する案である。[AmplifyのCDN・キャッシュ管理](https://docs.aws.amazon.com/amplify/latest/userguide/caching.html)
