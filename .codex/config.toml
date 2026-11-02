@@ -1,2 +1,20 @@
 approval_policy = "on-request"
-sandbox_mode = "workspace-write"
+default_permissions = "inui"
+
+[permissions.inui]
+description = "作業領域の編集を許可し、機密ファイルの読み書きを拒否する"
+extends = ":workspace"
+
+[permissions.inui.filesystem]
+# Linux / WSLの再帰glob展開は、プロセス起動時にこの深さまで行う。
+glob_scan_max_depth = 8
+"~/.aws" = "deny"
+"~/**/.env" = "deny"
+"~/**/.env.*" = "deny"
+
+[permissions.inui.filesystem.":workspace_roots"]
+".env" = "deny"
+".env.*" = "deny"
+".aws" = "deny"
+"**/.env" = "deny"
+"**/.env.*" = "deny"
