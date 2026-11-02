@@ -8,7 +8,7 @@
 
 - 対象はアンケート回答・指定日の予定参照・個人の表示設定変更の3機能。少人数の研究用MVPを小さく作り切る。
 - フロントエンドはReactとTypeScript、APIはTypeScriptとHonoを使う。DBはRDBとしてTurso Cloudを採用する。
-- CI/CDにはGitHub Actionsを使い、デプロイ用コンテナイメージの保管先にはAmazon ECRを利用する方針とする。
+- CI/CDにはGitHub Actionsを使い、Lambdaはコンテナイメージで配布し、その保管先にAmazon ECRを利用する（配布形式の決定: 2026-11-02）。
 - inuiがMCPインターフェースを提供する。JEVはinuiのホスト処理から実行時に呼び出す対象とし、外部リソースを使う前提を維持する。
 - 基盤費用は会社の個人AWS利用枠で、月2,000円程度を目安にする。正確な利用可能額・既存使用量は未確認。
 - LLM・JEVなどのAPIキー利用料は別途相談とし、今回の基盤費用比較から除外する。DB・配信・ログ・Gatewayなどの基盤費用は比較に含める。
@@ -121,13 +121,18 @@ Amplifyの費用例は、SSRなし・標準ビルド3分/回・配信1 GB/月・
 
 CI/CDにはGitHub Actionsを採用する。Google CloudのArtifact Registryでコンテナを保管する用途に対応するAWSサービスとして、Amazon ECRを利用する方針とする。ECRはDocker / OCIイメージ等の保管先であり、実際の処理はLambda等の実行先が担う。Kongのイメージ配布は、自己管理を採用する場合に限って具体化する。[ECRの役割](https://docs.aws.amazon.com/AmazonECR/latest/userguide/what-is-ecr.html)
 
-デプロイ用コンテナでは、`main` 更新を起点にGitHub Actionsで検証・イメージ作成 → ECRへ配置 → 実行先を更新する流れを基本案とする。Lambdaをコンテナ方式にする場合は、関数と同じAWSリージョンのECRが必要。Lambdaの配布形式・Kong用イメージの作り方・バージョン識別・保持数・更新手順は実装時に具体化する。[Lambdaのコンテナ配布](https://docs.aws.amazon.com/lambda/latest/dg/images-create.html)
+2026-11-02、Lambdaの配布形式をコンテナイメージに決定した。`main` 更新を起点にGitHub Actionsで検証・イメージ作成 → ECRへ配置 → Lambdaを更新する流れを基本とする。コンテナイメージで配布するLambdaには、関数と同じAWSリージョンのECRが必要。zip配布は採用せず、Lambda用のECRを使わない構成は取らない。イメージの作り方（ベースイメージ・Dockerfile）・バージョン識別・保持数・更新手順は実装時に具体化する。
+
+| 配布形式 | 費用 | 評価 |
+| --- | --- | --- |
+| コンテナイメージ + ECR（採用） | ECRの保管料（1 GBで約0.10 USD/月）と転送等 | 合意済みのECR方針と一致し、ローカルと同じイメージで動作を確認できる。依存関係が増えても上限（10 GB）に余裕がある。Dockerfileの管理とイメージ作成の手間が増える |
+| zip | ECRの費用なし | HonoのLambda向け構成で一般的で手軽だが、ECRの方針と合わず、パッケージの上限（展開後250 MB）がある |[Lambdaのコンテナ配布](https://docs.aws.amazon.com/lambda/latest/dg/images-create.html)
 
 フロントのAmplify HostingとmainのGit連携による配信方針は維持する。GitHub Actionsは検証、Lambdaの配布、API入口の設定・更新を中心に使い、フロントの配信を二重に起動しない分担を構築時に設定する。Kongを自己管理する場合の配布は追加の対象として扱う。AWSへの認証はOIDCによる一時的な認証を候補とし、IAMの権限・対象リポジトリ・ブランチ等の条件は実装時に決める。アプリ利用者向けのGitHub OAuthとは別の役割である。[GitHub ActionsとAWSのOIDC連携](https://docs.github.com/en/actions/how-tos/secure-your-work/security-harden-deployments/oidc-in-aws)
 
 ECRの料金は保存量・転送等に応じる。公式のPrivate ECR料金例は保存0.10 USD/GB月で、合計1 GBの保持なら保存分は0.10 USD/月。これはGatewayやLambdaを動かす料金とは別で、無料枠・実際の配置リージョン・保持するイメージ総量と転送条件を確認する。GitHub ActionsはGitHub側の利用枠・料金であり、AWSの利用枠とは分けて確認する。追加費用ゼロとは仮定しない。[ECR料金](https://aws.amazon.com/ecr/pricing/)、[GitHub Actionsの課金](https://docs.github.com/en/billing/concepts/product-billing/github-actions)
 
-GitHub ActionsとECRの利用方針は合意済みとする。クラウドリソースの定義・構築に使う具体的なツール、ワークフロー・IAM・更新コマンドは後続で具体化する。今回はECRリポジトリ、イメージ、CI/CD、インフラを作成しない。
+GitHub Actions、Lambdaのコンテナ配布とECRの利用は決定済みとする。クラウドリソースの定義・構築に使う具体的なツール、ワークフロー・IAM・更新コマンドは後続で具体化する。今回はECRリポジトリ、イメージ、CI/CD、インフラを作成しない。
 
 ### Gateway（API Gateway HTTP APIを採用）
 
@@ -226,7 +231,7 @@ GitHubの所属はアプリへ入れる人の条件とする。現行MVPは検�
 
 ## 決定と影響
 
-フロント配信はReact + TypeScript / Amplify Hosting、APIはTypeScript + Hono / AWS Lambda、RDBはTurso Cloudを採用する。CI/CDはGitHub Actions、デプロイ用コンテナの保管はECRを利用する方針とし、構築・CI・デプロイの自動化で研究に使える時間を確保する。inuiがMCPインターフェースを提供し、JEVはホスト処理が実行時に呼び出す。HTTP入口はAWS API Gateway（HTTP API）を採用し、1回の応答を30秒以内に収めることを設計上の上限とする。Kong Gateway OSSは採用せず、Konnectは保留する。
+フロント配信はReact + TypeScript / Amplify Hosting、APIはTypeScript + Hono / AWS Lambda、RDBはTurso Cloudを採用する。CI/CDはGitHub Actions、Lambdaはコンテナイメージで配布してECRに保管し、構築・CI・デプロイの自動化で研究に使える時間を確保する。inuiがMCPインターフェースを提供し、JEVはホスト処理が実行時に呼び出す。HTTP入口はAWS API Gateway（HTTP API）を採用し、1回の応答を30秒以内に収めることを設計上の上限とする。Kong Gateway OSSは採用せず、Konnectは保留する。
 
 CDNはAmplify Hostingに任せる。配布先はインターネット経由の社内コミュニティとし、GitHub Organizationへの所属をアプリ側で確認して業務UI・APIの利用を許可する。このアクセス制御のための専用VPC・VPNや基盤側の認証サービスは採用しない。
 
@@ -244,7 +249,7 @@ Issue #2では、MVPに使う技術・構成・採用理由と実装へ進める
 | --- | --- |
 | HTTP入口の方式と費用 | 決定。AWS API Gateway（HTTP API）+ Lambdaを採用し、30秒を応答時間の上限とする。Kongは採用せず、稼働先の選定は不要。応答時間の実測はIssue #4で行う |
 | JEV・MCPの役割と接続 | 役割は合意済み。inuiがMCPインターフェースを提供し、JEVはホスト処理から実行時に呼び出す。JEV / Choiceの具体的な接続仕様、公開Tool、通信方式・SDKの選定と実際の接続検証はIssue #4で扱う |
-| 基盤の構築・デプロイ自動化の方式 | GitHub Actionsを採用し、コンテナイメージ保管にECRを利用する基本方針は合意済み。Lambdaと採用するAPI入口のリソース定義・構築ツール、配布形式とワークフローの詳細は後続で具体化する。フロントはAmplify HostingのGit連携を維持する |
+| 基盤の構築・デプロイ自動化の方式 | GitHub Actionsを採用し、Lambdaはコンテナイメージで配布してECRに保管することを決定済み。Lambdaと採用するAPI入口のリソース定義・構築ツール、イメージの作り方とワークフローの詳細は後続で具体化する。フロントはAmplify HostingのGit連携を維持する |
 
 Issue #2で扱う構成判断はすべて決定した。MCP・JEVの役割とGitHub Actions・ECRの基本方針は維持し、Konnectの利用条件や移行時期は将来の検討へ引き継ぐ。実際のURL・ルート・CORS、API呼び出しやTool実装、個々のCIジョブやDB更新手順は後続で具体化する。
 
