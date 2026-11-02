@@ -1,0 +1,208 @@
+<!doctype html>
+<html lang="ja" data-theme="light">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>inui グループウェア風モックアップ</title>
+  <link rel="stylesheet" href="groupware.css">
+</head>
+<body>
+  <!-- グループウェア風の別案。業務UI・判定ロジックは app.js を index.html と共有し、見た目だけを変える。 -->
+  <svg width="0" height="0" style="position:absolute" aria-hidden="true">
+    <defs>
+      <symbol id="i-calendar" viewBox="0 0 24 24"><rect x="3" y="5" width="18" height="16" rx="2" fill="#fff"/><rect x="3" y="5" width="18" height="5" rx="2" fill="#d9483b"/><text x="12" y="19" text-anchor="middle" font-size="8" font-weight="700" fill="#333">2</text></symbol>
+      <symbol id="i-survey" viewBox="0 0 24 24"><rect x="5" y="3" width="14" height="18" rx="2" fill="#fff"/><path d="M8 8h8M8 12h8M8 16h5" stroke="#3a7bd5" stroke-width="1.8" stroke-linecap="round"/></symbol>
+      <symbol id="i-settings" viewBox="0 0 24 24"><circle cx="12" cy="12" r="7" fill="none" stroke="#fff" stroke-width="3" stroke-dasharray="3 2.5"/><circle cx="12" cy="12" r="3" fill="#fff"/></symbol>
+      <symbol id="i-help" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9" fill="#fff"/><text x="12" y="16.5" text-anchor="middle" font-size="12" font-weight="700" fill="#2c8a4a">?</text></symbol>
+    </defs>
+  </svg>
+
+  <header class="gw-header">
+    <div class="gw-brand">
+      <span class="brand-mark" aria-hidden="true">i</span>
+      <span class="brand-name">inui</span>
+    </div>
+    <form id="intent-form" class="gw-intent" autocomplete="off">
+      <label for="intent-input" class="visually-hidden">やりたいことを入力</label>
+      <input id="intent-input" class="intent-input" type="text"
+             placeholder="やりたいことを入力（例：明日の予定を見せて）" maxlength="200">
+      <button type="submit" class="btn btn-primary" id="intent-submit">実行</button>
+    </form>
+    <div class="gw-user">
+      <span>2026年11月2日（月）09:00</span>
+      <span class="gw-avatar" aria-hidden="true">検</span>
+      <span>検証ユーザー</span>
+      <button type="button" class="help-toggle" id="help-toggle"
+              aria-controls="help-panel" aria-expanded="false">
+        <span class="help-toggle-icon" aria-hidden="true">?</span>ヘルプ
+      </button>
+    </div>
+  </header>
+
+  <nav class="gw-tabs" aria-label="ポータル">
+    <span class="gw-tab is-active">ポータル</span>
+  </nav>
+
+  <div class="gw-layout">
+    <nav class="gw-rail" aria-label="機能">
+      <button type="button" class="rail-btn" data-example="今日のスケジュールを確認したい" title="スケジュール">
+        <span class="app-icon icon-blue"><svg><use href="#i-calendar"/></svg></span>
+      </button>
+      <button type="button" class="rail-btn" data-example="アンケートに回答したい" title="アンケート">
+        <span class="app-icon icon-orange"><svg><use href="#i-survey"/></svg></span>
+      </button>
+      <button type="button" class="rail-btn" data-example="表示設定を変えたい" title="表示設定">
+        <span class="app-icon icon-gray"><svg><use href="#i-settings"/></svg></span>
+      </button>
+    </nav>
+
+    <main class="gw-main">
+      <section id="result" class="result" aria-live="polite"></section>
+
+      <div class="portal">
+        <div class="portal-col">
+          <section class="panel">
+            <h2 class="panel-title">メニュー</h2>
+            <div class="panel-body menu-grid">
+              <button type="button" class="menu-item" data-example="今日のスケジュールを確認したい">
+                <span class="app-icon icon-blue"><svg><use href="#i-calendar"/></svg></span>スケジュール
+              </button>
+              <button type="button" class="menu-item" data-example="アンケートに回答したい">
+                <span class="app-icon icon-orange"><svg><use href="#i-survey"/></svg></span>アンケート
+              </button>
+              <button type="button" class="menu-item" data-example="表示設定を変えたい">
+                <span class="app-icon icon-gray"><svg><use href="#i-settings"/></svg></span>表示設定
+              </button>
+            </div>
+          </section>
+
+          <section class="panel">
+            <h2 class="panel-title">スケジュール（個人週間）</h2>
+            <div class="panel-body">
+              <p class="week-range">2026/11/02 ～ 2026/11/08</p>
+              <div class="week" role="table" aria-label="週間予定">
+                <div class="week-row" role="row">
+                  <button type="button" class="week-day is-today" role="columnheader" data-example="今日の予定を見たい">2(月)</button>
+                  <button type="button" class="week-day" role="columnheader" data-example="明日の予定を見せて">3(火)</button>
+                  <button type="button" class="week-day" role="columnheader" data-example="11月4日の予定を見たい">4(水)</button>
+                  <span class="week-day" role="columnheader">5(木)</span>
+                  <span class="week-day" role="columnheader">6(金)</span>
+                  <span class="week-day is-sat" role="columnheader">7(土)</span>
+                  <span class="week-day is-sun" role="columnheader">8(日)</span>
+                </div>
+                <div class="week-row" role="row">
+                  <div class="week-cell is-today" role="cell"><span class="ev ev-orange">10:00-10:30<br>定例会議</span></div>
+                  <div class="week-cell" role="cell"><span class="ev ev-green">10:00-10:30<br>朝会</span><span class="ev ev-blue">14:00-15:00<br>MVP検証打ち合わせ</span></div>
+                  <div class="week-cell" role="cell"></div>
+                  <div class="week-cell" role="cell"></div>
+                  <div class="week-cell" role="cell"></div>
+                  <div class="week-cell is-sat" role="cell"></div>
+                  <div class="week-cell is-sun" role="cell"></div>
+                </div>
+              </div>
+              <p class="panel-note">日付をクリックすると、その日の予定を開きます。</p>
+            </div>
+          </section>
+        </div>
+
+        <div class="portal-col">
+          <section class="panel panel-accent">
+            <h2 class="panel-title">お知らせ</h2>
+            <div class="panel-body">
+              <p class="info-head">inui利用体験アンケートのお願い</p>
+              <p>上部の入力欄に「アンケートに回答したい」と入力すると、回答フォームが開きます。</p>
+            </div>
+          </section>
+          <section class="panel">
+            <h2 class="panel-title">inuiとは</h2>
+            <div class="panel-body">
+              <p>メニューを探さなくても、やりたいことを文章で入力するだけで必要な画面を開けます。</p>
+              <div class="examples">
+                <button type="button" class="chip" data-example="明日の予定を見せて">明日の予定を見せて</button>
+                <button type="button" class="chip" data-example="見た目の設定を開いて">見た目の設定を開いて</button>
+              </div>
+            </div>
+          </section>
+        </div>
+      </div>
+    </main>
+  </div>
+
+  <!-- オンボーディング用のヘルプサイドバー（index.html と同じ内容） -->
+  <aside id="help-panel" class="help-panel" aria-labelledby="help-title" hidden>
+    <div class="help-head">
+      <h2 id="help-title" class="help-title">inuiの使い方</h2>
+      <button type="button" class="help-close" id="help-close" aria-label="ヘルプを閉じる">×</button>
+    </div>
+    <div class="help-body">
+      <p class="help-lead">やりたいことを文章で入力すると、必要な画面がすぐに表示されます。メニューを探す必要はありません。</p>
+      <section class="help-section">
+        <h3>使い方</h3>
+        <ol class="help-steps">
+          <li><span class="step-no">1</span><div><strong>やりたいことを入力</strong><p>上部の入力欄に「明日の予定を見せて」のように入力して実行します。</p></div></li>
+          <li><span class="step-no">2</span><div><strong>表示された画面で操作</strong><p>内容を確認し、必要に応じて選択・変更します。</p></div></li>
+          <li><span class="step-no">3</span><div><strong>保存ボタンで確定</strong><p>入力しただけでは保存されません。保存は必ずボタンで確定します。</p></div></li>
+        </ol>
+      </section>
+      <section class="help-section">
+        <h3>できること</h3>
+        <dl class="help-features">
+          <dt>アンケートに回答する</dt>
+          <dd><button type="button" class="chip" data-example="アンケートに回答したい">アンケートに回答したい</button></dd>
+          <dt>指定した日の予定を確認する</dt>
+          <dd>
+            <button type="button" class="chip" data-example="今日のスケジュールを確認したい">今日のスケジュールを確認したい</button>
+            <button type="button" class="chip" data-example="2026年11月4日の予定を見たい">2026年11月4日の予定を見たい</button>
+          </dd>
+          <dt>表示テーマを変更する</dt>
+          <dd><button type="button" class="chip" data-example="見た目の設定を開いて">見た目の設定を開いて</button></dd>
+        </dl>
+      </section>
+      <section class="help-section">
+        <h3>できないこと</h3>
+        <ul class="help-list">
+          <li>予定の登録・編集・削除</li>
+          <li>アンケートの作成・集計</li>
+          <li>文書の検索・管理</li>
+        </ul>
+      </section>
+      <section class="help-section">
+        <h3>うまく表示されないときは</h3>
+        <ul class="help-list">
+          <li>「何を」したいかを含めて入力してください。</li>
+          <li>予定は「今日」「明日」「11月4日」のように日付を添えてください。</li>
+        </ul>
+      </section>
+    </div>
+  </aside>
+
+  <!-- モック専用：状態を切り替えてデザインを確認するパネル -->
+  <aside class="mock-panel" aria-label="モック状態の切り替え">
+    <details>
+      <summary>モック状態</summary>
+      <div class="mock-grid">
+        <span class="mock-label">デザイン案</span>
+        <a href="index.html">シンプル案</a>
+        <a href="groupware.html" aria-current="page">グループウェア風</a>
+        <span class="mock-label">業務UI</span>
+        <button type="button" data-mock="アンケートに回答したい">アンケート</button>
+        <button type="button" data-mock="今日のスケジュールを確認したい">予定（今日）</button>
+        <button type="button" data-mock="明日の予定を見せて">予定（明日）</button>
+        <button type="button" data-mock="2026年11月4日の予定を見たい">予定（なし）</button>
+        <button type="button" data-mock="表示設定を変えたい">表示設定</button>
+        <span class="mock-label">案内・失敗</span>
+        <button type="button" data-mock="文書を探したい">対象外の機能</button>
+        <button type="button" data-mock="予定を削除して">対象外の操作</button>
+        <button type="button" data-mock="開いて">特定できない</button>
+        <button type="button" data-mock="予定を見たい">日付が必要</button>
+        <button type="button" data-mock-state="rejected">ホスト側で拒否</button>
+        <button type="button" data-mock-state="network">通信失敗</button>
+        <button type="button" data-mock-state="loading">判定中</button>
+        <button type="button" data-mock-state="empty">初期状態</button>
+      </div>
+    </details>
+  </aside>
+
+  <script src="app.js"></script>
+</body>
+</html>
