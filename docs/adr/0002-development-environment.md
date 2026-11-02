@@ -72,6 +72,7 @@ Codex CLI 0.165.0 / LinuxのNix環境で、プロファイルの強制指定を�
 決定内容は次のとおり。追加の費用はなく、承認の手間が増える。
 
 - Codex: 通信の許可を削除し、ネットワーク無効の既定値に戻す。GitHubのトークンを含む `~/.config/gh` と、作業に不要な認証情報（`~/.ssh`・`~/.gnupg`・`~/.netrc`・`~/.git-credentials`、各CLIの認証ファイル `~/.claude/.credentials.json`・`~/.codex/auth.json`）の読み取りを拒否する。`codex sandbox` で、存在する対象の読み取りと `api.github.com` への通信が拒否され、通常ファイルは読めることを確認した（内容は出力していない）。
+- Codex: コマンドに渡す環境変数を `shell_environment_policy.inherit = "core"` で基本的なもの（PATH・HOME等）に限定する。Codex CLI 0.165.0の既定は全環境変数の継承で、名前に `TOKEN` を含む変数も除外されないため、`GH_TOKEN` 等を環境変数で与えると、ファイルの拒否や通信の無効化では防げず、コマンドの出力からモデルに渡り得る。確認は、利用者のシェルでダミーの値を設定して起動し（例: `GH_TOKEN=dummy codex`）、コマンド内で `GH_TOKEN` が未設定になることを見る。この確認は未実施。
 - Claude: 共有設定で `~/.config/gh` の読み取り・編集を拒否する。`gh` と `git push` はトークンを使うため、サンドボックスの対象外（`excludedCommands`）として実行し、`ask` で毎回利用者の承認を求める。個人設定の確認なしの許可は削除する。
 - PRへの返信・レビュー依頼等のGitHub操作はClaudeが担当し、Codexは使わない。
 - GitHubのトークンは、このリポジトリだけを対象とする権限の狭いトークンに置き換えることを推奨する。

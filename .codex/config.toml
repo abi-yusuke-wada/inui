@@ -1,6 +1,10 @@
 approval_policy = "on-request"
 default_permissions = "inui"
 
+# コマンドに渡す環境変数を基本的なもの（PATH・HOME等）に限定し、GH_TOKEN等の認証情報を渡さない。
+[shell_environment_policy]
+inherit = "core"
+
 [permissions.inui]
 description = "作業領域の編集を許可し、機密ファイルの読み書きを拒否する"
 extends = ":workspace"
