@@ -12,7 +12,11 @@
       "Edit(./.env)",
       "Edit(./.env.*)",
       "Edit(./.aws/**)",
-      "Edit(~/.aws/**)"
+      "Edit(~/.aws/**)",
+      "Read(**/.env)",
+      "Read(**/.env.*)",
+      "Edit(**/.env)",
+      "Edit(**/.env.*)"
     ]
   },
   "sandbox": {

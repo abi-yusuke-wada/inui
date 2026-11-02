@@ -25,6 +25,8 @@ inuiでは、自然言語からユーザーのIntentを判定し、必要な業�
 
 [Nix](https://nixos.org/)（Flakes有効）と [direnv](https://direnv.net/) を利用します。構成と判断理由は [ADR-0002](docs/adr/0002-development-environment.md) にまとめます。
 
+`.envrc` の `use flake` を使うため、`use flake` に対応したdirenvが必要です。Ubuntu 22.04の標準パッケージ（direnv 2.25.2）など古い版は対応していないため、`nix profile install nixpkgs#direnv` でNixから導入してください（direnv 2.37.1で動作確認済み）。導入済みの版は `direnv version` で確認できます。
+
 初回は、使用するシェルにdirenvのフックを設定してから `direnv allow` を実行します。フック設定後は、ディレクトリ移動時に開発環境が現在のシェルへ自動で反映されます。他のシェルの設定は [direnvのドキュメント](https://direnv.net/docs/hook.html) を参照してください。
 
 ```sh
