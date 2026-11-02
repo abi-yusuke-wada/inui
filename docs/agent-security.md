@@ -2,7 +2,7 @@
 
 inuiでCodex CLIとClaude Codeを使うときの権限設定・起動方法・検証結果・残るリスクをまとめる。共通の行動指針は [AGENTS.md](../AGENTS.md)、判断理由は [ADR-0002](adr/0002-development-environment.md) を参照する。
 
-確認時点（2026-11-02）の環境: Codex CLI 0.165.0、Claude Code 2.1.316、Ubuntu 22.04.5 LTS on WSL2（カーネル 6.18.54.1-microsoft-standard-WSL2）。DevContainerは使っていない。
+確認時点（2026-11-02）の環境: Codex CLI 0.165.0（2026-11-03に0.166.0へ自動更新）、Claude Code 2.1.316、Ubuntu 22.04.5 LTS on WSL2（カーネル 6.18.54.1-microsoft-standard-WSL2）。DevContainerは使っていない。
 
 各対策の状態は次の4つで区別する。
 
@@ -41,7 +41,7 @@ inuiでCodex CLIとClaude Codeを使うときの権限設定・起動方法・�
 設定: [.claude/settings.json](../.claude/settings.json)（共有）、`.claude/settings.local.json`（個人、Git管理外）
 
 - `permissions.defaultMode = "default"`。ファイル編集は承認を求める。自動編集は段階Bで明示的に指定したときだけ使う。Bashは、`sandbox.autoAllowBashIfSandboxed` の既定値（`true`）により、サンドボックス内で実行できるコマンドは承認なしで実行される。承認を求めるのは、`ask` に一致するコマンド（`gh`・`git push` 等）、サンドボックス外での実行が必要なコマンド、拒否されていないサンドボックス外の通信先への接続である。
-- `sandbox.enabled`・`failIfUnavailable`・`allowUnsandboxedCommands: false`。Bashは常にサンドボックス内で実行し、サンドボックスが使えなければ起動しない。サンドボックスを外した再実行はできない。
+- `sandbox.enabled`・`failIfUnavailable`・`allowUnsandboxedCommands: false`。Bashはサンドボックス内で実行し、サンドボックスが使えなければ起動しない。サンドボックスを外した再実行はできない。例外は `excludedCommands` に指定した `gh`・`git push` で、承認後にホスト上（サンドボックス外）で実行される。
 - `permissions.blockWritesOutsideWorkingDirectories`。ファイル操作ツール（Write・Edit等）による作業領域外への書き込みと、CLIの設定ファイルへの書き込みを拒否する。
 - `Read`・`Edit` の拒否ルールで、Codexと同じ機密ファイル・認証情報を対象にする。拒否ルールはサンドボックスの読み取り拒否にも反映される。
 - `gh` と `git push` はGitHubのトークンを使うため、サンドボックスの対象外（`excludedCommands`）とし、`ask` で毎回承認を求める。パイプ等で他のコマンドと組み合わせた場合はサンドボックス内で実行され、トークンを読めないため失敗する。`git -C <dir> push` のように `git push` で始まらない書き方や、引数にバッククォート・リダイレクト記号を含む `gh` もサンドボックス内で実行されるため、コマンドは単独で書き、本文は `-F body=@<ファイル>` で渡す。
@@ -124,21 +124,20 @@ ContentsのWrite権限があればブランチの更新（マージを含む）�
 
 ### Ruleset案（`main`）
 
-GitHubの「Settings → Rules → Rulesets → New branch ruleset」で作成するか、内容を確認したうえで `gh api -X POST repos/abi-yusuke-wada/inui/rulesets --input ruleset.json` で登録する（AIは実行しない）。
+GitHubの「Settings → Rules → Rulesets → New branch ruleset」で作成するか、内容を確認したうえで、Rulesetごとに `gh api -X POST repos/abi-yusuke-wada/inui/rulesets --input <ファイル>` で登録する（AIは実行しない）。
+
+レビュー必須のルールにバイパスが及ばないよう、2つのRulesetに分ける。
+
+1つ目（`main-review`）はPRとコードオーナーによる承認を必須にする。バイパスする主体は設定しない。
 
 ```json
 {
-  "name": "protect-main",
+  "name": "main-review",
   "target": "branch",
   "enforcement": "active",
   "conditions": { "ref_name": { "include": ["~DEFAULT_BRANCH"], "exclude": [] } },
-  "bypass_actors": [
-    { "actor_id": 5, "actor_type": "RepositoryRole", "bypass_mode": "pull_request" }
-  ],
+  "bypass_actors": [],
   "rules": [
-    { "type": "deletion" },
-    { "type": "non_fast_forward" },
-    { "type": "update" },
     {
       "type": "pull_request",
       "parameters": {
@@ -153,9 +152,28 @@ GitHubの「Settings → Rules → Rulesets → New branch ruleset」で作成�
 }
 ```
 
-- `deletion`・`non_fast_forward`: `main` の削除とforce pushを禁止する。
-- `update` と `bypass_actors`: `main` を更新（マージを含む）できるのを、管理者ロール（`actor_id: 5`）がPR経由で行う場合に限る。AIの認証主体には管理者権限もバイパス権限も与えない。
-- `pull_request`: PR経由の変更と、コードオーナーによる承認を必須にする。
+2つ目（`main-update`）は `main` の削除・force push・更新を制限し、管理者ロールだけがPR経由で更新（マージ）できるようにする。
+
+```json
+{
+  "name": "main-update",
+  "target": "branch",
+  "enforcement": "active",
+  "conditions": { "ref_name": { "include": ["~DEFAULT_BRANCH"], "exclude": [] } },
+  "bypass_actors": [
+    { "actor_id": 5, "actor_type": "RepositoryRole", "bypass_mode": "pull_request" }
+  ],
+  "rules": [
+    { "type": "deletion" },
+    { "type": "non_fast_forward" },
+    { "type": "update" }
+  ]
+}
+```
+
+- `main-review`: PR経由の変更と、コードオーナーによる承認を必須にする。バイパスを設定しないため、管理者でも承認なしではマージできない。
+- `main-update` の `deletion`・`non_fast_forward`: `main` の削除とforce pushを禁止する。
+- `main-update` の `update` と `bypass_actors`: `main` を更新（マージを含む）できるのを、管理者ロール（`actor_id: 5`）がPR経由で行う場合に限る。バイパスはこのRulesetのルールにだけ及び、`main-review` の承認必須には及ばない。AIの認証主体には管理者権限もバイパス権限も与えない。
 - 必須のCIチェック（`required_status_checks`）は、CIを作成した後に追加する。
 - 制約: 利用者本人のトークンをAIが使い続ける場合、AIは管理者として扱われ、上記の制限をバイパスできる。また、PRの作成者は自分のPRを承認できないため、AIが利用者のアカウントでPRを作るとレビュー必須の条件を満たせなくなる。いずれも、反映用の認証主体を分離してから適用する。個人アカウントのリポジトリでのロール指定は、適用時に画面で確認する。
 

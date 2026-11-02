@@ -6,6 +6,9 @@ approval_policy = "on-request"
 default_permissions = "inui-readonly"
 
 # コマンドに渡す環境変数を基本的なもの（PATH・HOME等）に限定し、GH_TOKEN等の認証情報を渡さない。
+# ログインシェルで起動すると起動ファイル（~/.bashrc等）が認証情報を再設定し得るため、無効にする。
+allow_login_shell = false
+
 [shell_environment_policy]
 inherit = "core"
 
