@@ -1,6 +1,6 @@
 approval_policy = "on-request"
-# 既定は読み取り専用（調査用）。実装時のみ、セッション単位で inui-dev を指定する:
-#   codex -c 'default_permissions="inui-dev"'
+# 既定は読み取り専用（調査用）。実装時のみ、セッション内の /permissions で inui-dev に切り替える。
+# 起動オプション -c で default_permissions を指定すると、ワークスペースの要件設定により起動できない。
 # 旧 sandbox_mode・sandbox_workspace_write は権限プロファイルと併用できないため使わない。
 # どちらのプロファイルもネットワークの許可を持たない（既定で無効）。
 default_permissions = "inui-readonly"

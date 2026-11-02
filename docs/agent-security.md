@@ -18,17 +18,17 @@ inuiでCodex CLIとClaude Codeを使うときの権限設定・起動方法・�
 | 段階 | 権限 | Codex | Claude Code |
 | --- | --- | --- | --- |
 | A. 調査 | 読み取り専用 | `codex`（既定のプロファイル `inui-readonly`） | `claude --permission-mode plan` |
-| B. 実装・テスト | 作業領域への書き込み | `codex -c 'default_permissions="inui-dev"'` | `claude`（既定）。編集を自動で許可する場合は `claude --permission-mode acceptEdits` |
+| B. 実装・テスト | 作業領域への書き込み | `codex` で起動し、`/permissions` で `inui-dev` に切り替える | `claude`（既定）。編集を自動で許可する場合は `claude --permission-mode acceptEdits` |
 | C. GitHubへの反映 | 制限付きの書き込み | 使わない（通信不可） | `gh`・`git push` を毎回承認して実行する |
 
-どちらのCLIも、devShellに入った状態（direnvまたは `nix develop`）で起動する。Codexは起動後に `/status` で権限が `inui-readonly`・`inui-dev` になっていることを確認してから作業する。`-s/--sandbox`・`--full-auto` 等の起動オプションやエイリアスがあると、プロジェクトの権限プロファイルより優先される場合がある（2026-11-02、権限プロファイルが適用されず `workspace-write` で起動したセッションでは、GitHubのトークン等を読み取れることを確認した）。調査で整理した作業スコープをユーザーと合意してから、段階Bで起動し直す。
+どちらのCLIも、devShellに入った状態（direnvまたは `nix develop`）で起動する。Codexは起動後と切り替え後に `/status` で権限が `inui-readonly`・`inui-dev` になっていることを確認してから作業する。起動オプション `-c 'default_permissions="…"'` での指定は、ワークスペースの要件設定の読み込みに失敗して起動できない（2026-11-02確認）。`codex` だけで起動すると `inui-readonly` が適用され、`/permissions` で `inui-dev` を選択できることを確認した。`-s/--sandbox`・`--full-auto` 等の起動オプションやエイリアスがあると、プロジェクトの権限プロファイルより優先される場合がある（2026-11-02、権限プロファイルが適用されず `workspace-write` で起動したセッションでは、GitHubのトークン等を読み取れることを確認した）。調査で整理した作業スコープをユーザーと合意してから、段階Bで起動し直す。
 
 ## 2. Codex CLIの実効権限
 
 設定: [.codex/config.toml](../.codex/config.toml)
 
 - `approval_policy = "on-request"`。危険な操作や権限外の操作は、モデルが承認を求める。
-- 既定のプロファイルは `inui-readonly`（組み込みの `:read-only` を継承）。実装時だけ `inui-dev`（`:workspace` を継承）をセッション単位で指定する。
+- 既定のプロファイルは `inui-readonly`（組み込みの `:read-only` を継承）。実装時だけ、セッション内の `/permissions` で `inui-dev`（`:workspace` を継承）に切り替える。
 - 依頼文にあった `sandbox_mode = "read-only"` と `[sandbox_workspace_write] network_access = false` は使わない。Codex 0.165.0では、旧 `sandbox_mode`・`sandbox_workspace_write` を権限プロファイルと併用できないため、機密ファイルの拒否ができるプロファイル方式を採る。CLIの `-s/--sandbox` も旧方式の指定なので使わない。
 - どちらのプロファイルもネットワークの許可を持たない（既定で無効）。
 - 両プロファイルで、`.env`・`.env.*`、`.aws`・`~/.aws`、`~/.ssh`、`~/.gnupg`、`~/.netrc`、`~/.git-credentials`、`~/.npmrc`、`~/.config/pnpm`、`~/.docker/config.json`、`~/.config/gh`（GitHubのトークン）、`~/.claude/.credentials.json`、`~/.codex/auth.json` の読み取りを拒否する。
@@ -40,7 +40,7 @@ inuiでCodex CLIとClaude Codeを使うときの権限設定・起動方法・�
 
 設定: [.claude/settings.json](../.claude/settings.json)（共有）、`.claude/settings.local.json`（個人、Git管理外）
 
-- `permissions.defaultMode = "default"`。ファイル編集・コマンド実行は承認を求める。自動編集は段階Bで明示的に指定したときだけ使う。
+- `permissions.defaultMode = "default"`。ファイル編集は承認を求める。自動編集は段階Bで明示的に指定したときだけ使う。Bashは、`sandbox.autoAllowBashIfSandboxed` の既定値（`true`）により、サンドボックス内で実行できるコマンドは承認なしで実行される。承認を求めるのは、`ask` に一致するコマンド（`gh`・`git push` 等）、サンドボックス外での実行が必要なコマンド、拒否されていないサンドボックス外の通信先への接続である。
 - `sandbox.enabled`・`failIfUnavailable`・`allowUnsandboxedCommands: false`。Bashは常にサンドボックス内で実行し、サンドボックスが使えなければ起動しない。サンドボックスを外した再実行はできない。
 - `permissions.blockWritesOutsideWorkingDirectories`。ファイル操作ツール（Write・Edit等）による作業領域外への書き込みと、CLIの設定ファイルへの書き込みを拒否する。
 - `Read`・`Edit` の拒否ルールで、Codexと同じ機密ファイル・認証情報を対象にする。拒否ルールはサンドボックスの読み取り拒否にも反映される。
@@ -75,9 +75,22 @@ inuiでCodex CLIとClaude Codeを使うときの権限設定・起動方法・�
 | Readツールによる機密ファイルの読み取り | 以前の検証で `.env` の拒否を確認。認証情報の拒否は実ファイルで試していない | 強制（一部未検証） |
 | 同じコマンドの中で新しく作った `.env` | 読み取れた | 未対応（制約） |
 
-### Codex（未実施）
+### Codex（一部実施、2026-11-02）
 
-`codex sandbox` はClaude Codeのサンドボックス内では入れ子のユーザー名前空間を作れず起動できない。利用者のシェルで検証スクリプトを実行して確認する。結果を得るまで、Codexの各項目は「強制（未検証）」とする。
+`codex sandbox` はClaude Codeのサンドボックス内では入れ子のユーザー名前空間を作れず起動できないため、利用者のシェルで起動したCodexのセッションで確認する。
+
+| 項目 | 結果 | 状態 |
+| --- | --- | --- |
+| `codex` だけで起動したときのプロファイル | `/status` で `Profile inui-readonly (read-only, Ask for approval)` | 強制 |
+| `/permissions` での `inui-dev` への切り替え | 選択できる | 強制 |
+| `-c 'default_permissions="…"'` での起動 | ワークスペースの要件設定の読み込みに失敗して起動できない | — |
+| プロファイルが適用されていない（`workspace-write`）セッション | GitHubのトークン等を読み取れた | 起動手順で回避（指示） |
+| `inui-readonly`: 作業領域への書き込み | 拒否（Read-only file system） | 強制 |
+| `inui-readonly`: `~/.config/gh`・`~/.codex/auth.json`・`~/.gnupg` の読み取り | 拒否（Permission denied） | 強制 |
+| `inui-readonly`: `example.com` への通信 | 失敗（名前解決不可） | 強制 |
+| `inui-readonly`: ダミー `.env` の読み取り | ダミーファイルがなく判定できず | 未検証 |
+| `inui-readonly`: `GH_TOKEN` の除外 | 未設定と表示されたが、起動時にダミー値を渡せていたか不明 | 未検証 |
+| `inui-dev` の各項目 | 未実施 | 強制（未検証） |
 
 ## 5. 認証情報
 
