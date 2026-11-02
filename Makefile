@@ -18,9 +18,9 @@ sandbox-check: ## CLIのサンドボックスに必要なツールとユーザ�
 	bwrap --ro-bind / / --dev /dev --proc /proc --unshare-all true
 	@test -d .aws && test -d "$$HOME/.aws" || { echo ".aws または ~/.aws がありません。開発環境（direnvまたは nix develop）に入り直してください"; exit 1; }
 	@# 作業領域外を指すシンボリックリンクは、リンク先の .env を拒否できないため検出する
-	@found=$$(find . \( -path ./.git -o -path ./.direnv -o -path '*/node_modules' \) -prune -o -type l -print) || \
+	@# リンク名は改行を含み得るため、行で分割せず -exec で1件ずつ判定する
+	@links=$$(find . \( -path ./.git -o -path ./.direnv -o -path '*/node_modules' \) -prune -o -type l \
+		-exec sh -c 'for l; do t=$$(readlink -f "$$l"); case "$$t" in "$$PWD"/*) ;; *) printf "  %s -> %s\n" "$$l" "$$t";; esac; done' sh {} +) || \
 		{ echo "シンボリックリンクの走査に失敗しました"; exit 1; }; \
-		links=$$(printf '%s\n' "$$found" | while read -r l; do [ -n "$$l" ] || continue; \
-			t=$$(readlink -f "$$l"); case "$$t" in "$$PWD"/*) ;; *) echo "  $$l -> $$t";; esac; done); \
 		if [ -n "$$links" ]; then echo "作業領域外を指すシンボリックリンクがあります:"; echo "$$links"; exit 1; fi
 	@echo "サンドボックスの前提条件を満たしています"
