@@ -126,7 +126,9 @@ CI/CDにはGitHub Actionsを採用する。Google CloudのArtifact Registryで�
 | 配布形式 | 費用 | 評価 |
 | --- | --- | --- |
 | コンテナイメージ + ECR（採用） | ECRの保管料（1 GBで約0.10 USD/月）と転送等 | 合意済みのECR方針と一致し、ローカルと同じイメージで動作を確認できる。依存関係が増えても上限（10 GB）に余裕がある。Dockerfileの管理とイメージ作成の手間が増える |
-| zip | ECRの費用なし | HonoのLambda向け構成で一般的で手軽だが、ECRの方針と合わず、パッケージの上限（展開後250 MB）がある |[Lambdaのコンテナ配布](https://docs.aws.amazon.com/lambda/latest/dg/images-create.html)
+| zip | ECRの費用なし | HonoのLambda向け構成で一般的で手軽だが、ECRの方針と合わず、パッケージの上限（展開後250 MB）がある |
+
+[Lambdaのコンテナ配布](https://docs.aws.amazon.com/lambda/latest/dg/images-create.html)
 
 フロントのAmplify HostingとmainのGit連携による配信方針は維持する。GitHub Actionsは検証、Lambdaの配布、API入口の設定・更新を中心に使い、フロントの配信を二重に起動しない分担を構築時に設定する。Kongを自己管理する場合の配布は追加の対象として扱う。AWSへの認証はOIDCによる一時的な認証を候補とし、IAMの権限・対象リポジトリ・ブランチ等の条件は実装時に決める。アプリ利用者向けのGitHub OAuthとは別の役割である。[GitHub ActionsとAWSのOIDC連携](https://docs.github.com/en/actions/how-tos/secure-your-work/security-harden-deployments/oidc-in-aws)
 
