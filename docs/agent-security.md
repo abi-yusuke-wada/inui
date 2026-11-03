@@ -45,7 +45,7 @@ inuiでCodex CLIとClaude Codeを使うときの権限設定・起動方法・�
 - `permissions.blockWritesOutsideWorkingDirectories`。ファイル操作ツール（Write・Edit等）による作業領域外への書き込みと、CLIの設定ファイルへの書き込みを拒否する。
 - `Read`・`Edit` の拒否ルールで、Codexと同じ機密ファイル・認証情報を対象にする。拒否ルールはサンドボックスの読み取り拒否にも反映される。
 - `gh` と `git push` はGitHubのトークンを使うため、サンドボックスの対象外（`excludedCommands`）とし、`ask` で毎回承認を求める。パイプ等で他のコマンドと組み合わせた場合はサンドボックス内で実行され、トークンを読めないため失敗する。`git -C <dir> push` のように `git push` で始まらない書き方や、引数にバッククォート・リダイレクト記号を含む `gh` もサンドボックス内で実行されるため、コマンドは単独で書き、本文は `-F body=@<ファイル>` で渡す。
-- マージ・Auto-mergeの有効化・承認（`gh pr review --approve`）・`gh auth`・リポジトリ設定・Secrets・Variables・Rulesetの変更、force push、`main` へのpush、ブランチの削除を `deny` で拒否する。コマンドの書き方を変えれば回避できるパターン照合のため、マージ禁止の主な手段はGitHub側の保護設定とする。
+- マージ・Auto-mergeの有効化・承認（`gh pr review --approve`）・`gh auth`・リポジトリ設定・Secrets・Variables・Rulesetの変更、force push、`main` へのpush、ブランチの削除を `deny` で拒否する。`gh api` 経由のRuleset・ブランチ保護・Secrets・Variables・Actionsの権限の操作、`DELETE`、リポジトリ設定の `PATCH` も拒否する（Rulesetの確認・登録は人間が行う）。コマンドの書き方を変えれば回避できるパターン照合のため、マージ禁止の主な手段はGitHub側の保護設定とする。
 - サンドボックス外で動く `gh` がローカルの機密ファイルを読んで送信しないよう、`.env` を含む引数、`@` で始まる作業領域外・ドットファイルへのファイル参照、`--body-file`・`--input` を拒否する。本文はスクラッチパッド（`/tmp` 配下）のファイルを `-F body=@<ファイル>` で渡す。これもパターン照合のため、承認時にコマンド全体を確認する。
 - `git -C <dir> push` 等の別の書き方も承認の対象にする。これらはサンドボックス内で実行されトークンを読めないため、現状でも認証付きのpushはできない（2026-11-02、`git -C` 形式のpushがサンドボックスの通信制限で失敗することを確認）。
 - `WebFetch` は毎回承認を求める。
@@ -96,11 +96,11 @@ inuiでCodex CLIとClaude Codeを使うときの権限設定・起動方法・�
 
 | 認証情報 | 配置 | 対策 | 状態 |
 | --- | --- | --- | --- |
-| GitHubのトークン（`gho_`、`repo`・`workflow`・`gist`・`read:org`） | `~/.config/gh` | 両CLIで読み取り拒否。Claudeの `gh` は毎回承認 | 強制（Codexは未検証） |
+| GitHubのトークン（`gho_`、`repo`・`workflow`・`gist`・`read:org`） | `~/.config/gh` | 両CLIで読み取り拒否。Claudeの `gh` は毎回承認 | 強制（Claude・Codexの `inui-readonly` で確認済み、`inui-dev` は未検証） |
 | AWS | `~/.aws`（空のディレクトリ） | 両CLIで拒否 | 強制（Codexは未検証） |
-| GnuPG | `~/.gnupg` | 両CLIで拒否 | 強制（Codexは未検証） |
-| CLI自身の認証 | `~/.claude/.credentials.json`・`~/.codex/auth.json` | 両CLIのサンドボックスで拒否 | 強制（Codexは未検証） |
-| `.env` 内の値 | 作業領域・ホーム配下 | 両CLIで拒否。深さ8を超える配置と、実行中に新しく作るファイルは対象外 | 強制（制約あり） |
+| GnuPG | `~/.gnupg` | 両CLIで拒否 | 強制（Claude・Codexの `inui-readonly` で確認済み、`inui-dev` は未検証） |
+| CLI自身の認証 | `~/.claude/.credentials.json`・`~/.codex/auth.json` | 両CLIのサンドボックスで拒否 | 強制（Claudeは両方、Codexの `inui-readonly` は `~/.codex/auth.json` で確認済み。`inui-dev` は未検証） |
+| `.env` 内の値 | 作業領域・ホーム配下 | 両CLIで拒否。深さ8を超える配置と、実行中に新しく作るファイルは対象外 | 強制（制約あり。Claude・Codexの `inui-readonly` でダミーの拒否を確認済み、`inui-dev` は未検証） |
 | SSH鍵・npm・pnpm・Docker | 現在は存在しない | 作成された場合に備えて拒否対象に含める | 強制（未検証） |
 | VS CodeのGit認証連携（`GIT_ASKPASS`） | 環境変数 | VS Code経由で起動した場合、Git操作で認証情報を取得できる可能性がある | 未検証・未対応 |
 

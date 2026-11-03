@@ -58,7 +58,18 @@
       "Bash(gh *@/etc*)",
       "Bash(gh *@/mnt*)",
       "Bash(gh *--body-file*)",
-      "Bash(gh *--input*)"
+      "Bash(gh *--input*)",
+      "Bash(gh api *rulesets*)",
+      "Bash(gh api *protection*)",
+      "Bash(gh api *actions/secrets*)",
+      "Bash(gh api *actions/variables*)",
+      "Bash(gh api *actions/permissions*)",
+      "Bash(gh api *-X DELETE*)",
+      "Bash(gh api *--method DELETE*)",
+      "Bash(gh api *-X PATCH repos/*/inui)",
+      "Bash(gh api *-X PATCH repos/*/inui *)",
+      "Bash(gh api *--method PATCH repos/*/inui)",
+      "Bash(gh api *--method PATCH repos/*/inui *)"
     ],
     "ask": [
       "Bash(gh *)",
