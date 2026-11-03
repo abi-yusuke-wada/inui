@@ -88,7 +88,7 @@ inuiでCodex CLIとClaude Codeを使うときの権限設定・起動方法・�
 | `inui-readonly`: 作業領域への書き込み | 拒否（Read-only file system） | 強制 |
 | `inui-readonly`: `~/.config/gh`・`~/.codex/auth.json`・`~/.gnupg` の読み取り | 拒否（Permission denied） | 強制 |
 | `inui-readonly`: `example.com` への通信 | 失敗（名前解決不可） | 強制 |
-| `inui-readonly`: ダミー `.env` の読み取り | ダミーファイルがなく判定できず | 未検証 |
+| `inui-readonly`: ダミー `.env` の読み取り | ファイルの存在は確認でき、`cat` は拒否された（Permission denied、rc=1） | 強制 |
 | `inui-readonly`: `GH_TOKEN` の除外 | `GH_TOKEN=dummy-inui codex` で起動し、コマンド内では未設定と表示された | 強制 |
 | `inui-dev` の各項目 | 未実施 | 強制（未検証） |
 
