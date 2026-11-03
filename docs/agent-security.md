@@ -4,14 +4,18 @@ inuiでCodex CLIとClaude Codeを使うときの権限設定・起動方法・�
 
 確認時点（2026-11-02）の環境: Codex CLI 0.165.0（2026-11-03に0.166.0へ自動更新）、Claude Code 2.1.316、Ubuntu 22.04.5 LTS on WSL2（カーネル 6.18.54.1-microsoft-standard-WSL2）。DevContainerは使っていない。
 
-各対策の状態は次の4つで区別する。
+各対策の状態は次の表記で区別する。
 
 | 表記 | 意味 |
 | --- | --- |
 | 強制 | CLIのサンドボックス・権限設定で技術的に強制し、ダミーデータで動作を確認した |
 | 強制（未検証） | 技術的に強制する設定をしたが、動作は未確認 |
-| 指示 | AGENTS.md等によるエージェントへの指示だけで制御している |
+| 指示 | AGENTS.md等によるエージェントへの指示や運用手順だけで制御している |
 | GitHub設定待ち | GitHub側の設定が必要で、まだ適用されていない |
+| 未検証 | 対策の有無や効果を確認できていない |
+| 未対応 | 技術的な対策をしていない（受け入れた制約、または後で検討する事項） |
+
+表記の後の括弧は、確認した範囲・制約・理由の補足とする。「強制」の後の括弧に「未検証」とある範囲は、「強制（未検証）」と同じ扱いとする（例: 「強制（制約あり。…`inui-dev` は未検証）」は、`inui-dev` について未確認であることを示す）。
 
 ## 1. 作業の段階と起動方法
 
@@ -48,6 +52,7 @@ inuiでCodex CLIとClaude Codeを使うときの権限設定・起動方法・�
 - マージ・Auto-mergeの有効化・承認（`gh pr review --approve`）・`gh auth`・リポジトリ設定・Secrets・Variables・Rulesetの変更、force push、`main` へのpush、ブランチの削除を `deny` で拒否する。`gh api` 経由のRuleset・ブランチ保護・Secrets・Variables・Actionsの権限の操作、`DELETE`、リポジトリ設定の `PATCH` も拒否する（Rulesetの確認・登録は人間が行う）。コマンドの書き方を変えれば回避できるパターン照合のため、マージ禁止の主な手段はGitHub側の保護設定とする。
 - サンドボックス外で動く `gh` がローカルの機密ファイルを読んで送信しないよう、`.env` を含む引数、`@` で始まる作業領域外・ドットファイルへのファイル参照、`--body-file`・`--input` を拒否する。本文はスクラッチパッド（`/tmp` 配下）のファイルを `-F body=@<ファイル>` で渡す。これもパターン照合のため、承認時にコマンド全体を確認する。
 - `git -C <dir> push` 等の別の書き方も承認の対象にする。これらはサンドボックス内で実行されトークンを読めないため、現状でも認証付きのpushはできない（2026-11-02、`git -C` 形式のpushがサンドボックスの通信制限で失敗することを確認）。
+- `sandbox.credentials.envVars` で、`GH_TOKEN`・`GITHUB_TOKEN`・AWSの認証情報・レジストリのトークン・LLMのAPIキー等の環境変数を、サンドボックス内のコマンドから見えなくする。`Read` の拒否やファイルシステムの制限は環境変数を保護しないため。サンドボックス外で動く `gh` は対象外で、トークンを使える（承認で制御）。
 - `WebFetch` は毎回承認を求める。
 - `disableClaudeAiConnectors`。claude.aiのコネクタ（Gmail・Slack等のMCP）を、このプロジェクトでは読み込まない。
 - `bypassPermissions` は使わない。
@@ -84,7 +89,7 @@ inuiでCodex CLIとClaude Codeを使うときの権限設定・起動方法・�
 | `codex` だけで起動したときのプロファイル | `/status` で `Profile inui-readonly (read-only, Ask for approval)` | 強制 |
 | `/permissions` での `inui-dev` への切り替え | 選択できる | 強制 |
 | `-c 'default_permissions="…"'` での起動 | ワークスペースの要件設定の読み込みに失敗して起動できない | — |
-| プロファイルが適用されていない（`workspace-write`）セッション | GitHubのトークン等を読み取れた | 起動手順で回避（指示） |
+| プロファイルが適用されていない（`workspace-write`）セッション | GitHubのトークン等を読み取れた | 指示（起動手順で回避） |
 | `inui-readonly`: 作業領域への書き込み | 拒否（Read-only file system） | 強制 |
 | `inui-readonly`: `~/.config/gh`・`~/.codex/auth.json`・`~/.gnupg` の読み取り | 拒否（Permission denied） | 強制 |
 | `inui-readonly`: `example.com` への通信 | 失敗（名前解決不可） | 強制 |
@@ -102,7 +107,7 @@ inuiでCodex CLIとClaude Codeを使うときの権限設定・起動方法・�
 | CLI自身の認証 | `~/.claude/.credentials.json`・`~/.codex/auth.json` | 両CLIのサンドボックスで拒否 | 強制（Claudeは両方、Codexの `inui-readonly` は `~/.codex/auth.json` で確認済み。`inui-dev` は未検証） |
 | `.env` 内の値 | 作業領域・ホーム配下 | 両CLIで拒否。深さ8を超える配置と、実行中に新しく作るファイルは対象外 | 強制（制約あり。Claude・Codexの `inui-readonly` でダミーの拒否を確認済み、`inui-dev` は未検証） |
 | SSH鍵・npm・pnpm・Docker | 現在は存在しない | 作成された場合に備えて拒否対象に含める | 強制（未検証） |
-| VS CodeのGit認証連携（`GIT_ASKPASS`） | 環境変数 | VS Code経由で起動した場合、Git操作で認証情報を取得できる可能性がある | 未検証・未対応 |
+| VS CodeのGit認証連携（`GIT_ASKPASS`） | 環境変数 | VS Code経由で起動した場合、Git操作で認証情報を取得できる可能性がある | 未対応（未検証） |
 
 `.gitignore` で `.env`・`.env.*`・`.aws/`・個人設定を追跡対象外にしている。ただし、`.gitignore` は読み取りを防がない。
 
@@ -232,6 +237,6 @@ git diff main...pr-<番号> -- AGENTS.md CLAUDE.md .claude .codex .envrc flake.n
 | Codexの各プロファイルの動作 | 未検証 |
 | 実行中に新しく作られた `.env`、深さ8を超える `.env` は拒否されない | 未対応（受容済みの制約） |
 | 作業領域外を指すシンボリックリンク経由の読み取り（Codex） | `make sandbox-check` で検出（指示） |
-| VS CodeのGit認証連携（`GIT_ASKPASS`）経由の認証情報の取得 | 未検証・未対応 |
+| VS CodeのGit認証連携（`GIT_ASKPASS`）経由の認証情報の取得 | 未対応（未検証） |
 | 依存関係の取得など、ネットワークが必要な作業の経路 | 未対応（技術スタック決定後に検討） |
 | 信頼できないブランチでの起動による設定の差し替え | 指示（起動前の差分確認） |
