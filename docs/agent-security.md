@@ -185,18 +185,21 @@ GitHubの「Settings → Rules → Rulesets → New branch ruleset」で作成�
 
 ### CODEOWNERS案
 
-セキュリティ上重要な設定の変更に、利用者の承認を必須にする。`.github/CODEOWNERS` として追加する（今回は作成していない）。
+セキュリティ上重要な設定の変更に、利用者の承認を必須にする。`.github/CODEOWNERS` として追加する（今回は作成していない）。指示ファイルとCLIの設定は、7.で確認する範囲と同じく階層を問わず一致させる。`**/` で始まる行は、ルートと任意の階層の両方に一致する。
 
 ```text
-/AGENTS.md          @abi-yusuke-wada
-/CLAUDE.md          @abi-yusuke-wada
-/.codex/            @abi-yusuke-wada
-/.claude/           @abi-yusuke-wada
-/.github/           @abi-yusuke-wada
-/.envrc             @abi-yusuke-wada
-/flake.nix          @abi-yusuke-wada
-/flake.lock         @abi-yusuke-wada
-/Makefile           @abi-yusuke-wada
+**/AGENTS.md            @abi-yusuke-wada
+**/AGENTS.override.md   @abi-yusuke-wada
+**/CLAUDE.md            @abi-yusuke-wada
+**/CLAUDE.local.md      @abi-yusuke-wada
+**/.claude/             @abi-yusuke-wada
+**/.codex/              @abi-yusuke-wada
+**/.mcp.json            @abi-yusuke-wada
+**/.envrc               @abi-yusuke-wada
+/.github/               @abi-yusuke-wada
+/flake.nix              @abi-yusuke-wada
+/flake.lock             @abi-yusuke-wada
+/Makefile               @abi-yusuke-wada
 /docs/agent-security.md @abi-yusuke-wada
 ```
 
@@ -231,7 +234,7 @@ git diff main...pr-<番号> -- \
 1. Codexの検証スクリプトを利用者のシェルで実行し、結果を確認する。
 2. 反映用の認証主体（GitHub AppまたはBot）を作成し、inuiだけに必要最小限の権限で導入する。現在のトークン（`repo`・`workflow` 等）を開発環境から外す。
 3. 認証主体の分離後に、Rulesetを適用し、CODEOWNERSを追加する。
-4. Claude Codeのサンドボックス内に作られる空のファイル（`.bashrc`・`.gitconfig`・`.mcp.json`・`.vscode` 等）は、サンドボックスが設定ファイルを保護するための目印で、ホスト側には存在しない。コミットに含めないよう、ファイルを個別に指定してコミットする。
+4. Claude Codeのサンドボックスは、設定ファイル（`.bashrc`・`.gitconfig`・`.mcp.json`・`.vscode` 等）が存在しない場所に `/dev/null` を重ねて、書き込みを防ぐ。その土台として、サンドボックスのコマンドの実行中は、ホスト側の作業ディレクトリにも空のファイルが作られ、未追跡のファイルとして見える。Claude Code（2.1.318）には、コマンドの終了後に空のファイルと空のディレクトリだけを削除する処理がある。ただし、ほかのサンドボックスのコマンドが動いている間は削除を後回しにするため、その間は残る。Claude Codeが途中で終了した場合も残る可能性がある。コミットに含めないよう、ファイルを個別に指定してコミットする。
 
 ## 9. 未解決のリスク
 
