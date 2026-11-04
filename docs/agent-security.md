@@ -213,8 +213,14 @@ CLIは、起動したブランチにあるプロジェクト設定と指示フ�
 
 ```sh
 git fetch origin pull/<番号>/head:pr-<番号>
-git diff main...pr-<番号> -- AGENTS.md CLAUDE.md .claude .codex .envrc flake.nix flake.lock Makefile .github
+git diff main...pr-<番号> -- \
+  ':(glob)**/AGENTS.md' ':(glob)**/AGENTS.override.md' \
+  ':(glob)**/CLAUDE.md' ':(glob)**/CLAUDE.local.md' \
+  ':(glob)**/.claude/**' ':(glob)**/.codex/**' ':(glob)**/.mcp.json' \
+  ':(glob)**/.envrc' flake.nix flake.lock Makefile .github
 ```
+
+各CLIは作業するディレクトリの階層にある指示ファイル（`AGENTS.md`・`AGENTS.override.md`・`CLAUDE.md` 等）も読み込むため、ルートだけでなく階層を問わず確認する。`':(glob)**/<名前>'` はルートと任意の階層の両方に一致する。
 
 - 差分がある場合は、承認済みの `.envrc` がある作業ディレクトリでそのブランチをチェックアウトしない。direnvの読み込みを止めてから切り替えても、作業ディレクトリに戻った時点で再評価されるため、チェックアウト自体を避ける。
 - 差分の内容を確認して問題がないと判断した場合も、チェックアウトの前に `direnv deny` で作業ディレクトリの承認を取り消し、変更後の `flake.nix` を確認し終えてから `direnv allow` で戻す。
