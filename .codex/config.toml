@@ -1,2 +1,70 @@
 approval_policy = "on-request"
-sandbox_mode = "workspace-write"
+# 既定は読み取り専用（調査用）。実装時のみ、セッション内の /permissions で inui-dev に切り替える。
+# 起動オプション -c で default_permissions を指定すると、ワークスペースの要件設定により起動できない。
+# 旧 sandbox_mode・sandbox_workspace_write は権限プロファイルと併用できないため使わない。
+# どちらのプロファイルもネットワークの許可を持たない（既定で無効）。
+default_permissions = "inui-readonly"
+
+# コマンドに渡す環境変数を基本的なもの（PATH・HOME等）に限定し、GH_TOKEN等の認証情報を渡さない。
+# ログインシェルで起動すると起動ファイル（~/.bashrc等）が認証情報を再設定し得るため、無効にする。
+allow_login_shell = false
+
+[shell_environment_policy]
+inherit = "core"
+
+# 調査用: ファイルの変更を許可しない。
+[permissions.inui-readonly]
+description = "読み取り専用。機密ファイルと認証情報の読み取りを拒否する"
+extends = ":read-only"
+
+[permissions.inui-readonly.filesystem]
+# Linux / WSLの再帰glob展開は、プロセス起動時にこの深さまで行う。
+glob_scan_max_depth = 8
+"~/.aws" = "deny"
+"~/.ssh" = "deny"
+"~/.gnupg" = "deny"
+"~/.netrc" = "deny"
+"~/.git-credentials" = "deny"
+"~/.npmrc" = "deny"
+"~/.config/pnpm" = "deny"
+"~/.docker/config.json" = "deny"
+"~/.claude/.credentials.json" = "deny"
+"~/.codex/auth.json" = "deny"
+"~/.config/gh" = "deny"
+"~/**/.env" = "deny"
+"~/**/.env.*" = "deny"
+
+[permissions.inui-readonly.filesystem.":workspace_roots"]
+".env" = "deny"
+".env.*" = "deny"
+".aws" = "deny"
+"**/.env" = "deny"
+"**/.env.*" = "deny"
+
+# 実装用: 作業領域内の編集・テストを許可する。拒否対象は inui-readonly と同じにする。
+[permissions.inui-dev]
+description = "作業領域の編集を許可し、機密ファイルと認証情報の読み書きを拒否する"
+extends = ":workspace"
+
+[permissions.inui-dev.filesystem]
+glob_scan_max_depth = 8
+"~/.aws" = "deny"
+"~/.ssh" = "deny"
+"~/.gnupg" = "deny"
+"~/.netrc" = "deny"
+"~/.git-credentials" = "deny"
+"~/.npmrc" = "deny"
+"~/.config/pnpm" = "deny"
+"~/.docker/config.json" = "deny"
+"~/.claude/.credentials.json" = "deny"
+"~/.codex/auth.json" = "deny"
+"~/.config/gh" = "deny"
+"~/**/.env" = "deny"
+"~/**/.env.*" = "deny"
+
+[permissions.inui-dev.filesystem.":workspace_roots"]
+".env" = "deny"
+".env.*" = "deny"
+".aws" = "deny"
+"**/.env" = "deny"
+"**/.env.*" = "deny"
