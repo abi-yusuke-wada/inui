@@ -1,0 +1,130 @@
+<!doctype html>
+<html lang="ja" data-theme="light">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>inui UIモックアップ</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <!-- デザイン確定用の静的モックアップ。Intent判定はキーワード照合のダミー。 -->
+  <header class="app-header">
+    <div class="brand">
+      <span class="brand-mark" aria-hidden="true">i</span>
+      <span class="brand-name">inui</span>
+    </div>
+    <div class="header-meta">
+      <span class="meta-item">2026年11月2日（月）09:00</span>
+      <span class="meta-sep" aria-hidden="true">·</span>
+      <span class="meta-item">検証ユーザー</span>
+      <button type="button" class="help-toggle" id="help-toggle"
+              aria-controls="help-panel" aria-expanded="false">
+        <span class="help-toggle-icon" aria-hidden="true">?</span>ヘルプ
+      </button>
+    </div>
+  </header>
+
+  <!-- オンボーディング用のヘルプサイドバー -->
+  <aside id="help-panel" class="help-panel" aria-labelledby="help-title" hidden>
+    <div class="help-head">
+      <h2 id="help-title" class="help-title">inuiの使い方</h2>
+      <button type="button" class="help-close" id="help-close" aria-label="ヘルプを閉じる">×</button>
+    </div>
+    <div class="help-body">
+      <p class="help-lead">やりたいことを文章で入力すると、必要な画面がすぐに表示されます。メニューを探す必要はありません。</p>
+
+      <section class="help-section">
+        <h3>使い方</h3>
+        <ol class="help-steps">
+          <li><span class="step-no">1</span><div><strong>やりたいことを入力</strong><p>「明日の予定を見せて」のように、普段の言葉で入力して送信します。</p></div></li>
+          <li><span class="step-no">2</span><div><strong>表示された画面で操作</strong><p>内容を確認し、必要に応じて選択・変更します。</p></div></li>
+          <li><span class="step-no">3</span><div><strong>保存ボタンで確定</strong><p>入力しただけでは保存されません。保存は必ずボタンで確定します。</p></div></li>
+        </ol>
+      </section>
+
+      <section class="help-section">
+        <h3>できること</h3>
+        <dl class="help-features">
+          <dt>アンケートに回答する</dt>
+          <dd><button type="button" class="chip" data-example="アンケートに回答したい">アンケートに回答したい</button></dd>
+          <dt>指定した日の予定を確認する</dt>
+          <dd>
+            <button type="button" class="chip" data-example="今日のスケジュールを確認したい">今日のスケジュールを確認したい</button>
+            <button type="button" class="chip" data-example="2026年11月4日の予定を見たい">2026年11月4日の予定を見たい</button>
+          </dd>
+          <dt>表示テーマを変更する</dt>
+          <dd><button type="button" class="chip" data-example="見た目の設定を開いて">見た目の設定を開いて</button></dd>
+        </dl>
+        <p class="help-note">例をクリックすると、そのまま試せます。</p>
+      </section>
+
+      <section class="help-section">
+        <h3>できないこと</h3>
+        <ul class="help-list">
+          <li>予定の登録・編集・削除</li>
+          <li>アンケートの作成・集計</li>
+          <li>文書の検索・管理</li>
+        </ul>
+      </section>
+
+      <section class="help-section">
+        <h3>うまく表示されないときは</h3>
+        <ul class="help-list">
+          <li>「何を」したいかを含めて入力してください。</li>
+          <li>予定は「今日」「明日」「11月4日」のように日付を添えてください。</li>
+        </ul>
+      </section>
+    </div>
+  </aside>
+
+  <main class="app-main">
+    <section class="intent" aria-labelledby="intent-title">
+      <h1 id="intent-title" class="intent-title">何をしますか？</h1>
+      <form id="intent-form" class="intent-form" autocomplete="off">
+        <label for="intent-input" class="visually-hidden">やりたいことを入力</label>
+        <input id="intent-input" class="intent-input" type="text"
+               placeholder="例：明日の予定を見せて" maxlength="200">
+        <button type="submit" class="btn btn-primary" id="intent-submit">送信</button>
+      </form>
+      <div class="examples" aria-label="入力例">
+        <button type="button" class="chip" data-example="アンケートに回答したい">アンケートに回答したい</button>
+        <button type="button" class="chip" data-example="今日のスケジュールを確認したい">今日のスケジュールを確認したい</button>
+        <button type="button" class="chip" data-example="明日の予定を見せて">明日の予定を見せて</button>
+        <button type="button" class="chip" data-example="表示設定を変えたい">表示設定を変えたい</button>
+      </div>
+    </section>
+
+    <section id="result" class="result" aria-live="polite"></section>
+  </main>
+
+  <!-- モック専用：状態を切り替えてデザインを確認するパネル -->
+  <aside class="mock-panel" aria-label="モック状態の切り替え">
+    <details>
+      <summary>モック状態</summary>
+      <div class="mock-grid">
+        <span class="mock-label">デザイン案</span>
+        <a href="index.html" aria-current="page">シンプル案</a>
+        <a href="groupware.html">グループウェア風</a>
+        <a href="legacy.html">旧形式（比較用）</a>
+        <span class="mock-label">業務UI</span>
+        <button type="button" data-mock="アンケートに回答したい">アンケート</button>
+        <button type="button" data-mock="今日のスケジュールを確認したい">予定（今日）</button>
+        <button type="button" data-mock="明日の予定を見せて">予定（明日）</button>
+        <button type="button" data-mock="2026年11月4日の予定を見たい">予定（なし）</button>
+        <button type="button" data-mock="表示設定を変えたい">表示設定</button>
+        <span class="mock-label">案内・失敗</span>
+        <button type="button" data-mock="文書を探したい">対象外の機能</button>
+        <button type="button" data-mock="予定を削除して">対象外の操作</button>
+        <button type="button" data-mock="開いて">特定できない</button>
+        <button type="button" data-mock="予定を見たい">日付が必要</button>
+        <button type="button" data-mock-state="rejected">ホスト側で拒否</button>
+        <button type="button" data-mock-state="network">通信失敗</button>
+        <button type="button" data-mock-state="loading">判定中</button>
+        <button type="button" data-mock-state="empty">初期状態</button>
+      </div>
+    </details>
+  </aside>
+
+  <script src="app.js"></script>
+</body>
+</html>
