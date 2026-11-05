@@ -8,9 +8,16 @@ inui（Intent + UI）は、Intent-driven Web UIを小さく検証する研究用
 inuiでは、自然言語からユーザーのIntentを判定し、必要な業務UIを直接表示する方式を検証します。
 大規模なプロダクトや汎用プラットフォームの開発は目指しません。
 
+### 研究の問い
+
+inuiの問題提起は「LLMにどんなUIを生成させるか」ではありません。LLMは応答が遅く、費用もかさみます。JEVのように安く速く使えるルーターで入力を適切な画面へ振り分けるだけで、アプリケーションのこれまでのUI/UXを最適化できるのではないか、という点にあります。
+
+そこで、安く速いルーター（JEV）による振り分けで、これまでのUI/UXを最適化できるかを検証します。Intent判定はまずJEVだけで実現し、MVPではLLMを使いません（[ADR-0004](docs/adr/0004-jev-first-intent-routing.md)）。旧形式（メニューや画面遷移で目的の画面を開くUI）と同じ作業で比較し、inuiが有利な例だけでなく不利な例も示します。
+
 ## 中核思想
 
 - **Intent-driven UI**：ユーザーのIntentを起点に、必要な業務UIを表示する。
+- **安く速い振り分け**：Intent判定は、JEVのような安く速く使えるルーターで行う。
 - **Thin Client**：ブラウザにLLMや自律的なAIエージェントを常駐させず、入力受付と事前実装済みUIの描画を中心に担わせる。
 - **Server-side Intent Orchestration**：Intent判定の制御、業務処理、Tool選択、UI選択をホスト側に置く。AIの判断結果は許可リストや検証処理で制御する。
 - **既存資産の再利用**：HTMLやJavaScriptをAIで自由生成せず、既存の業務APIと事前実装済みUIコンポーネントを再利用する。
@@ -18,7 +25,7 @@ inuiでは、自然言語からユーザーのIntentを判定し、必要な業�
 
 ## MVPの方向性
 
-アンケート回答・指定日の予定参照・個人の表示設定変更の3つを対象に、小さく実装してE2E動作を確認します。
+申請・ワークフロー（申請を出す側）を題材に、休暇申請・経費精算（交通費）・申請状況の確認の3つを対象として小さく実装し、E2Eの動作と旧形式との比較を確認します。
 範囲と完了条件は [MVP.md](MVP.md) にまとめます。
 
 ## 開発環境
@@ -65,4 +72,4 @@ CLIのサンドボックスには、devShellが提供する `bubblewrap`（`bwra
 
 ## 現在のステータス
 
-MVPの範囲と完了条件、技術構成（[ADR-0001](docs/adr/0001-mvp-hosting-and-storage.md)）と開発環境（[ADR-0002](docs/adr/0002-development-environment.md)）、コアとPoCアプリの分離方針（[ADR-0003](docs/adr/0003-separate-core-from-poc-app.md)）は決定済みです。次はPoCの実装に進みます。アプリケーションは未実装です。
+MVPの範囲と完了条件、技術構成（[ADR-0001](docs/adr/0001-mvp-hosting-and-storage.md)）と開発環境（[ADR-0002](docs/adr/0002-development-environment.md)）、コアとPoCアプリの分離方針（[ADR-0003](docs/adr/0003-separate-core-from-poc-app.md)）、JEV優先の方針（[ADR-0004](docs/adr/0004-jev-first-intent-routing.md)）は決定済みです。次はPoCの実装に進みます。アプリケーションは未実装です。
