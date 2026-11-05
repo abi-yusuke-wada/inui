@@ -25,5 +25,5 @@ CLIを切り替えるときに、最新の引き継ぎ1件へ更新する。共�
 - 指摘対応をpushしたらCodeRabbitのフルレビューを依頼し、最新コミットへのレビュー完了を確認する。深さ8の制約は利用者が受容した判断として扱い、前提が変わる場合にADR-0002を再検討する。
 - AI開発エージェントの権限・責務分離を設定した（[docs/agent-security.md](agent-security.md)）。Codexの検証スクリプトを利用者のシェルで実行し、反映用の認証主体の分離とRulesetの適用を行う。
 - Claudeは再起動後、サンドボックス内から `~/.config/gh` を読めないこと、`gh` の単独実行で毎回確認ダイアログが表示されることを確認済み。`git push` で確認ダイアログが毎回表示されるかは利用者の画面で確認する。
-- 次はIssue #4（PoC実装）。JEVを含む1回の応答が30秒以内に収まるかを実測する（[ADR-0001](adr/0001-mvp-hosting-and-storage.md)）。MVPではLLMを使わない（[ADR-0004](adr/0004-jev-first-intent-routing.md)）。
+- 次はIssue #4（PoC実装）。JEVを含む1回の応答が30秒以内に収まるかの実測は、Issue #15で行う（[ADR-0001](adr/0001-mvp-hosting-and-storage.md)）。MVPではLLMを使わない（[ADR-0004](adr/0004-jev-first-intent-routing.md)）。
 - アプリや基盤の構築は今回の対象外。
