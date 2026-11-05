@@ -6,7 +6,7 @@
 
 ## 背景と合意済みの条件
 
-- 対象は申請・ワークフロー（申請を出す側）の休暇申請・経費精算・申請状況の確認の3機能。少人数の研究用MVPを小さく作り切る。決定時の対象はアンケート回答・指定日の予定参照・個人の表示設定変更の3機能で、Issue #11で題材を見直した（2026-11-04）。どちらも少人数・低頻度の小さな業務処理で、この構成の判断は変わらない。
+- 対象は申請・ワークフロー（申請を出す側）の休暇申請・経費精算（交通費）・申請状況の確認の3機能。少人数の研究用MVPを小さく作り切る。決定時の対象はアンケート回答・指定日の予定参照・個人の表示設定変更の3機能で、Issue #11で題材を見直した（2026-11-04）。どちらも少人数・低頻度の小さな業務処理で、この構成の判断は変わらない。
 - フロントエンドはReactとTypeScript、APIはTypeScriptとHonoを使う。DBはRDBとしてTurso Cloudを採用する。
 - CI/CDにはGitHub Actionsを使い、Lambdaはコンテナイメージで配布し、その保管先にAmazon ECRを利用する（配布形式の決定: 2026-11-02）。
 - inuiがMCPインターフェースを提供する。JEVはinuiのホスト処理から実行時に呼び出す対象とし、外部リソースを使う前提を維持する。
@@ -68,13 +68,13 @@ flowchart LR
   Host --> Business[許可済みの業務処理・UI]
 ```
 
-MCPの公開Tool・入出力・通信方式・SDK対応版と、JEVの具体的な製品・SDK・接続先はIssue #4で具体化する。MCPにはStreamable HTTP等の標準トランスポートがあるが、今回は通信方式やSDKを確定しない。認証・認可と引数の検証は、通常の受付APIとMCPの双方でホスト側に適用する。[MCPの通信方式](https://modelcontextprotocol.io/specification/2026-07-28/basic/transports)
+MCPの公開Tool・入出力・通信方式・SDK対応版と、JEVの具体的な製品・SDK・接続先はIssue #16で決め、PoCの実装（Issue #4）ではその結果に従って実装する。MCPにはStreamable HTTP等の標準トランスポートがあるが、今回は通信方式やSDKを確定しない。認証・認可と引数の検証は、通常の受付APIとMCPの双方でホスト側に適用する。[MCPの通信方式](https://modelcontextprotocol.io/specification/2026-07-28/basic/transports)
 
 #### 判断理由と比較した案
 
 | 案 | 費用 | 評価 |
 | --- | --- | --- |
-| A. inuiがMCPインターフェースを提供し、JEVはホスト側から実行時に呼び出す（採用） | MCPはAPIと同じLambda内で提供する想定で、追加の基盤費用は見込まない（配置はIssue #4で確定）。JEVの利用料は合意どおり別途相談で、今回の比較の対象外 | ブラウザにAIを置かずThin Clientを保てる。JEVの判断結果をホスト側で許可リストと照合してから業務処理を実行できる |
+| A. inuiがMCPインターフェースを提供し、JEVはホスト側から実行時に呼び出す（採用） | MCPはAPIと同じLambda内で提供する想定で、追加の基盤費用は見込まない（配置はIssue #16で確定）。JEVの利用料は合意どおり別途相談で、今回の比較の対象外 | ブラウザにAIを置かずThin Clientを保てる。JEVの判断結果をホスト側で許可リストと照合してから業務処理を実行できる |
 | B. ブラウザからJEV・LLMを直接呼び出す | 追加の基盤費用はない | ブラウザにAI処理と接続用の認証情報が載り、Thin Clientとホスト側制御の原則に反するため不採用 |
 | C. JEVに業務API・DBを直接操作させる | 追加の基盤費用はない | AIの判断結果を検証する前に業務処理や保存が実行され得るため不採用 |
 
@@ -85,7 +85,7 @@ MCPの公開Tool・入出力・通信方式・SDK対応版と、JEVの具体的�
 - JEVの障害・タイムアウト時は業務処理・保存を行わず、失敗を案内して再試行できる状態にする（[MVP](../../MVP.md) の失敗ケース）。
 - JEVとの接続と判断結果の検証は、PoCアプリから独立したコアに置く（[ADR-0003](0003-separate-core-from-poc-app.md)）。
 
-決定済みなのは、MCPをinuiが提供すること、JEVをホスト側から呼び出すこと、判断結果の検証をホスト側で行うことである。公開Tool、入出力、通信方式・SDK、JEVの具体的な製品・接続先、MCPを利用する側の構成は未決定で、Issue #4で具体化する。
+決定済みなのは、MCPをinuiが提供すること、JEVをホスト側から呼び出すこと、判断結果の検証をホスト側で行うことである。公開Tool、入出力、通信方式・SDK、JEVの具体的な製品・接続先、MCPを利用する側の構成は未決定で、Issue #16で決める。
 
 ### フロントエンドのホスティング
 
@@ -151,7 +151,7 @@ API GatewayのHTTP APIとREST APIでは機能・料金が異なる。HTTP APIを
 HTTP APIの最大統合タイムアウト30秒は、制約ではなく応答時間の設計上の上限として受け入れる。inuiは非構造的な入力に対して業務UIを返すことが目的であり、1回の応答が30秒以内に返らない時点でUXとして成立しない。同じ理由で、Lambdaの最大実行時間15分も制約にならない。Kongはタイムアウトを設定で延ばせるが、この前提ではその利点が採用理由にならず、常駐環境の費用と自己管理の負担だけが残るため採用しない。
 
 - 採用: AWS API Gateway（HTTP API）+ Hono / Lambda。
-- 応答時間: JEVの呼び出しを含めて1回の応答を30秒以内に収めることを必須とし、Issue #4で実測する。MVPではLLMを使わない（[ADR-0004](0004-jev-first-intent-routing.md)）。
+- 応答時間: JEVの呼び出しを含めて1回の応答を30秒以内に収めることを必須とし、Issue #15で実測する。MVPではLLMを使わない（[ADR-0004](0004-jev-first-intent-routing.md)）。
 - 代替案: 30秒を超える処理がどうしても必要になった場合は、次を比較する。タイムアウトを延ばすためだけにGatewayを追加しない。
   - 非同期の受付・結果取得: 受付だけを30秒以内に返し、結果は後から取得する。採用中のHTTP APIのまま実現できる。
   - レスポンスのストリーミング: 採用中のHTTP APIは対応していない。選ぶ場合は、該当する経路をストリーミングに対応するREST APIまたはFunction URLへ切り替える。
@@ -227,7 +227,7 @@ OSSを採用する場合に確認する項目は、次の3点に絞る。
 
 VPCへの接続はLambdaからの通信先を制御する設定であり、それだけで利用者のOrganization所属確認やAPIの呼び出し制限を代替しない。Turso・外部LLM・GitHubへ通信する構成では、VPC追加時に外向き通信の経路と費用も必要になるため、今回の配布要件を理由に追加しない。[LambdaのVPC接続](https://docs.aws.amazon.com/lambda/latest/dg/configuration-vpc.html)、[API入口のアクセス制御の例](https://docs.aws.amazon.com/lambda/latest/dg/urls-auth.html)
 
-認証連携はGitHub OAuthを基本案とする。登録するAppの種別・必要権限・コールバック、ログイン状態を維持するセッションの方式・有効期限と所属の再確認間隔は、Issue #4の認証実装で詰める。OAuth Appなら `read:org` は所属を読み取る権限であり、Organization側のアプリ制限によっては管理者の承認が必要になる。API確認失敗時の拒否・再試行、所属を外れた利用者のセッション失効も実装時の検証対象とする。[GitHubの認証連携](https://docs.github.com/en/apps/oauth-apps/building-oauth-apps/authorizing-oauth-apps)、[OAuthの権限](https://docs.github.com/en/apps/oauth-apps/building-oauth-apps/scopes-for-oauth-apps)、[Organizationのアプリ制限](https://docs.github.com/en/organizations/managing-oauth-access-to-your-organizations-data/about-oauth-app-access-restrictions)
+認証連携はGitHub OAuthを基本案とする。登録するAppの種別・必要権限・コールバック、ログイン状態を維持するセッションの方式・有効期限と所属の再確認間隔は、Issue #12で詰める。OAuth Appなら `read:org` は所属を読み取る権限であり、Organization側のアプリ制限によっては管理者の承認が必要になる。API確認失敗時の拒否・再試行、所属を外れた利用者のセッション失効も実装時の検証対象とする。[GitHubの認証連携](https://docs.github.com/en/apps/oauth-apps/building-oauth-apps/authorizing-oauth-apps)、[OAuthの権限](https://docs.github.com/en/apps/oauth-apps/building-oauth-apps/scopes-for-oauth-apps)、[Organizationのアプリ制限](https://docs.github.com/en/organizations/managing-oauth-access-to-your-organizations-data/about-oauth-app-access-restrictions)
 
 GitHubの所属はアプリへ入れる人の条件とする。現行MVPは検証用の利用者1名・サンプルデータを前提としているため、配布時に共通データで試すか、個人ごとの回答・設定を保存するかは別途合意する。多人数向けの業務機能へ自動的に範囲を広げない。
 
@@ -249,20 +249,22 @@ Issue #2では、MVPに使う技術・構成・採用理由と実装へ進める
 
 | 確認した構成判断 | 現在の状態・後続で詰める範囲 |
 | --- | --- |
-| HTTP入口の方式と費用 | 決定。AWS API Gateway（HTTP API）+ Lambdaを採用し、30秒を応答時間の上限とする。Kongは採用せず、稼働先の選定は不要。応答時間の実測はIssue #4で行う |
-| JEV・MCPの役割と接続 | 役割は合意済み。inuiがMCPインターフェースを提供し、JEVはホスト処理から実行時に呼び出す。JEV / Choiceの具体的な接続仕様、公開Tool、通信方式・SDKの選定と実際の接続検証はIssue #4で扱う |
+| HTTP入口の方式と費用 | 決定。AWS API Gateway（HTTP API）+ Lambdaを採用し、30秒を応答時間の上限とする。Kongは採用せず、稼働先の選定は不要。応答時間の実測はIssue #15で行う |
+| JEV・MCPの役割と接続 | 役割は合意済み。inuiがMCPインターフェースを提供し、JEVはホスト処理から実行時に呼び出す。JEV / Choiceの具体的な接続仕様、公開Tool、通信方式・SDKの選定と実際の接続検証はIssue #16で扱う |
 | 基盤の構築・デプロイ自動化の方式 | GitHub Actionsを採用し、Lambdaはコンテナイメージで配布してECRに保管することを決定済み。Lambdaと採用するAPI入口のリソース定義・構築ツール、イメージの作り方とワークフローの詳細は後続で具体化する。フロントはAmplify HostingのGit連携を維持する |
 
 Issue #2で扱う構成判断はすべて決定した。MCP・JEVの役割とGitHub Actions・ECRの基本方針は維持し、Konnectの利用条件や移行時期は将来の検討へ引き継ぐ。実際のURL・ルート・CORS、API呼び出しやTool実装、個々のCIジョブやDB更新手順は後続で具体化する。
 
+扱うIssueは、Issue #4（PoCの実装）をサブIssue（#12〜#16）に分けたことに合わせて更新した（2026-11-04）。決めた内容は、Issue #4の実装でその結果に従って組み込む。
+
 | 後続で詰める事項 | 扱う時期・範囲 |
 | --- | --- |
-| 対象Organization名、App登録、権限、コールバックURL | Issue #4の認証実装・配布設定時。実値が未指定でもIssue #2の完了を妨げない |
-| セッション方式・有効期限、所属の再確認・失効 | Issue #4のアプリ実装時。APIを含めホスト側で認証・認可する方針を満たす |
-| Tursoのエンジン・接続クライアント、テーブル定義とマイグレーション | Issue #4のDB実装時。テーブル定義の変更をどう適用するかは、その実装に合わせて決める |
-| MCPのTool・通信方式・SDK、JEV / Choiceの具体的な接続（MVPではLLMを使わない。ADR-0004） | Issue #4のアプリ実装時。合意した役割とホスト側制御を維持して具体化し、接続条件が構成に影響する場合はADRを更新する |
-| 検証コマンド・GitHub Actions設定、ECR・IAM、秘密情報の注入、デプロイ・DB更新の具体的な手順 | Issue #4の構築・配布時。実装と一緒に整え、DB更新の自動化までIssue #2の必須条件にしない |
-| 開発ツールの具体化・バージョン、Nix定義、必要最小限のディレクトリ | Issue #3で決定。[ADR-0002](0002-development-environment.md) を参照。ディレクトリ構成はIssue #4の実装時に決める |
+| 対象Organization名、App登録、権限、コールバックURL | Issue #12（認証）で決める。実値が未指定でもIssue #2の完了を妨げない |
+| セッション方式・有効期限、所属の再確認・失効 | Issue #12（認証）で決める。APIを含めホスト側で認証・認可する方針を満たす |
+| Tursoのエンジン・接続クライアント、テーブル定義とマイグレーション | Issue #13（DB）で決める。テーブル定義の変更をどう適用するかも、Issue #13で合わせて決める |
+| MCPのTool・通信方式・SDK、JEV / Choiceの具体的な接続（MVPではLLMを使わない。ADR-0004） | Issue #16で決め、PoCの実装（Issue #4）ではその結果に従ってJEVとの接続部分（アダプター）を実装する。合意した役割とホスト側制御を維持し、接続条件が構成に影響する場合はADRを更新する |
+| 検証コマンド・GitHub Actions設定、ECR・IAM、秘密情報の注入、デプロイ・DB更新の具体的な手順 | Issue #14（インフラ）で決める。実装と一緒に整え、DB更新の自動化までIssue #2の必須条件にしない |
+| 開発ツールの具体化・バージョン、Nix定義、必要最小限のディレクトリ | Issue #3で決定。[ADR-0002](0002-development-environment.md) を参照。ディレクトリ構成はIssue #14で決める |
 
 少人数配布におけるデータ共有方法は配布前に確認する。初期PoCは既存のMVPスコープを維持し、利用者ごとの業務機能を独断で追加しない。音声入力は利用者の環境の音声入力（Aqua VoiceまたはOS標準）を使うことで合意し、MVPの完了条件に追加した。アプリに音声認識は実装しないため、構成への影響はない。実際の通信時間・無料枠の適用・利用量と費用は、環境を構築・検証する際に確認する。
 
