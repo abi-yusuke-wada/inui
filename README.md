@@ -55,6 +55,11 @@ direnvを使わない場合は `nix develop` で開発環境に入ります。
 | --- | --- |
 | `make check` | 開発環境の定義（`nix flake check`）と差分の空白を検証する |
 | `make sandbox-check` | CLIのサンドボックスの前提条件を確認する |
+| `make jev-check` | JEV接続プローブのオフラインテストを実行する |
+| `make jev-probe` | 固定13入力のJEVリクエストを表示する（通信なし） |
+| `make jev-probe-live` | JEVへ最大13回接続してIntent分類を検証する（APIキー・通信許可・利用料金の確認が必要） |
+
+JEV接続プローブの範囲・手順・未検証事項は [接続検証の説明](docs/jev-connection-check.md) を参照してください。日付・金額の抽出やMCP接続は、プローブのIntent分類とは別に検証します。
 
 アプリのビルド・起動等のターゲットは、Issue #4の実装に合わせて追加します。
 

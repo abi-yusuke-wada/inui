@@ -2,7 +2,7 @@
 # devShell（direnvまたは `nix develop`）に入った状態で実行する。
 
 .DEFAULT_GOAL := help
-.PHONY: help check sandbox-check
+.PHONY: help check sandbox-check jev-check jev-probe jev-probe-live
 
 help: ## ターゲット一覧を表示する
 	@grep -E '^[a-zA-Z_-]+:.*## ' $(MAKEFILE_LIST) | awk 'BEGIN {FS = ":.*## "}; {printf "  %-14s %s\n", $$1, $$2}'
@@ -10,6 +10,17 @@ help: ## ターゲット一覧を表示する
 check: ## 開発環境の定義と差分の空白を検証する
 	nix flake check
 	git diff --check HEAD
+
+jev-check: ## JEV接続プローブを実APIなしで検証する
+	@# 単一ファイルの各ケースを同一プロセスで実行し、子プロセス起動に依存しない。
+	node --test --test-isolation=none scripts/jev-probe.test.mjs
+	git diff --check HEAD
+
+jev-probe: ## MVPの13入力とJEVリクエストを表示する（通信なし）
+	node scripts/jev-probe.mjs --dry-run
+
+jev-probe-live: ## JEVへ最大13回接続する（APIキー・通信許可・利用料金の確認が必要）
+	node scripts/jev-probe.mjs --live
 
 sandbox-check: ## CLIのサンドボックスに必要なツールとユーザー名前空間を確認する
 	command -v bwrap
