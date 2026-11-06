@@ -2,7 +2,7 @@
 # devShell（direnvまたは `nix develop`）に入った状態で実行する。
 
 .DEFAULT_GOAL := help
-.PHONY: help check sandbox-check jev-check jev-probe jev-probe-dry-run jev-probe-live jev-probe-local jev-prompt-study jev-local-setup jev-local-serve
+.PHONY: help check sandbox-check agent-config-check jev-check jev-probe jev-probe-dry-run jev-probe-live jev-probe-local jev-prompt-study jev-local-setup jev-local-serve
 
 LOCAL_JEV_REV := 64a0b31ff343dca32142496cf9edca5a0174a18d
 LOCAL_JEV_ARCHIVE := https://github.com/amithgc/local-jev/archive/$(LOCAL_JEV_REV).tar.gz
@@ -10,9 +10,12 @@ LOCAL_JEV_ARCHIVE := https://github.com/amithgc/local-jev/archive/$(LOCAL_JEV_RE
 help: ## ターゲット一覧を表示する
 	@grep -E '^[a-zA-Z_-]+:.*## ' $(MAKEFILE_LIST) | awk 'BEGIN {FS = ":.*## "}; {printf "  %-14s %s\n", $$1, $$2}'
 
-check: ## 開発環境の定義と差分の空白を検証する
+check: agent-config-check ## Codexの権限・開発環境の定義・差分の空白を検証する
 	nix flake check
 	git diff --check HEAD
+
+agent-config-check: ## Codexの権限とGitHub連携の設定を認証情報に触れず検証する
+	python3.12 -B scripts/check-agent-config.py
 
 jev-check: ## JEV接続プローブを実APIなしで検証する
 	@# 単一ファイルの各ケースを同一プロセスで実行し、子プロセス起動に依存しない。

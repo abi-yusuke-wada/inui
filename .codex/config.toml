@@ -1,4 +1,6 @@
 approval_policy = "on-request"
+# GitHubへの書き込みを含む承認要求は人間に提示する。
+approvals_reviewer = "user"
 # 既定は読み取り専用（調査用）。実装時のみ、セッション内の /permissions で inui-dev に切り替える。
 # 起動オプション -c で default_permissions を指定すると、ワークスペースの要件設定により起動できない。
 # 旧 sandbox_mode・sandbox_workspace_write は権限プロファイルと併用できないため使わない。
@@ -68,3 +70,53 @@ glob_scan_max_depth = 8
 ".aws" = "deny"
 "**/.env" = "deny"
 "**/.env.*" = "deny"
+
+# 開発支援用のGitHub接続。製品MVPに延期したMCPとは別の用途。
+# 専用PATの値は保存せず、Codex起動時の環境変数名だけを指定する。
+# 書き込み先はPAT側でinuiだけに限定し、Contents権限は付けない。
+[mcp_servers.inui_github]
+url = "https://api.githubcopilot.com/mcp/"
+bearer_token_env_var = "INUI_GITHUB_MCP_TOKEN"
+default_tools_approval_mode = "prompt"
+enabled_tools = [
+  "issue_read",
+  "list_issues",
+  "pull_request_read",
+  "list_pull_requests",
+  "issue_write",
+  "create_pull_request",
+  "update_pull_request",
+  "add_issue_comment",
+  "add_reply_to_pull_request_comment",
+]
+
+# サーバー側でも同じ9操作だけを要求し、merge・push・設定変更等を公開しない。
+[mcp_servers.inui_github.http_headers]
+X-MCP-Tools = "issue_read,list_issues,pull_request_read,list_pull_requests,issue_write,create_pull_request,update_pull_request,add_issue_comment,add_reply_to_pull_request_comment"
+
+[mcp_servers.inui_github.tools.issue_read]
+approval_mode = "approve"
+
+[mcp_servers.inui_github.tools.list_issues]
+approval_mode = "approve"
+
+[mcp_servers.inui_github.tools.pull_request_read]
+approval_mode = "approve"
+
+[mcp_servers.inui_github.tools.list_pull_requests]
+approval_mode = "approve"
+
+[mcp_servers.inui_github.tools.issue_write]
+approval_mode = "prompt"
+
+[mcp_servers.inui_github.tools.create_pull_request]
+approval_mode = "prompt"
+
+[mcp_servers.inui_github.tools.update_pull_request]
+approval_mode = "prompt"
+
+[mcp_servers.inui_github.tools.add_issue_comment]
+approval_mode = "prompt"
+
+[mcp_servers.inui_github.tools.add_reply_to_pull_request_comment]
+approval_mode = "prompt"
