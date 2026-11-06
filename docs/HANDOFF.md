@@ -9,6 +9,7 @@
 - 利用者がホストのghでIssue #16を更新し、「更新済」と報告した後に検証を開始した。共有された`.local-jev/issue-16-next.md`の改定セクションも合意内容と一致した。初回公開時に`a056a986`までpushし、[PR #22](https://github.com/abi-yusuke-wada/inui/pull/22)を作成済み。Issue #16への検証結果の追記・Closeは未実施。
 - PR作成・push・CodeRabbitレビュー依頼は利用者が承認済み。初回レビュー（2026-11-06 14:10:18 UTC）は、ADR-0005の過去と現在の記述の矛盾を指摘するactionable 1件と、別途Docstring Coverage警告だった。ADRの修正と日本語JSDoc追加はローカルで対応済み。修正後の再検証は成功し、修正のpush・最新HEADへの全体レビューは未完了である。
 - レビュー修正は`c4cdaaa`にコミット済み。その後、利用者が認証情報の拒否を維持した限定GitHub接続の設定変更と、同PRへのpushを明示承認した。新しい作業ブランチには切り替えず現在のPRで継続する。
+- 限定GitHub接続の設定・検証・文書は`ed23bde`にコミット済み。通常・承認付きの両方で作業ブランチへのpushを試したが、`Could not resolve host: github.com`で失敗した。これらのローカル修正はまだPRへ反映されていない。
 
 ## 変更内容
 
