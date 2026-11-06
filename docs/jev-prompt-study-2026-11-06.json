@@ -14,7 +14,7 @@
   "limitations": [
     "固定13入力の結果を見ながら候補説明と候補名を調整しており、一般的な日本語精度の保証ではない。",
     "未使用の言い換え入力による別評価は未実施。",
-    "HTTPソケットへの接続はセッションの権限制限で拒否され、TCP経路の再実測は未完了。",
+    "エージェントからのHTTP/TCP接続は権限制限で拒否された。別途、利用者ホストの提示ログで13/13件のHTTP成功を確認した。",
     "ブラウザを含む正式MVPの応答30秒条件はIssue #15で別途実測する。",
     "旧導入確認の保存ログと今回の比較は実行条件が異なり、時間差を一般化しない。"
   ],
@@ -4689,7 +4689,9 @@
     "node_normalizations_matched": 13,
     "tcp_status": "permission_denied",
     "tcp_errno": "EPERM",
-    "asgi_status": "not_completed"
+    "asgi_status": "not_completed",
+    "tcp_attempt_actor": "Codex",
+    "host_http_status": "all_13_matched_from_user_log"
   },
   "confirmation_run": {
     "profile": "feature-outside-supported",
@@ -5050,5 +5052,14 @@
         "elapsed_ms": 8605
       }
     ]
+  },
+  "host_http_confirmation": {
+    "record": "jev-local-http-results-2026-11-06.json",
+    "provenance": "利用者がホストで実行したHTTPプローブの提示ログ。エージェントのTCP試行とは別。",
+    "normal_matched": 9,
+    "normal_total": 9,
+    "abnormal_matched": 4,
+    "abnormal_total": 4,
+    "model": "nli-deberta-large"
   }
 }

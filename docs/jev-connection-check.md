@@ -1,6 +1,6 @@
 # ローカルNLI接続・Intent分類の検証（Issue #16）
 
-状態: 基準モデル`nli-deberta-large`を維持し、`feature-outside-supported`の実Engine分類比較で正常9/9件・異常4/4件を得た。保存応答のスキーマとNodeの検証・正規化も13件で確認した。HTTP経路は通信制約で未確認、PRへの反映は未実施で、Issue #16全体の完了とはしない。以前の7/13件の記録と導入確認の履歴は保持する（[ADR-0006](adr/0006-local-model-for-mvp.md)）。
+状態: 基準モデル`nli-deberta-large`を維持し、実Engine比較と利用者ホストでのHTTP再実測の両方で正常9/9件・異常4/4件を確認した。保存応答のスキーマとNodeの検証・正規化も13件で通過し、Issue #16のローカル分類・HTTP応答検証条件は達成済み。GitHubへの進捗反映・Close・PR反映は未実施である。以前の7/13件の記録と導入確認の履歴は保持する（[ADR-0006](adr/0006-local-model-for-mvp.md)）。
 
 ## 今回の範囲
 
@@ -54,7 +54,7 @@ LOCAL_JEV_MODEL=nli-deberta-large make jev-local-serve
 LOCAL_JEV_MODEL=nli-deberta-large make jev-probe-local
 ```
 
-HTTP経由の再確認は、利用者のホスト側で上記のサーバ起動と別devShellからのプローブを実行する。13件の記録で正常9/9件・異常4/4件の一致、応答契約の検証、終了コード`0`を確認する。以下の実Engine分類比較や保存応答の検証だけでは、このHTTP手順の成功に代えない。
+HTTP経由の再現には、利用者のホスト側で上記のサーバ起動と別devShellからのプローブを実行する。この手順による全13件一致の提示ログを受領済みである。再現時は13件の分類と応答契約を確認し、数値の終了コードも記録する。実Engine分類比較や保存応答の検証は、HTTPの提示ログとは分けて扱う。
 
 local-jevは`64a0b31ff343dca32142496cf9edca5a0174a18d`に固定する。環境・キャッシュは`.local-jev/`、モデルキャッシュは`.local-jev/cache/`へ置き、Gitには含めない。既定モデルの重み約0.87 GBとは別にruntimeのダウンロード・ディスクと推論用メモリが必要である。利用者のホスト側で導入と実推論の成功を確認した。[local-jev](https://github.com/amithgc/local-jev)、[モデルカード](https://huggingface.co/MoritzLaurer/deberta-v3-large-zeroshot-v2.0)
 
@@ -64,21 +64,23 @@ local-jevは`64a0b31ff343dca32142496cf9edca5a0174a18d`に固定する。環境�
 
 ## 利用者のホスト実測（2026-11-06）
 
-[既定NLIの提示ログと集計](jev-local-results-2026-11-06.json)と[多言語MiniLMの提示ログと集計](jev-local-multilingual-results-2026-11-06.json)は、利用者がホスト側で実行した`make jev-probe-local`の結果である。エージェントは再実行していない。
+[調整前の既定NLI](jev-local-results-2026-11-06.json)、[多言語MiniLM](jev-local-multilingual-results-2026-11-06.json)、[採用説明でのHTTP再実測](jev-local-http-results-2026-11-06.json)は、利用者がホスト側で実行した`make jev-probe-local`の提示ログと集計である。エージェントからのTCP実行結果ではない。
 
-| 観測項目 | 既定NLI | 多言語MiniLM |
-| --- | --- | --- |
-| provider / model | `local-jev` / `nli-deberta-large` | `local-jev` / `nli-multilingual-minilm` |
-| 応答数 | 13/13件 | 13/13件 |
-| top-1の期待Intentとの一致 | 7/13件（53.8%） | 7/13件（53.8%） |
-| 正常入力 | 5/9件 | 7/9件 |
-| 対象外・曖昧入力 | 2/4件 | 0/4件 |
-| プローブ内の呼び出し時間 | 平均3,935 ms、中央値3,823 ms、最大5,578 ms | 平均108.615 ms、中央値87 ms、最大276 ms |
-| 終了コード | `1`（分類不一致6件の検出） | `1`（分類不一致6件の検出） |
+| 観測項目 | 既定NLI（調整前） | 多言語MiniLM | 基準NLI（採用説明・HTTP） |
+| --- | --- | --- | --- |
+| provider / model | `local-jev` / `nli-deberta-large` | `local-jev` / `nli-multilingual-minilm` | `local-jev` / `nli-deberta-large` |
+| 応答数 | 13/13件 | 13/13件 | 13/13件 |
+| top-1の期待Intentとの一致 | 7/13件（53.8%） | 7/13件（53.8%） | 13/13件（100%） |
+| 正常入力 | 5/9件 | 7/9件 | 9/9件 |
+| 対象外・曖昧入力 | 2/4件 | 0/4件 | 4/4件 |
+| プローブ内の呼び出し時間 | 平均3,935 ms、中央値3,823 ms、最大5,578 ms | 平均108.615 ms、中央値87 ms、最大276 ms | 平均4,674.615 ms、中央値4,591 ms、最大5,502 ms |
+| 終了コード | `1`（分類不一致6件の検出） | `1`（分類不一致6件の検出） | 数値未提示（`0`と推定） |
 
-既定NLIの提示ログ後の環境確認値はlocal-jev `0.2.0`、Torch `2.15.0+cpu`、Transformers `5.22.1`だった。多言語MiniLMの実行時のruntimeバージョンやリソース使用量は提示ログに含まれない。
+調整前の既定NLIの提示ログ後の環境確認値はlocal-jev `0.2.0`、Torch `2.15.0+cpu`、Transformers `5.22.1`だった。多言語MiniLMの実行時メタデータと、今回のHTTPサーバ側のruntime・重みrevision・スレッド数は提示ログに含まれない。後述の実Engine比較の観測値を、HTTP実行へ流用しない。
 
-両モデルで実推論と13応答は成立したが、正常入力と対象外・曖昧入力で成績が変わり、合計の一致数は増えなかった。この保存時の質問では、どちらも正常9/9件・異常4/4件という基準を満たしていない。同じ入力を各1回試した結果であり、一般的な日本語精度は断定できない。言語・モデル特性・候補説明などの要因を切り分けておらず、言語だけを原因とは断定しない。実行条件・負荷・キャッシュ・ウォームアップ等も統制していないため、記録した時間差を一般的な速度差とは扱わない。公式Jevの精度やIssue #15の正式な30秒条件の判定には使わない。
+今回のHTTPログは全13件が`matched=true`で、makeエラーなくプロンプトへ戻った。数値の終了コードは未提示のため、`0`は現在の実装の終了条件からの推定であり、直接観測した値ではない。呼び出し時間はブラウザを含まないプローブ内の記録で、Issue #15の正式な30秒条件の合格を示さない。
+
+調整前の既定NLIと多言語MiniLMの保存ログでは、両モデルで13応答は成立したが、正常入力と対象外・曖昧入力で成績が変わり、合計の一致数は増えなかった。この以前の質問では、どちらも正常9/9件・異常4/4件という基準を満たしていない。各実測は同じ入力を各1回試した結果であり、一般的な日本語精度は断定できない。言語・モデル特性・候補説明などの要因を切り分けておらず、言語だけを原因とは断定しない。実行条件・負荷・キャッシュ・ウォームアップ等も統制していないため、記録した時間差を一般的な速度差とは扱わない。公式Jevの精度やIssue #15の正式な30秒条件の判定には使わない。
 
 ## 候補説明の比較と採用条件（2026-11-06）
 
@@ -113,13 +115,13 @@ aliasは`{"unspecified_application": "clarify"}`という固定1対1の正規化
 
 この条件をローカルの`nli-deberta-large`向けプローブに採用し、現在の`buildRequest`との質問の完全一致を確認した。固定13入力で候補説明を調整した結果であり、未使用の入力や一般的な日本語精度の保証ではない。
 
-## 応答データの検証とHTTP経路の未確認事項
+## 応答データの検証とHTTP経路の確認状況
 
 [保存した比較結果](jev-prompt-study-2026-11-06.json)の`contract_validation`には、実Engineの13件の入出力を既存APIのPydanticスキーマで検証・JSON化し、Nodeの`validateResponse`と固定Intent正規化も13件通過したことを記録した。これは保存されたデータの契約検証であり、APIルートの実行やHTTP通信ではない。
 
-エージェントの実行環境では、サーバとクライアントを同じ実行にまとめてもTCPソケットが`EPERM`で拒否された。ASGI TestClientの試行も`from_thread`のportal待機から完了していない。いずれも成功とは扱わず、13/13件一致の根拠に含めない。分類条件の達成根拠は、上記の実Engine比較の保存結果である。
+先行したエージェント環境での確認では、TCPソケットが`EPERM`で拒否され、ASGI TestClientも`from_thread`のportal待機から完了しなかった。この別環境での制約を成功へ読み替えず、HTTP成功の根拠には[利用者ホストでの提示ログ](jev-local-http-results-2026-11-06.json)を使う。
 
-HTTP経路は利用者のホストで再確認する必要がある。HTTP再実測は未完了であり、PRへの反映、Issue #4のアプリ実装と推論配置、Issue #15のブラウザを含む正式30秒測定も未実施・未完了である。
+実Engine比較、保存入出力13件の契約検証、Nodeの105テストに加え、利用者ホストのHTTP再実測でも13件全一致を確認した。Issue #16のローカル分類・HTTP応答検証条件は達成済みであり、HTTP未確認は現在の未完了事項から外す。GitHubへの進捗反映・Close・PR反映は未実施で、Issue #4のアプリ実装と推論配置、Issue #15のブラウザを含む正式30秒測定も未完了である。
 
 ## 導入確認の履歴（以前の終了基準）
 
@@ -168,9 +170,9 @@ APIキーがある場合、`make jev-probe`の自動選択は引き続き公式J
 
 公式Jevは英語が主な訓練言語であり、CJKを含む他言語は精度が同等ではない。ローカルの基準モデルカードも`language: en`で、以前の質問では7/13件だった。今回、同じモデルの候補説明とwire候補名を調整して実Engineで13/13件を得たが、言語だけが原因だったとは判断しない。公式Jevの日本語精度は引き続き未検証であり、ローカルの結果を公式Jevへ一般化しない。[Models / Language support](https://docs.typesafe.ai/models#language-support)、[基準モデルカード](https://huggingface.co/MoritzLaurer/deberta-v3-large-zeroshot-v2.0)
 
-採用した質問と固定aliasはHTTPプローブへ反映した。次はホスト側の手順で、応答契約と正常9/9件・異常4/4件の一致をHTTP経由で再確認する。現時点の13/13件は分類を分離した結果であり、HTTP経由の成功とは扱わない。confidenceの較正と未使用の言い換え入力は引き続き追加検証事項で、固定13入力だけで一般的な精度を断定しない。
+採用した質問と固定aliasを反映したHTTPプローブで、利用者の提示ログから正常9/9件・異常4/4件の一致を確認した。HTTPの追加再確認を現在の必須次作業にはしない。confidenceの較正と未使用の言い換え入力は引き続き追加検証事項で、固定13入力だけで一般的な精度を断定しない。
 
-Issue #16本文は利用者がホスト側で更新済みと報告し、ローカルの更新内容との一致を確認した。リモート本文の再取得はできておらず、GitHub上の最新状態を独立に確認したとは扱わない。
+Issue #16の改定ゴールの本文更新は、利用者がホスト側で実施済みと報告し、ローカルの更新内容との一致を確認した。今回の達成を受けた進捗反映・Close・PR反映はまだ行っていない。リモート本文の再取得はできておらず、GitHub上の最新状態を独立に確認したとは扱わない。
 
 公式Jev・引数自動補完・MCPは、部署展開と費用に関する社内承認後に再検討する。Choiceや日付・金額の公式例は、その将来検証の参考資料として残す。現在のMVPでは日付・金額・区分・状態を画面上で明示的に操作する。[Choice](https://docs.typesafe.ai/primitives/choice)、[Date extraction](https://docs.typesafe.ai/cookbooks/date_extraction_cookbook)、[Pre-parsed value extraction](https://docs.typesafe.ai/cookbooks/pre_parsed_value_extraction_cookbook)
 
