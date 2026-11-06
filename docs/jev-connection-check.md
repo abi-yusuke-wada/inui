@@ -1,19 +1,23 @@
-# JEV接続・Intent分類の検証（Issue #16）
+# ローカルNLI接続・Intent分類の検証（Issue #16）
 
-状態: 合意したローカル検証の終了基準は、既定NLIの正常5/9件・異常2/4件の一致で達成済み。13件全体の精度合格を意味せず、保存ログの終了コード`1`と既定モデルは維持する。公式Jevへの実接続は未実施で、Issue #16全体は未完了。
+状態: local-jevの`nli-deberta-large`を正式MVPの基準とする。Issue #16の新しい完了条件は固定13入力の正常9/9件・異常4/4件の全件一致であり、保存済みの既定NLIと多言語MiniLMはいずれも7/13件で未達。以前の各1件以上という導入確認の達成は履歴として残し、Issue #16の完了とはしない。今回、新たな推論や精度調整は行っていない（[ADR-0006](adr/0006-local-model-for-mvp.md)）。
 
 ## 今回の範囲
 
-Node.js 24の標準HTTP機能で、固定した入力を送り、Intent分類の結果を期待値と照合する。プローブ本体にはSDKの依存関係を追加しない。ローカル開発では、APIキー設定時は公式Jev、未設定時はlocal-jevの実モデルを使う（[ADR-0005](adr/0005-local-jev-for-development.md)）。文章生成LLMによる補完は行わない（[ADR-0004](adr/0004-jev-first-intent-routing.md)）。
+Node.js 24の標準HTTP機能で、固定した入力をlocal-jevへ送り、Intent分類の結果を期待値と照合する。正式MVPでは`nli-deberta-large`を基準とし、モデル変更が必要な場合は事前に相談する。プローブ本体にはSDKの依存関係を追加せず、LLMによる補完も行わない。ローカル開発用だった位置づけ（[ADR-0005](adr/0005-local-jev-for-development.md)）は、[ADR-0006](adr/0006-local-model-for-mvp.md)で変更した。
 
-| 接続項目 | 検証候補 |
+MVPは、自然言語のIntentから休暇申請・経費精算（交通費）・申請状況の3画面へ振り分ける。日付・金額・区分・状態は利用者が画面上で明示的に操作し、自然言語から自動補完しない。公式Jev・引数自動補完・MCPは、MVPの部署展開と費用に関する社内承認後へ延期する。
+
+| 接続項目 | 開発用プローブの仕様 |
 | --- | --- |
-| 公式Jev | `POST https://api.typesafe.ai/v1/systemone`・Bearer認証・`jev-1.14.0` |
-| ローカル開発 | `POST http://127.0.0.1:8765/v1/systemone`・公式APIキーを送らない・既定`nli-deberta-large` |
-| 多言語比較候補 | `LOCAL_JEV_MODEL=nli-multilingual-minilm`を明示した場合だけ使う。公式Jevと既定モデルは変更しない |
+| 正式MVPの基準 | `POST http://127.0.0.1:8765/v1/systemone`・公式APIキーを送らない・`nli-deberta-large` |
+| 公式Jev（延期） | `POST https://api.typesafe.ai/v1/systemone`・Bearer認証・`jev-1.14.0`。将来の検証用コードは残っている |
+| 過去の多言語比較候補 | `nli-multilingual-minilm`。現在の基準モデルには採用せず、変更や追加比較は事前相談とする |
 | 質問形式 | 入力を`state`に置き、`Choice`の候補からIntentを選ばせる |
 
-[MVPの正常9入力](../MVP.md#入力例と期待結果)と、対象外・曖昧な4入力の計13件を用いる。候補と期待する分類は次のとおり。
+上記の接続先は開発用プローブの経路であり、正式MVPの推論配置・呼び出し経路はIssue #4で具体化する。
+
+[MVPの正常9入力](../MVP.md#入力例と期待結果)と、対象外・曖昧な4入力の計13件を用いる。日付・金額などを含む入力も、ここではIntentだけを照合する。候補と期待する分類は次のとおり。
 
 | 入力の種類 | 件数 | 期待するIntent |
 | --- | --- | --- |
@@ -31,14 +35,24 @@ Node.js 24の標準HTTP機能で、固定した入力を送り、Intent分類の
 | コマンド | 内容・外部通信 |
 | --- | --- |
 | `make jev-check` | オフラインテスト。実APIへ接続しない |
-| `make jev-probe` | `--auto`で、`TYPESAFE_API_KEY`が空白除去後に非空なら公式Jev、未設定・空白のみならローカルへ送る |
+| `make jev-probe` | 従来の`--auto`動作が残る。APIキーがあれば公式Jevを呼ぶため、MVP基準の検証には使わない |
 | `make jev-probe-dry-run` | 通信せずに13入力と公式Jev向けChoiceリクエストを表示する。APIキー不要 |
-| `make jev-probe-live` | 公式Jevを強制する。利用者のホスト側でAPIキーの設定が必要。最大13回の実API呼び出しで課金が発生し得る |
-| `make jev-probe-local` | ローカルを強制する。公式APIキーを読まず、送信しない |
+| `make jev-probe-live` | 将来の公式Jev検証用。公式APIを強制し、最大13回の呼び出しで課金が発生し得る。APIキーが必要 |
+| `make jev-probe-local` | 正式MVP基準の検証用。ローカルを強制し、公式APIキーを読まず、送信しない |
 | `make jev-local-setup` | Python 3.12・uvで固定版local-jevを導入する。runtime等のダウンロードを伴う |
-| `make jev-local-serve` | 既定`nli-deberta-large`を`127.0.0.1:8765`で起動する。`LOCAL_JEV_MODEL`で比較候補を指定でき、未取得の重みは初回にダウンロードする |
+| `make jev-local-serve` | 基準の`nli-deberta-large`を`127.0.0.1:8765`で起動する。未取得の重みは初回にダウンロードする |
 
-ローカルで実推論する場合は、`make jev-local-setup`の後に`make jev-local-serve`を起動し、別のdevShellで`make jev-probe-local`またはキー未設定の`make jev-probe`を実行する。固定応答mockを開発用の代替には使わない。
+MVP基準の実推論では、導入済みの環境で次を実行する。未導入の場合のみ、事前に`make jev-local-setup`で導入する。固定応答mockを開発用の代替には使わない。
+
+```sh
+LOCAL_JEV_MODEL=nli-deberta-large make jev-local-serve
+```
+
+別のdevShellで同じ基準モデルを指定し、公式APIキーの有無によらずローカルの13入力を検証する。
+
+```sh
+LOCAL_JEV_MODEL=nli-deberta-large make jev-probe-local
+```
 
 local-jevは`64a0b31ff343dca32142496cf9edca5a0174a18d`に固定する。環境・キャッシュは`.local-jev/`、モデルキャッシュは`.local-jev/cache/`へ置き、Gitには含めない。既定モデルの重み約0.87 GBとは別にruntimeのダウンロード・ディスクと推論用メモリが必要である。利用者のホスト側で導入と実推論の成功を確認した。[local-jev](https://github.com/amithgc/local-jev)、[モデルカード](https://huggingface.co/MoritzLaurer/deberta-v3-large-zeroshot-v2.0)
 
@@ -62,22 +76,22 @@ local-jevは`64a0b31ff343dca32142496cf9edca5a0174a18d`に固定する。環境�
 
 既定NLIの提示ログ後の環境確認値はlocal-jev `0.2.0`、Torch `2.15.0+cpu`、Transformers `5.22.1`だった。多言語MiniLMの実行時のruntimeバージョンやリソース使用量は提示ログに含まれない。
 
-両モデルで実推論と13応答は成立したが、正常入力と対象外・曖昧入力で成績が変わり、合計の一致数は増えなかった。同じ入力を各1回試した結果であり、一般的な日本語精度は断定できない。言語・モデル特性・候補説明などの要因を切り分けておらず、言語だけを原因とは断定しない。実行条件・負荷・キャッシュ・ウォームアップ等も統制していないため、記録した時間差を一般的な速度差とは扱わない。公式Jevの精度やIssue #15の正式な30秒条件の判定には使わない。
+両モデルで実推論と13応答は成立したが、正常入力と対象外・曖昧入力で成績が変わり、合計の一致数は増えなかった。どちらも現在の正常9/9件・異常4/4件という基準は満たしていない。同じ入力を各1回試した結果であり、一般的な日本語精度は断定できない。言語・モデル特性・候補説明などの要因を切り分けておらず、言語だけを原因とは断定しない。実行条件・負荷・キャッシュ・ウォームアップ等も統制していないため、記録した時間差を一般的な速度差とは扱わない。公式Jevの精度やIssue #15の正式な30秒条件の判定には使わない。
 
-## ローカル検証の終了基準（2026-11-06合意）
+## 導入確認の履歴（以前の終了基準）
 
-今回は、正常系9件と異常系（対象外・曖昧入力）4件で、それぞれ1件以上が期待するIntentと一致すればローカル検証を終了する。既定NLIの保存結果は正常5/9件・異常2/4件で、既に達成している。
+以前は、正常系9件と異常系（対象外・曖昧入力）4件で、それぞれ1件以上が期待するIntentと一致することを、ローカルの導入確認の終了基準とした。既定NLIの保存結果は正常5/9件・異常2/4件で、この限定した確認は達成している。
 
 - 正常例: 「交通費を精算したい」→`expense_request`。
 - 異常例: 「申請を取り下げたい」→`unsupported_operation`。
 
-MiniLMは正常7/9件・異常0/4件で、この最小基準は未達である。今回はソース・モデル・閾値の追加変更を必要としない。この限定した終了合意は、13件全体の精度、公式Jevの接続、Issue #16全体、MVPやIssue #15の正式評価の合格を意味しない。
+MiniLMは正常7/9件・異常0/4件で、以前の最小基準も未達だった。この履歴を、現在のIssue #16の完了条件とは扱わない。
 
-13件プローブは全件一致を終了コード`0`の基準として維持する。既定NLIの6件不一致による終了コード`1`は、そのまま記録する。
+13件プローブは全件一致を終了コード`0`の基準として維持する。既定NLIとMiniLMの6件不一致による終了コード`1`と、保存済み結果JSONは変更しない。
 
-## 多言語NLIの再現手順（任意）
+## 過去の多言語NLI比較の再現手順
 
-既定の英語NLIは変えず、`nli-multilingual-minilm`を明示指定する比較候補として扱う。元のモデル`MoritzLaurer/multilingual-MiniLMv2-L6-mnli-xnli`について、著者は100言語以上に対応すると説明している。今回の13入力では合計の一致数は変わらず、日本語全般での改善は確定していない。重み約428 MBに加えてtokenizer等のダウンロードが必要になる。[モデルカード](https://huggingface.co/MoritzLaurer/multilingual-MiniLMv2-L6-mnli-xnli)、[モデルファイル](https://huggingface.co/MoritzLaurer/multilingual-MiniLMv2-L6-mnli-xnli/tree/main)
+以下は保存済み比較結果の再現手順であり、基準モデルの変更や追加比較を進める場合は事前に相談する。`nli-multilingual-minilm`は正式MVPの基準には採用していない。元のモデル`MoritzLaurer/multilingual-MiniLMv2-L6-mnli-xnli`について、著者は100言語以上に対応すると説明している。保存済みの13入力では合計の一致数は変わらず、日本語全般での改善は確定していない。重み約428 MBに加えてtokenizer等のダウンロードが必要になる。[モデルカード](https://huggingface.co/MoritzLaurer/multilingual-MiniLMv2-L6-mnli-xnli)、[モデルファイル](https://huggingface.co/MoritzLaurer/multilingual-MiniLMv2-L6-mnli-xnli/tree/main)
 
 利用者が比較を再現する際は、既存サーバを`Ctrl+C`で停止してから、サーバ側のdevShellで次を実行する。
 
@@ -95,22 +109,24 @@ serveターゲットは`scripts/jev-local-multilingual.json`を`.local-jev/model
 
 APIキーがある場合、`make jev-probe`の自動選択は引き続き公式Jevを優先する。ローカル候補を比較する上記の`make jev-probe-local`はキーを読まず、送信しない。
 
-## 受け入れ条件と記録
+## Issue #16の完了条件と記録
 
-- オフラインテストが成功し、dry-runで13件の入力・期待値・送信するリクエストを確認できる。
+- 基準モデルを維持して候補説明を整え、応答契約・失敗時の扱い・再現手順を記録する。モデル変更が必要になった場合は事前に相談する。
+- 固定13入力を基準モデルで実測し、正常入力9/9件・対象外と曖昧入力4/4件が、すべて期待するIntentと一致する。接続成功や13件の応答だけで完了とはしない。
+- オフラインテストが成功し、固定13件の入力・期待値と送信するChoiceリクエストを確認できる。既存のdry-run表示は公式Jev向けであり、MVP基準の実測は`make jev-probe-local`で行う。
 - 実接続では各入力のprovider・応答model・選択されたIntent・期待値との一致を記録する。分類の不一致は残りの入力も続けて記録し、終了コードを1にする。接続・HTTP・JSON・契約エラーは成功として扱わず、その時点で中断する。中断後の入力は未実施であり、13件すべてを検証できたとは扱わない。
-- 実接続の成否と分類の成否を区別する。13件が一致しても、日付・金額を含むMVP全体の成功とは扱わない。未検証項目と、実行環境・手順を記録する。
-- 対象外機能・対象外操作・曖昧入力を区別できなければ、[MVPの失敗時の案内](../MVP.md#未対応失敗時の挙動)を再検討する。LLMによる補完は追加しない。
-- ローカルの結果は開発用の記録として扱い、公式Jevの接続成功・分類精度・MVPの合格を示す結果にはしない。本番と正式なMVP評価には公式Jevを使う。
+- 実接続の成否と分類の成否を区別する。13件が一致しても、3画面の描画・画面上の明示操作・保存を含むMVP全体の成功とは扱わない。モデル・実行環境・候補説明・入力と期待値・実結果・手順・未検証項目を記録する。
+- 対象外機能・対象外操作・曖昧入力の期待分類も固定し、区別できない結果は不一致として記録する。基準やモデルの変更が必要な場合は事前に相談し、LLMによる補完は追加しない。
+- ローカルモデルの結果を正式MVPのIntent振り分けの評価材料とする。公式Jevの接続成功・分類精度を示す結果にはしない。公式Jevの延期は、現在のIssue #16を未完了にする理由には含めない。
 
 ## 未検証事項・次の段階
 
-日付・金額などの引数抽出、コアへの組み込み、MCPのTool・通信方式・SDKと接続、UI・認証・業務APIは今回のプローブの対象外であり、未検証である。JEVを含む応答30秒以内の正式な実測はIssue #15で、ブラウザ送信から成功の最終結果受信までを測る。プローブのAPI呼び出しだけでは判定できない（[ADR-0001](adr/0001-mvp-hosting-and-storage.md)、[MVPの完了条件](../MVP.md#pocの完了条件と記録)）。
+コアへの組み込み、3画面のUI・認証・業務APIは今回のプローブの対象外であり、未実装・未検証である。Issue #4で本体を実装し、ローカル推論の配置・呼び出し経路も具体化する。ローカルモデルを含む応答が30秒以内かの正式な実測はIssue #15で、ブラウザ送信から成功の最終結果受信までを測る。プローブ単体の呼び出し時間だけでは判定できない（[ADR-0006](adr/0006-local-model-for-mvp.md)、[MVPの完了条件](../MVP.md#pocの完了条件と記録)）。
 
 公式Jevは英語が主な訓練言語であり、CJKを含む他言語は精度が同等ではない。ローカルの既定モデルカードも`language: en`で、上記13入力では期待結果を満たさなかった。多言語候補でも合計の一致数は増えておらず、既定モデルを変更する根拠とはしない。公式Jevの日本語精度は引き続き未検証であり、ローカルの結果を公式Jevへ一般化しない。[Models / Language support](https://docs.typesafe.ai/models#language-support)、[既定モデルカード](https://huggingface.co/MoritzLaurer/deberta-v3-large-zeroshot-v2.0)
 
-候補説明のA/B比較はローカル検証を終えるための必須作業から外し、必要になった場合の任意の将来検証とする。説明の変更・比較実行はまだ行っていない。実施する場合はモデルを固定し、調整後は未使用の言い換え入力でも確認して、固定13入力への過適合と区別する。confidenceの較正は未検証で、閾値の変更だけで誤分類を解消できる根拠も得られていない。言語やNLIという方式だけを原因と断定しない。
+次は基準モデルを固定したまま候補説明と分類の境界を見直し、正常9/9件・異常4/4件の一致を実測する。今回、候補説明の変更や追加推論は行っていない。confidenceの較正は未検証で、閾値の変更だけで誤分類を解消できる根拠も得られていない。言語やNLIという方式だけを原因と断定せず、固定13入力だけで一般的な精度を断定しない。
 
-Choiceは提示した候補を選ぶ形式で、任意の文字列を生成するものではない。日付は部品をChoiceで読み取りコードで日付にする例、金額は正規表現で候補を抽出しChoiceで選びコードで数値化する例が公式にある。日本語・円表記・MVPの固定基準日時への適用は別途検証し、実装方針を確定する。[Choice](https://docs.typesafe.ai/primitives/choice)、[Date extraction](https://docs.typesafe.ai/cookbooks/date_extraction_cookbook)、[Pre-parsed value extraction](https://docs.typesafe.ai/cookbooks/pre_parsed_value_extraction_cookbook)
+公式Jev・引数自動補完・MCPは、部署展開と費用に関する社内承認後に再検討する。Choiceや日付・金額の公式例は、その将来検証の参考資料として残す。現在のMVPでは日付・金額・区分・状態を画面上で明示的に操作する。[Choice](https://docs.typesafe.ai/primitives/choice)、[Date extraction](https://docs.typesafe.ai/cookbooks/date_extraction_cookbook)、[Pre-parsed value extraction](https://docs.typesafe.ai/cookbooks/pre_parsed_value_extraction_cookbook)
 
-接続・認証・リクエスト形式の出典: [TypeSafe Quick start](https://docs.typesafe.ai/introduction/quickstart)。モデルIDの出典: [Models](https://docs.typesafe.ai/models)。
+将来検証用の公式モードの接続・認証・リクエスト形式の出典: [TypeSafe Quick start](https://docs.typesafe.ai/introduction/quickstart)。公式モデルIDの出典: [Models](https://docs.typesafe.ai/models)。

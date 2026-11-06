@@ -4,12 +4,14 @@
 - 記録日・料金確認日: 2026-10-30（HTTP入口の決定: 2026-11-02）
 - 関連: [Issue #2](https://github.com/abi-yusuke-wada/inui/issues/2)、[MVPのスコープ](../../MVP.md)
 
+2026-11-06更新: 正式MVPのモデル・機能範囲・Issue #16の終了条件は[ADR-0006](0006-local-model-for-mvp.md)を優先する。MVPは`nli-deberta-large`でIntentを判定して3画面を選び、日付・金額・区分・状態は画面で明示操作する。公式Jevへの接続、引数の自動補完、MCPは部署展開と社内費用承認の後へ延期する。以下の料金比較と旧経路は判断の履歴として残し、ローカル推論が既存のLambda構成で動作済みとは扱わない。
+
 ## 背景と合意済みの条件
 
 - 対象は申請・ワークフロー（申請を出す側）の休暇申請・経費精算（交通費）・申請状況の確認の3機能。少人数の研究用MVPを小さく作り切る。決定時の対象はアンケート回答・指定日の予定参照・個人の表示設定変更の3機能で、Issue #11で題材を見直した（2026-11-04）。どちらも少人数・低頻度の小さな業務処理で、この構成の判断は変わらない。
 - フロントエンドはReactとTypeScript、APIはTypeScriptとHonoを使う。DBはRDBとしてTurso Cloudを採用する。
 - CI/CDにはGitHub Actionsを使い、Lambdaはコンテナイメージで配布し、その保管先にAmazon ECRを利用する（配布形式の決定: 2026-11-02）。
-- inuiがMCPインターフェースを提供する。JEVはinuiのホスト処理から実行時に呼び出す対象とし、外部リソースを使う前提を維持する。
+- 当初はinuiがMCPインターフェースを提供し、ホスト側から外部JEVを呼び出す前提だった。現在は[ADR-0006](0006-local-model-for-mvp.md)に従い、MVPではローカル実NLIを使う。MCPと公式Jevは部署展開と社内費用承認の後に扱う。
 - 基盤費用は会社の個人AWS利用枠で、月2,000円程度を目安にする。正確な利用可能額・既存使用量は未確認。
 - LLM・JEVなどのAPIキー利用料は別途相談とし、今回の基盤費用比較から除外する。DB・配信・ログ・Gatewayなどの基盤費用は比較に含める。
 - 本業とは別の研究タスクであるため、クラウド料金に加えて構築・デプロイ・CI等の作業時間も費用として評価し、自動化で手間を減らす。増額の可能性はあるが、将来の増額を前提に構成を大きくしない。
@@ -26,7 +28,7 @@
 | Amazon EC2 | 常駐プロセスや同一サーバのRDBを扱いやすい。稼働時間に加え、EBS・公開IPv4等の費用とOS・プロセス管理の手間を比較する必要がある | APIの実行基盤としては不採用。運用の手間を抑えるためLambdaを選ぶ。Gateway用の常駐環境も追加しない |
 | さくら AppRun共用型 | Node.jsのコンテナを実行する候補。最小構成は0.5 vCPU・1 GiBで5円/時。ゼロスケールが可能だが、起動・稼働に料金がかかる | 今回は不採用。会社の利用枠があるAWSを使う |
 
-HonoにはLambda向けの公式アダプターがあり、TypeScriptのAPIをLambda上で実行する構成を取れる。Lambdaの採用は確定し、JEV呼び出しとMCPインターフェースの処理時間・通信条件は実装時に確認する。[HonoのLambda対応](https://hono.dev/docs/getting-started/aws-lambda)、[Lambda料金](https://aws.amazon.com/lambda/pricing/)、[Lambdaの管理範囲](https://docs.aws.amazon.com/lambda/latest/dg/lambda-functions-chapter.html)、[EC2料金](https://aws.amazon.com/ec2/pricing/on-demand/)、[AppRun料金](https://cloud.sakura.ad.jp/products/apprun-shared/)
+HonoにはLambda向けの公式アダプターがあり、TypeScriptのAPIをLambda上で実行する構成を取れる。APIのLambda採用方針は維持するが、ローカル推論サーバーの配置とMVPからの呼び出し経路はIssue #4で具体化する。ローカルNLIの重みの導入・推論がLambdaで成立することは未検証である（[ADR-0006](0006-local-model-for-mvp.md)）。[HonoのLambda対応](https://hono.dev/docs/getting-started/aws-lambda)、[Lambda料金](https://aws.amazon.com/lambda/pricing/)、[Lambdaの管理範囲](https://docs.aws.amazon.com/lambda/latest/dg/lambda-functions-chapter.html)、[EC2料金](https://aws.amazon.com/ec2/pricing/on-demand/)、[AppRun料金](https://cloud.sakura.ad.jp/products/apprun-shared/)
 
 ### RDB
 
@@ -44,7 +46,7 @@ Turso Cloudの採用と、エンジン・ドライバー・ORMの選定は区別
 
 公式資料では、Tursoのリモート接続クライアントはAWS Lambdaを含むサーバレス環境に対応している。AWS専用のDB連携機能を用意するのではなく、Honoの業務処理からDBのURLとTursoの認証トークンを使ってHTTPS経由でSQLを実行する構成を取れる。[TypeScriptクライアント仕様](https://docs.turso.tech/sdk/ts/reference)
 
-- Amplify HostingがReactの静的ファイルをブラウザに配信し、ブラウザは入力をHono / Lambdaの受付APIへPOSTする。ホスト側でJEVを実行時に呼び出し、判断結果を検証して許可済みの業務処理・UIを選択する。MCPはinuiが提供するインターフェースとして扱う。
+- Amplify HostingがReactの静的ファイルをブラウザに配信し、ブラウザは入力をHono / Lambdaの受付APIへPOSTする。ホスト側で採用したローカルNLIのIntentを検証し、許可済みの業務UIを選択する。推論サーバーへの経路はIssue #4で具体化し、MCPはMVPの必須条件から外す（[ADR-0006](0006-local-model-for-mvp.md)）。
 - 「APIの入口」は、外部から受付APIへリクエストを届ける公開URL・HTTP接続経路を指す。AWS API Gateway（HTTP API）+ Lambdaを採用し、Kong OSSは採用しない。受付後のIntent判定・業務処理と区別し、認証情報の受け渡し等の設定は実装時に決める。
 - Lambda側でIntent・Tool・引数を検証し、許可した業務処理から必要なSQLを実行する。ブラウザからDBへ直接接続せず、DBの認証情報はLambda側で管理する。秘密情報の保管・注入方法は別途決める。
 - 通常のLambda関数は、自分たちのVPCへ接続する設定を追加しなければ外部インターネットへ接続できる。Tursoへ接続するだけの目的でVPCやNAT Gatewayを追加する必要はない。会社のネットワーク要件がある場合は、その条件と追加費用を確認する。[Lambdaの外部通信](https://docs.aws.amazon.com/lambda/latest/dg/configuration-vpc.html)
@@ -52,7 +54,9 @@ Turso Cloudの採用と、エンジン・ドライバー・ORMの選定は区別
 
 オーケストレーションはホスト側で行い、DBには業務データを保存する。LLM・JEVとの長い通信をDBトランザクション内に含めない設計を基準に検討する。
 
-### MCPインターフェースとJEVの役割
+### MCPインターフェースとJEVの役割（当初の判断）
+
+この節のMCP・外部JEVの経路と費用比較は当初の判断の履歴である。現在のMVPは[ADR-0006](0006-local-model-for-mvp.md)を優先し、ホスト側検証を維持してローカルNLIを呼び出す。MCPと公式Jevの検証・採用は部署展開と社内費用承認の後に扱う。
 
 MCPはinuiが提供するインターフェースであり、inuiがMCP Server側の役割を持つ。JEVはinuiの処理の中で実行時に呼び出す対象とする。MCP自体をIntent判定主体とは扱わず、ホストが判断結果の検証・許可済みの業務処理とUIの制御を担う。
 
@@ -68,7 +72,7 @@ flowchart LR
   Host --> Business[許可済みの業務処理・UI]
 ```
 
-MCPの公開Tool・入出力・通信方式・SDK対応版と、JEVの具体的な製品・SDK・接続先はIssue #16で決め、PoCの実装（Issue #4）ではその結果に従って実装する。MCPにはStreamable HTTP等の標準トランスポートがあるが、今回は通信方式やSDKを確定しない。認証・認可と引数の検証は、通常の受付APIとMCPの双方でホスト側に適用する。[MCPの通信方式](https://modelcontextprotocol.io/specification/2026-07-28/basic/transports)
+当初はMCPの公開Tool・入出力・通信方式・SDK対応版と、JEVの具体的な製品・SDK・接続先をIssue #16で決め、PoCの実装（Issue #4）へ渡す方針だった。現在は[ADR-0006](0006-local-model-for-mvp.md)に従い、これらの公式Jev・MCPの確認を部署展開と社内費用承認の後へ延期する。認証・認可と入力の検証をホスト側に適用する原則は維持する。[MCPの通信方式](https://modelcontextprotocol.io/specification/2026-07-28/basic/transports)
 
 #### 判断理由と比較した案
 
@@ -78,14 +82,14 @@ MCPの公開Tool・入出力・通信方式・SDK対応版と、JEVの具体的�
 | B. ブラウザからJEV・LLMを直接呼び出す | 追加の基盤費用はない | ブラウザにAI処理と接続用の認証情報が載り、Thin Clientとホスト側制御の原則に反するため不採用 |
 | C. JEVに業務API・DBを直接操作させる | 追加の基盤費用はない | AIの判断結果を検証する前に業務処理や保存が実行され得るため不採用 |
 
-影響は次のとおり。
+当時の想定経路と影響は次のとおり。
 
 - 通信経路は、ブラウザ → API Gateway → Lambda（ホスト）→ JEVとなる。ブラウザはJEVと直接通信しない。
 - JEVの応答時間は、1回の応答の30秒上限に含まれる。
 - JEVの障害・タイムアウト時は業務処理・保存を行わず、失敗を案内して再試行できる状態にする（[MVP](../../MVP.md) の失敗ケース）。
 - JEVとの接続と判断結果の検証は、PoCアプリから独立したコアに置く（[ADR-0003](0003-separate-core-from-poc-app.md)）。
 
-決定済みなのは、MCPをinuiが提供すること、JEVをホスト側から呼び出すこと、判断結果の検証をホスト側で行うことである。公開Tool、入出力、通信方式・SDK、JEVの具体的な製品・接続先、MCPを利用する側の構成は未決定で、Issue #16で決める。
+現在のIssue #16はローカル基準モデル`nli-deberta-large`を固定し、候補説明・出力契約・失敗時の扱い・再現手順と、正常9件・異常4件の全13件一致を実測する。モデル変更が必要なら利用者に相談する。ホスト側検証と認証・認可を維持し、MCPの構成は延期後に具体化する（[ADR-0006](0006-local-model-for-mvp.md)）。
 
 ### フロントエンドのホスティング
 
@@ -151,7 +155,7 @@ API GatewayのHTTP APIとREST APIでは機能・料金が異なる。HTTP APIを
 HTTP APIの最大統合タイムアウト30秒は、制約ではなく応答時間の設計上の上限として受け入れる。inuiは非構造的な入力に対して業務UIを返すことが目的であり、1回の応答が30秒以内に返らない時点でUXとして成立しない。同じ理由で、Lambdaの最大実行時間15分も制約にならない。Kongはタイムアウトを設定で延ばせるが、この前提ではその利点が採用理由にならず、常駐環境の費用と自己管理の負担だけが残るため採用しない。
 
 - 採用: AWS API Gateway（HTTP API）+ Hono / Lambda。
-- 応答時間: JEVの呼び出しを含めて1回の応答を30秒以内に収めることを必須とし、Issue #15で実測する。MVPではLLMを使わない（[ADR-0004](0004-jev-first-intent-routing.md)）。
+- 応答時間: 採用したローカルNLIの呼び出しを含めて1回の応答を30秒以内に収めることを必須とし、Issue #15で正式に実測する。MVPではLLMを使わない（[ADR-0006](0006-local-model-for-mvp.md)、[ADR-0004](0004-jev-first-intent-routing.md)）。
 - 代替案: 30秒を超える処理がどうしても必要になった場合は、次を比較する。タイムアウトを延ばすためだけにGatewayを追加しない。
   - 非同期の受付・結果取得: 受付だけを30秒以内に返し、結果は後から取得する。採用中のHTTP APIのまま実現できる。
   - レスポンスのストリーミング: 採用中のHTTP APIは対応していない。選ぶ場合は、該当する経路をストリーミングに対応するREST APIまたはFunction URLへ切り替える。
@@ -233,7 +237,7 @@ GitHubの所属はアプリへ入れる人の条件とする。現行MVPは検�
 
 ## 決定と影響
 
-フロント配信はReact + TypeScript / Amplify Hosting、APIはTypeScript + Hono / AWS Lambda、RDBはTurso Cloudを採用する。CI/CDはGitHub Actions、Lambdaはコンテナイメージで配布してECRに保管し、構築・CI・デプロイの自動化で研究に使える時間を確保する。inuiがMCPインターフェースを提供し、JEVはホスト処理が実行時に呼び出す。HTTP入口はAWS API Gateway（HTTP API）を採用し、1回の応答を30秒以内に収めることを設計上の上限とする。Kong Gateway OSSは採用せず、Konnectは保留する。
+フロント配信はReact + TypeScript / Amplify Hosting、APIはTypeScript + Hono / AWS Lambda、RDBはTurso Cloudを採用する。CI/CDはGitHub Actions、Lambdaはコンテナイメージで配布してECRに保管し、構築・CI・デプロイの自動化で研究に使える時間を確保する。現在のMVPでは[ADR-0006](0006-local-model-for-mvp.md)を優先し、ホスト側でローカルNLIのIntentを検証して3画面を選択する。公式Jev・引数の自動補完・MCPは部署展開と社内費用承認の後へ延期し、推論サーバーの配置・呼び出し経路はIssue #4で具体化する。HTTP入口はAWS API Gateway（HTTP API）を採用し、1回の応答を30秒以内に収めることを設計上の上限とする。Kong Gateway OSSは採用せず、Konnectは保留する。
 
 CDNはAmplify Hostingに任せる。配布先はインターネット経由の社内コミュニティとし、GitHub Organizationへの所属をアプリ側で確認して業務UI・APIの利用を許可する。このアクセス制御のための専用VPC・VPNや基盤側の認証サービスは採用しない。
 
@@ -250,10 +254,10 @@ Issue #2では、MVPに使う技術・構成・採用理由と実装へ進める
 | 確認した構成判断 | 現在の状態・後続で詰める範囲 |
 | --- | --- |
 | HTTP入口の方式と費用 | 決定。AWS API Gateway（HTTP API）+ Lambdaを採用し、30秒を応答時間の上限とする。Kongは採用せず、稼働先の選定は不要。応答時間の実測はIssue #15で行う |
-| JEV・MCPの役割と接続 | 役割は合意済み。inuiがMCPインターフェースを提供し、JEVはホスト処理から実行時に呼び出す。JEV / Choiceの具体的な接続仕様、公開Tool、通信方式・SDKの選定と実際の接続検証はIssue #16で扱う |
+| 採用モデル・MCPの役割と接続 | [ADR-0006](0006-local-model-for-mvp.md)で更新。Issue #16はローカル基準モデルを固定した13件全一致・出力契約・失敗時の扱い・再現手順を検証する。公式Jev・引数の自動補完・MCPは部署展開と社内費用承認の後へ延期し、MVPでの推論配置と呼び出し経路はIssue #4で具体化する |
 | 基盤の構築・デプロイ自動化の方式 | GitHub Actionsを採用し、Lambdaはコンテナイメージで配布してECRに保管することを決定済み。Lambdaと採用するAPI入口のリソース定義・構築ツール、イメージの作り方とワークフローの詳細は後続で具体化する。フロントはAmplify HostingのGit連携を維持する |
 
-Issue #2で扱う構成判断はすべて決定した。MCP・JEVの役割とGitHub Actions・ECRの基本方針は維持し、Konnectの利用条件や移行時期は将来の検討へ引き継ぐ。実際のURL・ルート・CORS、API呼び出しやTool実装、個々のCIジョブやDB更新手順は後続で具体化する。
+Issue #2で扱う構成判断はすべて決定した。その後のMVPモデル・MCPの対象と担当範囲は[ADR-0006](0006-local-model-for-mvp.md)を優先する。GitHub Actions・ECRの基本方針は維持し、Konnectの利用条件や移行時期は将来の検討へ引き継ぐ。実際のURL・ルート・CORS、API呼び出しやTool実装、個々のCIジョブやDB更新手順は後続で具体化する。
 
 扱うIssueは、Issue #4（PoCの実装）をサブIssue（#12〜#16）に分けたことに合わせて更新した（2026-11-04）。決めた内容は、Issue #4の実装でその結果に従って組み込む。
 
@@ -262,7 +266,8 @@ Issue #2で扱う構成判断はすべて決定した。MCP・JEVの役割とGit
 | 対象Organization名、App登録、権限、コールバックURL | Issue #12（認証）で決める。実値が未指定でもIssue #2の完了を妨げない |
 | セッション方式・有効期限、所属の再確認・失効 | Issue #12（認証）で決める。APIを含めホスト側で認証・認可する方針を満たす |
 | Tursoのエンジン・接続クライアント、テーブル定義とマイグレーション | Issue #13（DB）で決める。テーブル定義の変更をどう適用するかも、Issue #13で合わせて決める |
-| MCPのTool・通信方式・SDK、JEV / Choiceの具体的な接続（MVPではLLMを使わない。ADR-0004） | Issue #16で決め、PoCの実装（Issue #4）ではその結果に従ってJEVとの接続部分（アダプター）を実装する。合意した役割とホスト側制御を維持し、接続条件が構成に影響する場合はADRを更新する |
+| ローカルNLIの分類と出力契約（MVPではLLMを使わない） | Issue #16で基準モデル・候補説明・出力契約・失敗時の扱い・再現手順と13件全一致を検証し、Issue #4でコアへの組み込み・推論サーバーの配置・呼び出し経路を具体化する。[ADR-0006](0006-local-model-for-mvp.md)を優先する |
+| 公式Jev・日付や金額等の自動補完・MCPのTool/通信方式/SDKと接続 | MVPの部署展開と社内費用承認の後へ延期する。今回のIssue #16の必須条件には含めない（[ADR-0006](0006-local-model-for-mvp.md)） |
 | 検証コマンド・GitHub Actions設定、ECR・IAM、秘密情報の注入、デプロイ・DB更新の具体的な手順 | Issue #14（インフラ）で決める。実装と一緒に整え、DB更新の自動化までIssue #2の必須条件にしない |
 | 開発ツールの具体化・バージョン、Nix定義、必要最小限のディレクトリ | Issue #3で決定。[ADR-0002](0002-development-environment.md) を参照。ディレクトリ構成はIssue #14で決める |
 

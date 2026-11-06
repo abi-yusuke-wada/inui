@@ -12,20 +12,21 @@ inuiでは、自然言語からユーザーのIntentを判定し、必要な業�
 
 inuiの問題提起は「LLMにどんなUIを生成させるか」ではありません。LLMは応答が遅く、費用もかさみます。JEVのように安く速く使えるルーターで入力を適切な画面へ振り分けるだけで、アプリケーションのこれまでのUI/UXを最適化できるのではないか、という点にあります。
 
-そこで、安く速いルーター（JEV）による振り分けで、これまでのUI/UXを最適化できるかを検証します。Intent判定はまずJEVだけで実現し、MVPではLLMを使いません（[ADR-0004](docs/adr/0004-jev-first-intent-routing.md)）。旧形式（メニューや画面遷移で目的の画面を開くUI）と同じ作業で比較し、inuiが有利な例だけでなく不利な例も示します。
+そこで、安く速いルーターによる振り分けで、これまでのUI/UXを最適化できるかを検証します。正式なMVPはlocal-jevのNLIモデル`nli-deberta-large`を基準とし、LLMを使いません。モデル変更が必要になった場合は事前に相談します（[ADR-0006](docs/adr/0006-local-model-for-mvp.md)）。旧形式（メニューや画面遷移で目的の画面を開くUI）と同じ作業で比較し、inuiが有利な例だけでなく不利な例も示します。
 
 ## 中核思想
 
 - **Intent-driven UI**：ユーザーのIntentを起点に、必要な業務UIを表示する。
-- **安く速い振り分け**：Intent判定は、JEVのような安く速く使えるルーターで行う。
+- **安く速い振り分け**：Intent判定は、local-jevのNLIモデルを基準に小さく検証する。
 - **Thin Client**：ブラウザにLLMや自律的なAIエージェントを常駐させず、入力受付と事前実装済みUIの描画を中心に担わせる。
-- **Server-side Intent Orchestration**：Intent判定の制御、業務処理、Tool選択、UI選択をホスト側に置く。AIの判断結果は許可リストや検証処理で制御する。
+- **Server-side Intent Orchestration**：Intent判定の制御、業務処理、UI選択をホスト側に置く。AIの判断結果は許可リストや検証処理で制御する。
 - **既存資産の再利用**：HTMLやJavaScriptをAIで自由生成せず、既存の業務APIと事前実装済みUIコンポーネントを再利用する。
 - **小さく検証する**：性能、クライアント負荷、セキュリティ上の特性を、推測ではなく検証結果に基づいて評価する。
 
 ## MVPの方向性
 
 申請・ワークフロー（申請を出す側）を題材に、休暇申請・経費精算（交通費）・申請状況の確認の3つを対象として小さく実装し、E2Eの動作と旧形式との比較を確認します。
+自然言語はこの3画面へのIntent振り分けに使い、日付・金額・区分・状態は利用者が画面上で明示的に操作します。公式Jev、自然言語からの引数自動補完、MCPは、MVPの部署展開と費用に関する社内承認後へ延期します（[ADR-0006](docs/adr/0006-local-model-for-mvp.md)）。
 範囲と完了条件は [MVP.md](MVP.md) にまとめます。
 
 ## 開発環境
@@ -56,20 +57,20 @@ direnvを使わない場合は `nix develop` で開発環境に入ります。
 | `make check` | 開発環境の定義（`nix flake check`）と差分の空白を検証する |
 | `make sandbox-check` | CLIのサンドボックスの前提条件を確認する |
 | `make jev-check` | JEV接続プローブのオフラインテストを実行する |
-| `make jev-probe` | APIキーありは公式Jev（従量課金）、なしはローカルNLIで13入力を検証する |
-| `make jev-probe-dry-run` | 固定13入力の公式Jevリクエストを表示する（通信なし） |
-| `make jev-probe-live` | JEVへ最大13回接続してIntent分類を検証する（APIキー・通信許可・利用料金の確認が必要） |
-| `make jev-probe-local` | ローカルNLIを使って13入力を検証する（公式APIキーを使わない） |
+| `make jev-probe` | 従来の自動選択。APIキーありは公式Jev（従量課金）、なしはローカルNLIへ接続する。MVP評価には`make jev-probe-local`を使う |
+| `make jev-probe-dry-run` | 将来検証用の公式Jevリクエストを固定13入力で表示する（通信なし） |
+| `make jev-probe-live` | 将来の公式Jev検証用。最大13回接続する（APIキー・通信許可・利用料金の確認が必要） |
+| `make jev-probe-local` | 正式MVPの基準としてローカルNLIで固定13入力を検証する（公式APIキーを使わない） |
 | `make jev-local-setup` | 固定版local-jevとCPU用Python依存を取得する |
 | `make jev-local-serve` | ローカルNLIを起動する（初回はモデル重み約0.87GBを取得） |
 
-JEV接続プローブの範囲・手順・未検証事項は [接続検証の説明](docs/jev-connection-check.md) を参照してください。日付・金額の抽出やMCP接続は、プローブのIntent分類とは別に検証します。
+ローカルNLIの範囲・手順・未検証事項は [接続検証の説明](docs/jev-connection-check.md) を参照してください。MVP基準の検証では、サーバーとプローブの両方で`LOCAL_JEV_MODEL=nli-deberta-large`を明示し、`make jev-local-serve`と`make jev-probe-local`を使います。
 
-ローカル開発では`TYPESAFE_API_KEY`が設定されていれば公式Jev、未設定・空白のみならlocal-jevの実モデルを使います。導入後に`make jev-local-serve`を起動し、別のdevShellからプローブを実行します。ローカルの結果は、公式Jevによる正式なMVP評価と分けて扱います（[ADR-0005](docs/adr/0005-local-jev-for-development.md)）。
+プローブの従来の自動選択はコードに残っており、`make jev-probe`は`TYPESAFE_API_KEY`があれば公式Jevを呼びます。公式モードは将来の検証用として残し、現在のMVP基準には使いません。ローカル開発用だった位置づけ（[ADR-0005](docs/adr/0005-local-jev-for-development.md)）は、[ADR-0006](docs/adr/0006-local-model-for-mvp.md)で正式MVPの基準に変更しました。
 
-ローカル導入検証の終了基準は、正常系と異常系（対象外・曖昧入力）でそれぞれ1件以上、期待するIntentと一致することです。利用者の提示ログで既定モデルは正常5/9件・異常2/4件一致となり、この基準を達成しました。13入力の全件一致には至っておらず、`make jev-probe-local`は全件一致を判定するため引き続き終了コード1になります。
+Issue #16の完了には、基準モデルと候補説明・応答契約・失敗時の扱い・再現手順を整え、固定13入力で正常9/9件・対象外と曖昧入力4/4件の全件一致を実測する必要があります。既定モデルの保存結果は正常5/9件・異常2/4件で、この基準は未達です。以前の各1件以上という基準の達成は導入確認の履歴として扱い、Issue #16の完了とはしません。
 
-多言語NLIの比較候補は正常7/9件・異常0/4件で、この終了基準は未達です。比較候補は、サーバーとプローブの両方で`LOCAL_JEV_MODEL=nli-multilingual-minilm`を指定して再現できます。結果と比較手順は [接続検証の説明](docs/jev-connection-check.md) を参照してください。
+過去の多言語NLI比較は正常7/9件・異常0/4件で、こちらも新基準は未達です。モデル変更は事前相談とし、今回は新たな推論や精度調整を行っていません。保存結果と過去の比較手順は [接続検証の説明](docs/jev-connection-check.md) を参照してください。
 
 アプリのビルド・起動等のターゲットは、Issue #4の実装に合わせて追加します。
 
@@ -87,4 +88,4 @@ CLIのサンドボックスには、devShellが提供する `bubblewrap`（`bwra
 
 ## 現在のステータス
 
-MVPの範囲と完了条件、技術構成（[ADR-0001](docs/adr/0001-mvp-hosting-and-storage.md)）と開発環境（[ADR-0002](docs/adr/0002-development-environment.md)）、コアとPoCアプリの分離方針（[ADR-0003](docs/adr/0003-separate-core-from-poc-app.md)）、JEV優先の方針（[ADR-0004](docs/adr/0004-jev-first-intent-routing.md)）は決定済みです。次はPoCの実装に進みます。アプリケーションは未実装です。
+MVPの範囲と完了条件、技術構成（[ADR-0001](docs/adr/0001-mvp-hosting-and-storage.md)）と開発環境（[ADR-0002](docs/adr/0002-development-environment.md)）、コアとPoCアプリの分離方針（[ADR-0003](docs/adr/0003-separate-core-from-poc-app.md)）を基に、[ADR-0006](docs/adr/0006-local-model-for-mvp.md)でローカルモデルを正式MVPの基準にしました。次はIssue #16で固定13入力の全件一致を実測し、Issue #4でアプリ本体とローカル推論の配置・呼び出し経路を具体化します。Issue #15では、ローカルモデルを含むブラウザ送信からの応答が30秒以内かを実測します。アプリケーションは未実装です。
