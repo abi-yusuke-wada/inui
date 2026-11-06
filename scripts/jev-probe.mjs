@@ -2,6 +2,7 @@ import { pathToFileURL } from 'node:url';
 
 export const MODEL = 'jev-1.14.0';
 export const LOCAL_MODEL = 'nli-deberta-large';
+export const MULTILINGUAL_LOCAL_MODEL = 'nli-multilingual-minilm';
 export const LOCAL_BASE_URL = 'http://127.0.0.1:8765';
 const ENDPOINT = 'https://api.typesafe.ai/v1/systemone';
 const CRITERIA = {
@@ -34,7 +35,7 @@ class ProbeError extends Error {}
 
 const hasApiKey = (key) => typeof key === 'string' && key.trim() !== '';
 
-export function selectProvider({ mode = 'auto', apiKey, localBaseUrl = LOCAL_BASE_URL } = {}) {
+export function selectProvider({ mode = 'auto', apiKey, localBaseUrl = LOCAL_BASE_URL, localModel = LOCAL_MODEL } = {}) {
   if (!['auto', 'dry-run', 'live', 'local'].includes(mode)) {
     throw new ProbeError('実行モードが不正です。');
   }
@@ -43,6 +44,10 @@ export function selectProvider({ mode = 'auto', apiKey, localBaseUrl = LOCAL_BAS
   }
   if (mode === 'dry-run' || mode === 'live' || (mode === 'auto' && hasApiKey(apiKey))) {
     return { name: 'jev', endpoint: ENDPOINT, model: MODEL, probabilityTolerance: 0.000001 };
+  }
+  const selectedModel = localModel === '' ? LOCAL_MODEL : localModel;
+  if (![LOCAL_MODEL, MULTILINGUAL_LOCAL_MODEL].includes(selectedModel)) {
+    throw new ProbeError('LOCAL_JEV_MODELには検証対象のNLIモデルを指定してください。');
   }
   let base;
   try {
@@ -58,7 +63,7 @@ export function selectProvider({ mode = 'auto', apiKey, localBaseUrl = LOCAL_BAS
     throw new ProbeError('LOCAL_JEV_BASE_URLには認証情報やパスを含まないループバックURLを指定してください。');
   }
   return {
-    name: 'local-jev', endpoint: new URL('/v1/systemone', base).href, model: LOCAL_MODEL,
+    name: 'local-jev', endpoint: new URL('/v1/systemone', base).href, model: selectedModel,
     // local-jevは各確率を小数4桁に丸めるため、候補数に応じた丸め誤差を許す。
     probabilityTolerance: Object.keys(CRITERIA).length * 0.00005 + Number.EPSILON,
   };
@@ -139,10 +144,10 @@ async function requestDecision(provider, text, apiKey, fetchImpl) {
   return validateResponse(body, provider);
 }
 
-export async function runProbe({ mode = 'auto', apiKey, localBaseUrl, fetchImpl = globalThis.fetch, write = console.log } = {}) {
+export async function runProbe({ mode = 'auto', apiKey, localBaseUrl, localModel, fetchImpl = globalThis.fetch, write = console.log } = {}) {
   let provider;
   try {
-    provider = selectProvider({ mode, apiKey, localBaseUrl });
+    provider = selectProvider({ mode, apiKey, localBaseUrl, localModel });
   } catch (error) {
     const message = error instanceof ProbeError ? error.message : '接続先を選択できません。';
     write(JSON.stringify({ status: 'error', error: message }));
@@ -185,7 +190,10 @@ export async function runCli(args, env = process.env, { fetchImpl = globalThis.f
   const apiKey = ['auto', 'live'].includes(mode) ? env.TYPESAFE_API_KEY : undefined;
   const useLocal = mode === 'local' || (mode === 'auto' && !hasApiKey(apiKey));
   return runProbe({
-    mode, apiKey, localBaseUrl: useLocal ? env.LOCAL_JEV_BASE_URL : undefined, fetchImpl, write,
+    mode, apiKey,
+    localBaseUrl: useLocal ? env.LOCAL_JEV_BASE_URL : undefined,
+    localModel: useLocal ? env.LOCAL_JEV_MODEL : undefined,
+    fetchImpl, write,
   });
 }
 

@@ -1,0 +1,8 @@
+{
+  "name": "nli-multilingual-minilm",
+  "backend": "nli",
+  "hf_model": "MoritzLaurer/multilingual-MiniLMv2-L6-mnli-xnli",
+  "priority": 10,
+  "context_tokens": 512,
+  "device": "cpu"
+}

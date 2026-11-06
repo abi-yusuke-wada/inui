@@ -37,9 +37,17 @@ jev-local-setup: ## local-jevとCPU用Python依存を取得する（ネットワ
 	uv --no-config --cache-dir ".local-jev/uv-cache" pip install --python ".local-jev/venv/bin/python" --index-url https://download.pytorch.org/whl/cpu 'torch>=2.4'
 	uv --no-config --cache-dir ".local-jev/uv-cache" pip install --python ".local-jev/venv/bin/python" "$(LOCAL_JEV_ARCHIVE)"
 
-jev-local-serve: ## ローカルNLIを起動する（初回はモデル約0.87GBを取得）
-	@test -x ".local-jev/venv/bin/local-jev" || { echo "先に make jev-local-setup を実行してください" >&2; exit 1; }
-	env -u TYPESAFE_API_KEY HF_HOME="$$(pwd)/.local-jev/cache" HF_HUB_DISABLE_IMPLICIT_TOKEN=1 .local-jev/venv/bin/local-jev serve --model nli-deberta-large --host 127.0.0.1 --port 8765
+jev-local-serve: ## ローカルNLIを起動する（初回は選んだモデルを取得）
+	@set -eu; \
+	local_jev_model="$${LOCAL_JEV_MODEL:-nli-deberta-large}"; \
+	case "$$local_jev_model" in \
+		nli-deberta-large|nli-multilingual-minilm) ;; \
+		*) echo "LOCAL_JEV_MODELは nli-deberta-large または nli-multilingual-minilm を指定してください" >&2; exit 1 ;; \
+	esac; \
+	test -x ".local-jev/venv/bin/local-jev" || { echo "先に make jev-local-setup を実行してください" >&2; exit 1; }; \
+	mkdir -p ".local-jev/models/cards"; \
+	cp "scripts/jev-local-multilingual.json" ".local-jev/models/cards/nli-multilingual-minilm.json"; \
+	exec env -u TYPESAFE_API_KEY HF_HOME="$$(pwd)/.local-jev/cache" HF_HUB_DISABLE_IMPLICIT_TOKEN=1 LOCAL_JEV_MODELS="$$(pwd)/.local-jev/models" .local-jev/venv/bin/local-jev serve --model "$$local_jev_model" --host 127.0.0.1 --port 8765
 
 sandbox-check: ## CLIのサンドボックスに必要なツールとユーザー名前空間を確認する
 	command -v bwrap

@@ -3,6 +3,7 @@ import test from 'node:test';
 import {
   MODEL,
   LOCAL_MODEL,
+  MULTILINGUAL_LOCAL_MODEL,
   CASES,
   buildRequest,
   selectProvider,
@@ -69,6 +70,7 @@ test('dryrunはAPIキーを要求せず、13入力を出力してネットワー
   let calls = 0;
   const result = await runProbe({
     mode: 'dry-run',
+    localModel: 'invalid-local-model',
     write: output.write,
     fetchImpl: async () => {
       calls += 1;
@@ -117,6 +119,7 @@ test('liveは固定の接続先に認証付きPOSTを送り、全件の比較結
   const result = await runProbe({
     mode: 'live',
     apiKey,
+    localModel: 'invalid-local-model',
     write: output.write,
     fetchImpl: async (url, options) => {
       const input = CASES[calls];
@@ -345,7 +348,9 @@ test('期待するChoiceでも、別候補の確率が最大ならliveを成功�
 });
 
 test('autoはAPIキーの有無で接続先を選び、明示モードは自動選択を上書きする', () => {
-  const official = selectProvider({ apiKey: 'test-api-key', localBaseUrl: 'invalid-local-url' });
+  const official = selectProvider({
+    apiKey: 'test-api-key', localBaseUrl: 'invalid-local-url', localModel: 'invalid-local-model',
+  });
   assert.equal(official.name, 'jev');
   assert.equal(official.endpoint, 'https://api.typesafe.ai/v1/systemone');
   assert.equal(official.model, MODEL);
@@ -488,6 +493,7 @@ test('CLIのキーありauto/liveはローカル設定を読まず公式Jevを�
       const env = {
         TYPESAFE_API_KEY: apiKey,
         get LOCAL_JEV_BASE_URL() { throw new Error('公式利用時はlocalの設定を読んではいけません'); },
+        get LOCAL_JEV_MODEL() { throw new Error('公式利用時はlocalのモデル設定を読んではいけません'); },
       };
       let calls = 0;
       const result = await runCli(args, env, {
@@ -540,6 +546,10 @@ test('CLIのdry-run/localはAPIキーの環境変数を読まない', async (t) 
       const env = {
         get TYPESAFE_API_KEY() { throw new Error('APIキーを読んではいけません'); },
         LOCAL_JEV_BASE_URL: 'http://localhost:18765',
+        get LOCAL_JEV_MODEL() {
+          assert.equal(args[0], '--local');
+          return undefined;
+        },
       };
       let calls = 0;
       const result = await runCli(args, env, {
@@ -559,4 +569,90 @@ test('CLIのdry-run/localはAPIキーの環境変数を読まない', async (t) 
       assert.equal(output.lines.length, CASES.length);
     });
   }
+});
+
+test('多言語NLIは指定した場合だけ選択し、既定のローカルモデルを変えない', () => {
+  assert.equal(LOCAL_MODEL, 'nli-deberta-large');
+  assert.equal(MULTILINGUAL_LOCAL_MODEL, 'nli-multilingual-minilm');
+  assert.equal(selectProvider({ mode: 'local' }).model, LOCAL_MODEL);
+  assert.equal(selectProvider({ mode: 'local', localModel: '' }).model, LOCAL_MODEL);
+  assert.equal(selectProvider({ mode: 'local', localModel: MULTILINGUAL_LOCAL_MODEL }).model, MULTILINGUAL_LOCAL_MODEL);
+  assert.equal(selectProvider({ localModel: MULTILINGUAL_LOCAL_MODEL }).model, MULTILINGUAL_LOCAL_MODEL);
+  assert.equal(selectProvider({ mode: 'dry-run', localModel: 'invalid-local-model' }).model, MODEL);
+});
+
+test('CLIで指定した多言語モデルをlocalのリクエスト・応答・記録で揃える', async (t) => {
+  for (const args of [[], ['--local']]) {
+    await t.test(args[0] ?? 'auto', async () => {
+      const output = capture();
+      const env = { LOCAL_JEV_MODEL: MULTILINGUAL_LOCAL_MODEL };
+      let calls = 0;
+      const result = await runCli(args, env, {
+        write: output.write,
+        fetchImpl: async (url, options) => {
+          assert.equal(url, 'http://127.0.0.1:8765/v1/systemone');
+          assert.equal(new Headers(options.headers).has('authorization'), false);
+          const request = JSON.parse(options.body);
+          assert.equal(request.model, MULTILINGUAL_LOCAL_MODEL);
+          assert.equal(request.state, CASES[calls].text);
+          const body = responseBody(CASES[calls].expected, MULTILINGUAL_LOCAL_MODEL);
+          calls += 1;
+          return successfulResponse(body);
+        },
+      });
+
+      assert.equal(result, 0);
+      assert.equal(calls, CASES.length);
+      assert.equal(output.lines.length, CASES.length);
+      for (const line of output.lines) {
+        const record = JSON.parse(line);
+        assert.equal(record.provider, 'local-jev');
+        assert.equal(record.model, MULTILINGUAL_LOCAL_MODEL);
+        assert.equal(record.matched, true);
+      }
+    });
+  }
+});
+
+test('未許可のローカルモデルは通信前に拒否する', async (t) => {
+  for (const localModel of [MODEL, 'unapproved-local-model', '   ']) {
+    await t.test(`拒否: ${JSON.stringify(localModel)}`, async () => {
+      assert.throws(() => selectProvider({ mode: 'local', localModel }));
+      const output = capture();
+      let calls = 0;
+      const result = await runProbe({
+        mode: 'local',
+        localModel,
+        write: output.write,
+        fetchImpl: async () => {
+          calls += 1;
+          throw new Error('未許可のモデルで通信してはいけません');
+        },
+      });
+
+      assert.equal(result, 1);
+      assert.equal(calls, 0);
+      assert.ok(output.lines.some((line) => typeof JSON.parse(line).error === 'string'));
+    });
+  }
+});
+
+test('多言語モデルを指定したとき既定モデルの応答を成功扱いしない', async () => {
+  const output = capture();
+  let calls = 0;
+  const result = await runProbe({
+    mode: 'local',
+    localModel: MULTILINGUAL_LOCAL_MODEL,
+    write: output.write,
+    fetchImpl: async (url, options) => {
+      calls += 1;
+      assert.equal(JSON.parse(options.body).model, MULTILINGUAL_LOCAL_MODEL);
+      return successfulResponse(responseBody(CASES[0].expected, LOCAL_MODEL));
+    },
+  });
+
+  assert.equal(result, 1);
+  assert.equal(calls, 1);
+  assert.ok(output.lines.some((line) => typeof JSON.parse(line).error === 'string'));
+  assert.equal(output.lines.some((line) => JSON.parse(line).matched === true), false);
 });
