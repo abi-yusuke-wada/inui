@@ -2,10 +2,13 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import {
   MODEL,
+  LOCAL_MODEL,
   CASES,
   buildRequest,
+  selectProvider,
   validateResponse,
   runProbe,
+  runCli,
 } from './jev-probe.mjs';
 
 const intents = [
@@ -28,9 +31,9 @@ function capture() {
   };
 }
 
-function responseBody(choice = 'leave_request') {
+function responseBody(choice = 'leave_request', model = MODEL) {
   return {
-    model: MODEL,
+    model,
     answers: {
       intent: {
         type: 'choice',
@@ -65,6 +68,7 @@ test('dryrunはAPIキーを要求せず、13入力を出力してネットワー
   const output = capture();
   let calls = 0;
   const result = await runProbe({
+    mode: 'dry-run',
     write: output.write,
     fetchImpl: async () => {
       calls += 1;
@@ -81,6 +85,7 @@ test('dryrunはAPIキーを要求せず、13入力を出力してネットワー
     assert.equal(record.case_id, CASES[index].id);
     assert.equal(record.expected, CASES[index].expected);
     assert.equal(record.status, 'not_run');
+    assert.equal(record.provider, 'jev');
     assert.equal(record.request.state, CASES[index].text);
     assert.equal(record.request.model, MODEL);
   }
@@ -90,7 +95,7 @@ test('APIキーなしのliveはネットワークを使わず失敗する', asyn
   const output = capture();
   let calls = 0;
   const result = await runProbe({
-    live: true,
+    mode: 'live',
     apiKey: '',
     write: output.write,
     fetchImpl: async () => {
@@ -110,7 +115,7 @@ test('liveは固定の接続先に認証付きPOSTを送り、全件の比較結
   const apiKey = 'test-api-key-never-log';
   let calls = 0;
   const result = await runProbe({
-    live: true,
+    mode: 'live',
     apiKey,
     write: output.write,
     fetchImpl: async (url, options) => {
@@ -138,6 +143,7 @@ test('liveは固定の接続先に認証付きPOSTを送り、全件の比較結
     assert.equal(record.actual, CASES[index].expected);
     assert.equal(record.matched, true);
     assert.equal(record.model, MODEL);
+    assert.equal(record.provider, 'jev');
     assert.equal(record.confidence, 1);
     assert.deepEqual(record.probabilities, responseBody(CASES[index].expected).answers.intent.probabilities);
     assert.deepEqual(record.usage, { input_tokens: 100, output_tokens: 10 });
@@ -150,7 +156,7 @@ test('比較に不一致があっても全件を記録し、成功の終了コ�
   const output = capture();
   let calls = 0;
   const result = await runProbe({
-    live: true,
+    mode: 'live',
     apiKey: 'test-api-key',
     write: output.write,
     fetchImpl: async () => {
@@ -193,11 +199,12 @@ test('HTTP・接続・JSONの失敗は直ちに中断し、秘密値や外部の
       const output = capture();
       let calls = 0;
       const result = await runProbe({
-        live: true,
+        mode: 'live',
         apiKey,
         write: output.write,
-        fetchImpl: async () => {
+        fetchImpl: async (url) => {
           calls += 1;
+          assert.equal(url, 'https://api.typesafe.ai/v1/systemone');
           return fetchResponse();
         },
       });
@@ -205,7 +212,7 @@ test('HTTP・接続・JSONの失敗は直ちに中断し、秘密値や外部の
       assert.equal(result, 1);
       assert.equal(calls, 1);
       assert.ok(output.lines.length > 0);
-      for (const line of output.lines) assert.doesNotThrow(() => JSON.parse(line));
+      for (const line of output.lines) assert.equal(JSON.parse(line).provider, 'jev');
       assert.equal(output.lines.join('\n').includes(apiKey), false);
       assert.equal(output.lines.join('\n').includes(upstreamDetail), false);
     });
@@ -270,7 +277,7 @@ test('liveで未許可の応答を受けたら中断し、応答内の秘密値�
   body.answers.intent.choice = secret;
   let calls = 0;
   const result = await runProbe({
-    live: true,
+    mode: 'live',
     apiKey: 'test-api-key',
     write: output.write,
     fetchImpl: async () => {
@@ -293,7 +300,7 @@ test('使用量の追加フィールドに秘密値があっても、既知の�
   assert.deepEqual(validateResponse(body).usage, { input_tokens: 100, output_tokens: 10 });
   let calls = 0;
   const result = await runProbe({
-    live: true,
+    mode: 'live',
     apiKey: 'test-api-key',
     write: output.write,
     fetchImpl: async () => {
@@ -321,7 +328,7 @@ test('期待するChoiceでも、別候補の確率が最大ならliveを成功�
   body.answers.intent.choice = expected;
   let calls = 0;
   const result = await runProbe({
-    live: true,
+    mode: 'live',
     apiKey: 'test-api-key',
     write: output.write,
     fetchImpl: async () => {
@@ -335,4 +342,221 @@ test('期待するChoiceでも、別候補の確率が最大ならliveを成功�
   const records = output.lines.map((line) => JSON.parse(line));
   assert.ok(records.some((record) => typeof record.error === 'string'));
   assert.equal(records.some((record) => record.matched === true), false);
+});
+
+test('autoはAPIキーの有無で接続先を選び、明示モードは自動選択を上書きする', () => {
+  const official = selectProvider({ apiKey: 'test-api-key', localBaseUrl: 'invalid-local-url' });
+  assert.equal(official.name, 'jev');
+  assert.equal(official.endpoint, 'https://api.typesafe.ai/v1/systemone');
+  assert.equal(official.model, MODEL);
+
+  for (const apiKey of [undefined, '', ' \t ']) {
+    const local = selectProvider({ apiKey });
+    assert.equal(local.name, 'local-jev');
+    assert.equal(local.endpoint, 'http://127.0.0.1:8765/v1/systemone');
+    assert.equal(local.model, LOCAL_MODEL);
+  }
+  assert.equal(LOCAL_MODEL, 'nli-deberta-large');
+  assert.equal(selectProvider({ mode: 'local', apiKey: 'ignored-key' }).name, 'local-jev');
+  assert.equal(selectProvider({ mode: 'dry-run' }).name, 'jev');
+  assert.equal(selectProvider({ mode: 'dry-run', apiKey: 'ignored-key', localBaseUrl: 'invalid' }).name, 'jev');
+  assert.throws(() => selectProvider({ mode: 'live' }));
+  assert.throws(() => selectProvider({ mode: 'live', apiKey: '   ' }));
+  assert.throws(() => selectProvider({ mode: 'unknown' }));
+});
+
+test('localの接続先は明示したループバックホストのroot URLだけを受け入れる', async (t) => {
+  for (const localBaseUrl of [
+    'http://localhost:8765',
+    'http://127.0.0.1:18765/',
+    'https://[::1]:8765/',
+  ]) {
+    await t.test(localBaseUrl, () => {
+      const provider = selectProvider({ mode: 'local', localBaseUrl });
+      assert.equal(provider.name, 'local-jev');
+      assert.equal(provider.endpoint, new URL('/v1/systemone', localBaseUrl).href);
+    });
+  }
+
+  for (const localBaseUrl of [
+    'https://external.example',
+    'http://localhost.external.example:8765',
+    'http://127.0.0.2:8765',
+    'http://user:password@127.0.0.1:8765',
+    'http://127.0.0.1:8765?secret=value',
+    'http://127.0.0.1:8765#fragment',
+    'http://127.0.0.1:8765/another-path',
+    'ftp://localhost:8765',
+    'file:///tmp/local-jev',
+    'not-a-url',
+  ]) {
+    await t.test(`拒否: ${localBaseUrl}`, () => {
+      assert.throws(() => selectProvider({ mode: 'local', localBaseUrl }));
+    });
+  }
+});
+
+test('localの4桁丸め誤差を許容しつつ、公式の厳密な確率検証とモデルの区別を維持する', () => {
+  const provider = selectProvider({ mode: 'local' });
+  const body = responseBody('leave_request', LOCAL_MODEL);
+  body.answers.intent.confidence = 0.1667;
+  body.answers.intent.probabilities = Object.fromEntries(intents.map((intent) => [intent, 0.1667]));
+
+  assert.equal(buildRequest('ローカル入力', { model: LOCAL_MODEL }).model, LOCAL_MODEL);
+  assert.equal(validateResponse(body, provider).model, LOCAL_MODEL);
+  assert.throws(() => validateResponse(body));
+  body.model = MODEL;
+  assert.throws(() => validateResponse(body));
+  assert.throws(() => validateResponse(body, provider));
+
+  body.model = LOCAL_MODEL;
+  body.answers.intent.probabilities = Object.fromEntries(intents.map((intent) => [intent, 0.1668]));
+  assert.throws(() => validateResponse(body, provider));
+});
+
+test('キーなしautoはlocalへ認証情報を送らず、ローカルモデルの結果を記録する', async () => {
+  const output = capture();
+  let calls = 0;
+  const result = await runProbe({
+    localBaseUrl: 'http://localhost:18765',
+    write: output.write,
+    fetchImpl: async (url, options) => {
+      assert.equal(url, 'http://localhost:18765/v1/systemone');
+      assert.equal(options.method, 'POST');
+      assert.equal(options.redirect, 'error');
+      assert.equal(new Headers(options.headers).has('authorization'), false);
+      assert.ok(options.signal instanceof AbortSignal);
+      assert.equal(JSON.parse(options.body).model, LOCAL_MODEL);
+      const body = responseBody(CASES[calls].expected, LOCAL_MODEL);
+      body.answers.intent.confidence = 0.1667;
+      body.answers.intent.probabilities = Object.fromEntries(intents.map((intent) => [intent, 0.1667]));
+      calls += 1;
+      return successfulResponse(body);
+    },
+  });
+
+  assert.equal(result, 0);
+  assert.equal(calls, CASES.length);
+  assert.equal(output.lines.length, CASES.length);
+  for (const line of output.lines) {
+    const record = JSON.parse(line);
+    assert.equal(record.provider, 'local-jev');
+    assert.equal(record.model, LOCAL_MODEL);
+    assert.equal(record.matched, true);
+  }
+});
+
+test('localで失敗しても公式Jevへ切り替えず、キーや外部のエラーを記録しない', async (t) => {
+  const apiKey = 'ignored-official-key-never-forward';
+  const detail = `local-failure-detail-${apiKey}`;
+  const failures = [
+    ['HTTP', async () => ({ ok: false, status: 503, text: async () => detail })],
+    ['接続', async () => { throw new Error(detail); }],
+    ['JSON', async () => ({ ok: true, status: 200, json: async () => { throw new Error(detail); } })],
+  ];
+  for (const [name, fail] of failures) {
+    await t.test(name, async () => {
+      const output = capture();
+      let calls = 0;
+      const result = await runProbe({
+        mode: 'local',
+        apiKey,
+        write: output.write,
+        fetchImpl: async (url, options) => {
+          calls += 1;
+          assert.equal(url, 'http://127.0.0.1:8765/v1/systemone');
+          assert.equal(new Headers(options.headers).has('authorization'), false);
+          return fail();
+        },
+      });
+
+      assert.equal(result, 1);
+      assert.equal(calls, 1);
+      assert.ok(output.lines.length > 0);
+      for (const line of output.lines) assert.equal(JSON.parse(line).provider, 'local-jev');
+      assert.equal(output.lines.join('\n').includes(apiKey), false);
+      assert.equal(output.lines.join('\n').includes(detail), false);
+    });
+  }
+});
+
+test('CLIのキーありauto/liveはローカル設定を読まず公式Jevを使う', async (t) => {
+  for (const args of [[], ['--live']]) {
+    await t.test(args[0] ?? 'auto', async () => {
+      const output = capture();
+      const apiKey = 'fake-env-official-api-key';
+      const env = {
+        TYPESAFE_API_KEY: apiKey,
+        get LOCAL_JEV_BASE_URL() { throw new Error('公式利用時はlocalの設定を読んではいけません'); },
+      };
+      let calls = 0;
+      const result = await runCli(args, env, {
+        write: output.write,
+        fetchImpl: async (url, options) => {
+          assert.equal(url, 'https://api.typesafe.ai/v1/systemone');
+          assert.equal(new Headers(options.headers).get('authorization'), `Bearer ${apiKey}`);
+          const response = responseBody(CASES[calls].expected);
+          calls += 1;
+          return successfulResponse(response);
+        },
+      });
+
+      assert.equal(result, 0);
+      assert.equal(calls, CASES.length);
+      assert.equal(output.lines.join('\n').includes(apiKey), false);
+      assert.ok(output.lines.every((line) => JSON.parse(line).provider === 'jev'));
+    });
+  }
+});
+
+test('CLIのキーなしautoはfake envのlocal接続先を使う', async (t) => {
+  for (const apiKey of [undefined, '', ' \t ']) {
+    await t.test(`キー: ${JSON.stringify(apiKey)}`, async () => {
+      const output = capture();
+      const env = { TYPESAFE_API_KEY: apiKey, LOCAL_JEV_BASE_URL: 'http://localhost:18765' };
+      let calls = 0;
+      const result = await runCli([], env, {
+        write: output.write,
+        fetchImpl: async (url, options) => {
+          assert.equal(url, 'http://localhost:18765/v1/systemone');
+          assert.equal(new Headers(options.headers).has('authorization'), false);
+          const response = responseBody(CASES[calls].expected, LOCAL_MODEL);
+          calls += 1;
+          return successfulResponse(response);
+        },
+      });
+
+      assert.equal(result, 0);
+      assert.equal(calls, CASES.length);
+      assert.ok(output.lines.every((line) => JSON.parse(line).provider === 'local-jev'));
+    });
+  }
+});
+
+test('CLIのdry-run/localはAPIキーの環境変数を読まない', async (t) => {
+  for (const args of [['--dry-run'], ['--local']]) {
+    await t.test(args[0], async () => {
+      const output = capture();
+      const env = {
+        get TYPESAFE_API_KEY() { throw new Error('APIキーを読んではいけません'); },
+        LOCAL_JEV_BASE_URL: 'http://localhost:18765',
+      };
+      let calls = 0;
+      const result = await runCli(args, env, {
+        write: output.write,
+        fetchImpl: async (url, options) => {
+          assert.equal(args[0], '--local');
+          assert.equal(url, 'http://localhost:18765/v1/systemone');
+          assert.equal(new Headers(options.headers).has('authorization'), false);
+          const response = responseBody(CASES[calls].expected, LOCAL_MODEL);
+          calls += 1;
+          return successfulResponse(response);
+        },
+      });
+
+      assert.equal(result, 0);
+      assert.equal(calls, args[0] === '--local' ? CASES.length : 0);
+      assert.equal(output.lines.length, CASES.length);
+    });
+  }
 });

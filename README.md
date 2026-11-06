@@ -56,10 +56,16 @@ direnvを使わない場合は `nix develop` で開発環境に入ります。
 | `make check` | 開発環境の定義（`nix flake check`）と差分の空白を検証する |
 | `make sandbox-check` | CLIのサンドボックスの前提条件を確認する |
 | `make jev-check` | JEV接続プローブのオフラインテストを実行する |
-| `make jev-probe` | 固定13入力のJEVリクエストを表示する（通信なし） |
+| `make jev-probe` | APIキーありは公式Jev（従量課金）、なしはローカルNLIで13入力を検証する |
+| `make jev-probe-dry-run` | 固定13入力の公式Jevリクエストを表示する（通信なし） |
 | `make jev-probe-live` | JEVへ最大13回接続してIntent分類を検証する（APIキー・通信許可・利用料金の確認が必要） |
+| `make jev-probe-local` | ローカルNLIを使って13入力を検証する（公式APIキーを使わない） |
+| `make jev-local-setup` | 固定版local-jevとCPU用Python依存を取得する |
+| `make jev-local-serve` | ローカルNLIを起動する（初回はモデル重み約0.87GBを取得） |
 
 JEV接続プローブの範囲・手順・未検証事項は [接続検証の説明](docs/jev-connection-check.md) を参照してください。日付・金額の抽出やMCP接続は、プローブのIntent分類とは別に検証します。
+
+ローカル開発では`TYPESAFE_API_KEY`が設定されていれば公式Jev、未設定・空白のみならlocal-jevの実モデルを使います。導入後に`make jev-local-serve`を起動し、別のdevShellからプローブを実行します。ローカルの結果は、公式Jevによる正式なMVP評価と分けて扱います（[ADR-0005](docs/adr/0005-local-jev-for-development.md)）。
 
 アプリのビルド・起動等のターゲットは、Issue #4の実装に合わせて追加します。
 

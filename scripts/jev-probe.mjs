@@ -1,6 +1,8 @@
 import { pathToFileURL } from 'node:url';
 
 export const MODEL = 'jev-1.14.0';
+export const LOCAL_MODEL = 'nli-deberta-large';
+export const LOCAL_BASE_URL = 'http://127.0.0.1:8765';
 const ENDPOINT = 'https://api.typesafe.ai/v1/systemone';
 const CRITERIA = {
   leave_request: '休暇・有給・半休の申請フォームを開く要求。',
@@ -30,9 +32,41 @@ export const CASES = [
 
 class ProbeError extends Error {}
 
-export function buildRequest(text) {
+const hasApiKey = (key) => typeof key === 'string' && key.trim() !== '';
+
+export function selectProvider({ mode = 'auto', apiKey, localBaseUrl = LOCAL_BASE_URL } = {}) {
+  if (!['auto', 'dry-run', 'live', 'local'].includes(mode)) {
+    throw new ProbeError('実行モードが不正です。');
+  }
+  if (mode === 'live' && !hasApiKey(apiKey)) {
+    throw new ProbeError('実接続にはTYPESAFE_API_KEYが必要です。キーの値は出力しません。');
+  }
+  if (mode === 'dry-run' || mode === 'live' || (mode === 'auto' && hasApiKey(apiKey))) {
+    return { name: 'jev', endpoint: ENDPOINT, model: MODEL, probabilityTolerance: 0.000001 };
+  }
+  let base;
+  try {
+    base = new URL(localBaseUrl);
+  } catch {
+    throw new ProbeError('LOCAL_JEV_BASE_URLをローカルサーバーのURLに設定してください。');
+  }
+  if (
+    !['http:', 'https:'].includes(base.protocol) ||
+    !['localhost', '127.0.0.1', '[::1]'].includes(base.hostname) ||
+    base.username || base.password || base.search || base.hash || base.pathname !== '/'
+  ) {
+    throw new ProbeError('LOCAL_JEV_BASE_URLには認証情報やパスを含まないループバックURLを指定してください。');
+  }
   return {
-    model: MODEL,
+    name: 'local-jev', endpoint: new URL('/v1/systemone', base).href, model: LOCAL_MODEL,
+    // local-jevは各確率を小数4桁に丸めるため、候補数に応じた丸め誤差を許す。
+    probabilityTolerance: Object.keys(CRITERIA).length * 0.00005 + Number.EPSILON,
+  };
+}
+
+export function buildRequest(text, { model = MODEL } = {}) {
+  return {
+    model,
     state: text,
     questions: {
       intent: {
@@ -48,12 +82,12 @@ const isRecord = (value) => value !== null && typeof value === 'object' && !Arra
 const isProbability = (value) => Number.isFinite(value) && value >= 0 && value <= 1;
 const isTokenCount = (value) => Number.isSafeInteger(value) && value >= 0;
 
-export function validateResponse(body) {
+export function validateResponse(body, { model = MODEL, probabilityTolerance = 0.000001 } = {}) {
   const answer = body?.answers?.intent;
   const probabilities = answer?.probabilities;
   const names = Object.keys(CRITERIA);
   if (
-    !isRecord(body) || body.model !== MODEL ||
+    !isRecord(body) || body.model !== model ||
     !isRecord(answer) || answer.type !== 'choice' ||
     !Object.hasOwn(CRITERIA, answer.choice) || !isProbability(answer.confidence) ||
     !isRecord(probabilities) || Object.keys(probabilities).length !== names.length ||
@@ -62,8 +96,7 @@ export function validateResponse(body) {
   ) {
     throw new ProbeError('Jevの応答が検証用の契約に一致しません。');
   }
-  // 確率の合計にはJSONの小数表現による丸め誤差だけを許す。
-  if (Math.abs(names.reduce((sum, name) => sum + probabilities[name], 0) - 1) > 0.000001) {
+  if (Math.abs(names.reduce((sum, name) => sum + probabilities[name], 0) - 1) > probabilityTolerance) {
     throw new ProbeError('Jevの確率の合計が1ではありません。');
   }
   if (probabilities[answer.choice] < Math.max(...names.map((name) => probabilities[name]))) {
@@ -76,23 +109,26 @@ export function validateResponse(body) {
   };
 }
 
-async function requestDecision(text, apiKey, fetchImpl) {
+async function requestDecision(provider, text, apiKey, fetchImpl) {
+  const headers = { 'Content-Type': 'application/json' };
+  // 公式API用のキーはローカルサーバーへ渡さない。
+  if (provider.name === 'jev') headers.Authorization = `Bearer ${apiKey}`;
   let response;
   try {
-    response = await fetchImpl(ENDPOINT, {
+    response = await fetchImpl(provider.endpoint, {
       method: 'POST',
-      headers: { Authorization: `Bearer ${apiKey}`, 'Content-Type': 'application/json' },
-      body: JSON.stringify(buildRequest(text)),
+      headers,
+      body: JSON.stringify(buildRequest(text, { model: provider.model })),
       redirect: 'error',
       signal: AbortSignal.timeout(30_000),
     });
   } catch {
     // 外部例外や応答本文は認証情報を含む可能性があるため出力しない。
-    throw new ProbeError('Jevへの接続が失敗またはタイムアウトしました。');
+    throw new ProbeError(`${provider.name}への接続が失敗またはタイムアウトしました。`);
   }
   if (!response.ok) {
     const status = Number.isInteger(response.status) ? response.status : 'unknown';
-    throw new ProbeError(`Jev APIのHTTPエラー: ${status}`);
+    throw new ProbeError(`${provider.name} APIのHTTPエラー: ${status}`);
   }
   let body;
   try {
@@ -100,33 +136,37 @@ async function requestDecision(text, apiKey, fetchImpl) {
   } catch {
     throw new ProbeError('Jevの応答をJSONとして読み取れません。');
   }
-  return validateResponse(body);
+  return validateResponse(body, provider);
 }
 
-export async function runProbe({ live = false, apiKey, fetchImpl = globalThis.fetch, write = console.log } = {}) {
-  if (live && (typeof apiKey !== 'string' || apiKey.trim() === '')) {
-    write(JSON.stringify({ error: '実接続にはTYPESAFE_API_KEYが必要です。キーの値は出力しません。' }));
+export async function runProbe({ mode = 'auto', apiKey, localBaseUrl, fetchImpl = globalThis.fetch, write = console.log } = {}) {
+  let provider;
+  try {
+    provider = selectProvider({ mode, apiKey, localBaseUrl });
+  } catch (error) {
+    const message = error instanceof ProbeError ? error.message : '接続先を選択できません。';
+    write(JSON.stringify({ status: 'error', error: message }));
     return 1;
   }
   let failures = 0;
   for (const sample of CASES) {
-    if (!live) {
-      write(JSON.stringify({ case_id: sample.id, expected: sample.expected, status: 'not_run', request: buildRequest(sample.text) }));
+    if (mode === 'dry-run') {
+      write(JSON.stringify({ case_id: sample.id, provider: provider.name, expected: sample.expected, status: 'not_run', request: buildRequest(sample.text) }));
       continue;
     }
     const started = performance.now();
     let result;
     try {
-      result = await requestDecision(sample.text, apiKey, fetchImpl);
+      result = await requestDecision(provider, sample.text, apiKey, fetchImpl);
     } catch (error) {
       const message = error instanceof ProbeError ? error.message : '検証処理に失敗しました。';
-      write(JSON.stringify({ case_id: sample.id, status: 'error', error: message }));
+      write(JSON.stringify({ case_id: sample.id, provider: provider.name, status: 'error', error: message }));
       return 1;
     }
     const matched = result.answer.choice === sample.expected;
     if (!matched) failures += 1;
     write(JSON.stringify({
-      case_id: sample.id, text: sample.text, expected: sample.expected,
+      case_id: sample.id, provider: provider.name, text: sample.text, expected: sample.expected,
       actual: result.answer.choice, matched, model: result.model,
       confidence: result.answer.confidence, probabilities: result.answer.probabilities,
       usage: result.usage, elapsed_ms: Math.round(performance.now() - started),
@@ -135,16 +175,20 @@ export async function runProbe({ live = false, apiKey, fetchImpl = globalThis.fe
   return failures === 0 ? 0 : 1;
 }
 
-if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
-  const args = process.argv.slice(2);
-  const mode = args[0] ?? '--dry-run';
-  if (args.length > 1 || !['--dry-run', '--live'].includes(mode)) {
-    console.error('使い方: node scripts/jev-probe.mjs [--dry-run|--live]');
-    process.exitCode = 1;
-  } else {
-    process.exitCode = await runProbe({
-      live: mode === '--live',
-      apiKey: mode === '--live' ? process.env.TYPESAFE_API_KEY : undefined,
-    });
+export async function runCli(args, env = process.env, { fetchImpl = globalThis.fetch, write = console.log } = {}) {
+  const flag = args[0] ?? '--auto';
+  if (args.length > 1 || !['--auto', '--dry-run', '--live', '--local'].includes(flag)) {
+    write(JSON.stringify({ error: '使い方: node scripts/jev-probe.mjs [--auto|--dry-run|--live|--local]' }));
+    return 1;
   }
+  const mode = flag.slice(2);
+  const apiKey = ['auto', 'live'].includes(mode) ? env.TYPESAFE_API_KEY : undefined;
+  const useLocal = mode === 'local' || (mode === 'auto' && !hasApiKey(apiKey));
+  return runProbe({
+    mode, apiKey, localBaseUrl: useLocal ? env.LOCAL_JEV_BASE_URL : undefined, fetchImpl, write,
+  });
+}
+
+if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
+  process.exitCode = await runCli(process.argv.slice(2));
 }

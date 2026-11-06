@@ -2,7 +2,10 @@
 # devShell（direnvまたは `nix develop`）に入った状態で実行する。
 
 .DEFAULT_GOAL := help
-.PHONY: help check sandbox-check jev-check jev-probe jev-probe-live
+.PHONY: help check sandbox-check jev-check jev-probe jev-probe-dry-run jev-probe-live jev-probe-local jev-local-setup jev-local-serve
+
+LOCAL_JEV_REV := 64a0b31ff343dca32142496cf9edca5a0174a18d
+LOCAL_JEV_ARCHIVE := https://github.com/amithgc/local-jev/archive/$(LOCAL_JEV_REV).tar.gz
 
 help: ## ターゲット一覧を表示する
 	@grep -E '^[a-zA-Z_-]+:.*## ' $(MAKEFILE_LIST) | awk 'BEGIN {FS = ":.*## "}; {printf "  %-14s %s\n", $$1, $$2}'
@@ -16,11 +19,27 @@ jev-check: ## JEV接続プローブを実APIなしで検証する
 	node --test --test-isolation=none scripts/jev-probe.test.mjs
 	git diff --check HEAD
 
-jev-probe: ## MVPの13入力とJEVリクエストを表示する（通信なし）
+jev-probe: ## APIキーありは公式Jev、なしはローカルNLIで13入力を検証する
+	node scripts/jev-probe.mjs --auto
+
+jev-probe-dry-run: ## MVPの13入力とJEVリクエストを表示する（通信なし）
 	node scripts/jev-probe.mjs --dry-run
 
 jev-probe-live: ## JEVへ最大13回接続する（APIキー・通信許可・利用料金の確認が必要）
 	node scripts/jev-probe.mjs --live
+
+jev-probe-local: ## ローカルNLIへ最大13回接続してIntentを検証する
+	node scripts/jev-probe.mjs --local
+
+jev-local-setup: ## local-jevとCPU用Python依存を取得する（ネットワーク使用）
+	@# 外部へのPython symlinkを作らず、既存のvenvは再作成しない。
+	@test -x ".local-jev/venv/bin/python" || python3.12 -m venv --copies --without-pip ".local-jev/venv"
+	uv --no-config --cache-dir ".local-jev/uv-cache" pip install --python ".local-jev/venv/bin/python" --index-url https://download.pytorch.org/whl/cpu 'torch>=2.4'
+	uv --no-config --cache-dir ".local-jev/uv-cache" pip install --python ".local-jev/venv/bin/python" "$(LOCAL_JEV_ARCHIVE)"
+
+jev-local-serve: ## ローカルNLIを起動する（初回はモデル約0.87GBを取得）
+	@test -x ".local-jev/venv/bin/local-jev" || { echo "先に make jev-local-setup を実行してください" >&2; exit 1; }
+	env -u TYPESAFE_API_KEY HF_HOME="$$(pwd)/.local-jev/cache" HF_HUB_DISABLE_IMPLICIT_TOKEN=1 .local-jev/venv/bin/local-jev serve --model nli-deberta-large --host 127.0.0.1 --port 8765
 
 sandbox-check: ## CLIのサンドボックスに必要なツールとユーザー名前空間を確認する
 	command -v bwrap

@@ -15,6 +15,7 @@
 - Intent判定はJEVだけで行い、MVPではLLMを使わない。JEVが判定できない入力は、LLMに回さずに案内する。判断理由は [ADR-0004](docs/adr/0004-jev-first-intent-routing.md) に記録する。
 - 業務API・事前実装済みUI・サンプルデータはinui用に用意し、外部のグループウェアや業務サービスとは連携しない。
 - JEVは外部リソースを利用し、基盤にはクラウドを採用する。技術構成の採用判断は [ADR](docs/adr/0001-mvp-hosting-and-storage.md) に記録する。
+- ローカル開発では、APIキー設定時は公式Jev、未設定・空白時はlocal-jevの実モデルへ切り替える開発用の例外を認める。正式なMVP評価と30秒条件の実測には公式Jevを使い、ローカルの結果を混ぜない。LLM不使用は維持する（[ADR-0005](docs/adr/0005-local-jev-for-development.md)）。
 - inuiがMCPインターフェースを提供し、JEVはホスト側の処理から実行時に呼び出す。具体的な公開Tool・接続仕様は実装時に確認する。
 - ブラウザは入力受付とUI描画を中心に担い、LLMや自律的なAIエージェントを常駐させない。
 - Intent判定の制御・業務処理・Tool選択・UI選択はホスト側に置く。AIの判断結果は許可リストと検証処理で制御し、HTML・JavaScriptを自由生成させない。

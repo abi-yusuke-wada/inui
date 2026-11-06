@@ -20,6 +20,8 @@
           packages = [
             pkgs.nodejs_24
             pkgs.pnpm
+            pkgs.python312
+            pkgs.uv
           ]
           # CLIのサンドボックス実行に必要（Linux・WSLのみ）
           ++ pkgs.lib.optionals pkgs.stdenv.isLinux [
@@ -36,6 +38,9 @@
                 exit 1
               fi
             done
+          '' + pkgs.lib.optionalString pkgs.stdenv.isLinux ''
+            # Python wheelの共有ライブラリが必要とするC++標準ライブラリを提供する。
+            export LD_LIBRARY_PATH="${pkgs.lib.makeLibraryPath [ pkgs.stdenv.cc.cc.lib ]}''${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}"
           '';
         };
       });
