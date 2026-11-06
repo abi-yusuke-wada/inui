@@ -23,10 +23,12 @@ const intents = [
 ];
 const localWireIntents = [...intents.slice(0, -1), 'unspecified_application'];
 
+/** テスト用の内部Intentを、モデルに対応するwire候補名へ変換する。 */
 function wireIntent(intent, model) {
   return model === LOCAL_MODEL && intent === 'clarify' ? 'unspecified_application' : intent;
 }
 
+/** 出力されたJSON行を文字列のまま収集するテスト用の出力先を作る。 */
 function capture() {
   const lines = [];
   return {
@@ -38,6 +40,7 @@ function capture() {
   };
 }
 
+/** 指定した内部Intentに対応するwire応答fixtureを作る。分類精度の実測には使わない。 */
 function responseBody(choice = 'leave_request', model = MODEL) {
   return {
     model,
@@ -53,6 +56,7 @@ function responseBody(choice = 'leave_request', model = MODEL) {
   };
 }
 
+/** 外部通信せずJSON応答を返す、fetchの差し替え用オブジェクトを作る。 */
 function successfulResponse(body = responseBody()) {
   return { ok: true, status: 200, json: async () => body };
 }

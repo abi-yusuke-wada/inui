@@ -89,4 +89,4 @@ CLIのサンドボックスには、devShellが提供する `bubblewrap`（`bwra
 
 ## 現在のステータス
 
-MVPの範囲と完了条件、技術構成（[ADR-0001](docs/adr/0001-mvp-hosting-and-storage.md)）と開発環境（[ADR-0002](docs/adr/0002-development-environment.md)）、コアとPoCアプリの分離方針（[ADR-0003](docs/adr/0003-separate-core-from-poc-app.md)）を基に、[ADR-0006](docs/adr/0006-local-model-for-mvp.md)でローカルモデルを正式MVPの基準にしました。次はIssue #16で固定13入力の全件一致を実測し、Issue #4でアプリ本体とローカル推論の配置・呼び出し経路を具体化します。Issue #15では、ローカルモデルを含むブラウザ送信からの応答が30秒以内かを実測します。アプリケーションは未実装です。
+MVPの範囲と完了条件、技術構成（[ADR-0001](docs/adr/0001-mvp-hosting-and-storage.md)）と開発環境（[ADR-0002](docs/adr/0002-development-environment.md)）、コアとPoCアプリの分離方針（[ADR-0003](docs/adr/0003-separate-core-from-poc-app.md)）を基に、[ADR-0006](docs/adr/0006-local-model-for-mvp.md)でローカルモデルを正式MVPの基準にしました。Issue #16の固定13入力は実Engine比較と利用者ホストのHTTP実測で全件一致を確認し、結果と分類の変更を[PR #22](https://github.com/abi-yusuke-wada/inui/pull/22)にまとめました。Issue #4でアプリ本体とローカル推論の配置・呼び出し経路を具体化します。Issue #15では、ローカルモデルを含むブラウザ送信からの応答が30秒以内かを実測します。アプリケーションは未実装です。

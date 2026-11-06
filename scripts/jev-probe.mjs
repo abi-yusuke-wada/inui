@@ -43,8 +43,14 @@ export const CASES = [
 
 class ProbeError extends Error {}
 
+/** 公式接続の選択に使える、空白だけではない文字列のキーかを判定する。 */
 const hasApiKey = (key) => typeof key === 'string' && key.trim() !== '';
 
+/**
+ * 実行モードから接続先・モデル・確率の許容誤差を選ぶ。
+ * 公式利用時はローカル指定を検証せず、ローカル利用時は許可したモデルとloopbackだけを受け入れる。
+ * @throws {ProbeError} モード、キー、モデル、接続先が条件を満たさない場合。
+ */
 export function selectProvider({ mode = 'auto', apiKey, localBaseUrl = LOCAL_BASE_URL, localModel = LOCAL_MODEL } = {}) {
   if (!['auto', 'dry-run', 'live', 'local'].includes(mode)) {
     throw new ProbeError('実行モードが不正です。');
@@ -79,6 +85,7 @@ export function selectProvider({ mode = 'auto', apiKey, localBaseUrl = LOCAL_BAS
   };
 }
 
+/** 入力をstateに保持し、指定モデルに対応する6候補のChoiceリクエストを作る。 */
 export function buildRequest(text, { model = MODEL } = {}) {
   return {
     model,
@@ -93,10 +100,18 @@ export function buildRequest(text, { model = MODEL } = {}) {
   };
 }
 
+/** nullと配列を除くオブジェクトかを判定する。 */
 const isRecord = (value) => value !== null && typeof value === 'object' && !Array.isArray(value);
+/** 有限な0以上1以下の確率かを判定する。 */
 const isProbability = (value) => Number.isFinite(value) && value >= 0 && value <= 1;
+/** トークン数が非負の安全な整数かを判定する。 */
 const isTokenCount = (value) => Number.isSafeInteger(value) && value >= 0;
 
+/**
+ * 指定モデルの6候補・確率・使用量を検証し、既知のフィールドだけを返す。
+ * 基準NLIのwire aliasは、生の応答を検証した後に内部Intentへ正規化する。
+ * @throws {ProbeError} 応答が指定モデルの契約に一致しない場合。
+ */
 export function validateResponse(body, { model = MODEL, probabilityTolerance = 0.000001 } = {}) {
   const answer = body?.answers?.intent;
   const probabilities = answer?.probabilities;
@@ -118,7 +133,7 @@ export function validateResponse(body, { model = MODEL, probabilityTolerance = 0
   if (probabilities[answer.choice] < Math.max(...names.map((name) => probabilities[name]))) {
     throw new ProbeError('Jevの選択と最大確率の候補が一致しません。');
   }
-  // 生のwire候補を検証した後だけ、固定の1対1対応で内部Intentへ戻す。
+  /** 生のwire候補を検証した後だけ、固定の1対1対応で内部Intentへ戻す。 */
   const canonicalName = (name) => model === LOCAL_MODEL ? (LOCAL_INTENT_ALIASES[name] ?? name) : name;
   return {
     model: body.model,
@@ -132,6 +147,10 @@ export function validateResponse(body, { model = MODEL, probabilityTolerance = 0
   };
 }
 
+/**
+ * 公式接続だけにBearer認証を付けて送信し、受信した応答を検証する。
+ * 接続・HTTP・JSONの失敗は、外部の本文や例外詳細を含まないエラーにする。
+ */
 async function requestDecision(provider, text, apiKey, fetchImpl) {
   const headers = { 'Content-Type': 'application/json' };
   // 公式API用のキーはローカルサーバーへ渡さない。
@@ -162,6 +181,10 @@ async function requestDecision(provider, text, apiKey, fetchImpl) {
   return validateResponse(body, provider);
 }
 
+/**
+ * 固定13入力の結果をJSON行で記録する。dry-runは通信せず、分類不一致は続行、接続・契約エラーは中断する。
+ * @returns {Promise<0|1>} 全件一致またはdry-runなら0、設定・接続・契約エラーや分類不一致なら1。
+ */
 export async function runProbe({ mode = 'auto', apiKey, localBaseUrl, localModel, fetchImpl = globalThis.fetch, write = console.log } = {}) {
   let provider;
   try {
@@ -198,6 +221,7 @@ export async function runProbe({ mode = 'auto', apiKey, localBaseUrl, localModel
   return failures === 0 ? 0 : 1;
 }
 
+/** CLI引数を検証し、選んだモードに必要な環境変数だけを読み取ってプローブを実行する。 */
 export async function runCli(args, env = process.env, { fetchImpl = globalThis.fetch, write = console.log } = {}) {
   const flag = args[0] ?? '--auto';
   if (args.length > 1 || !['--auto', '--dry-run', '--live', '--local'].includes(flag)) {
