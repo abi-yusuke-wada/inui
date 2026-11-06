@@ -13,6 +13,16 @@ const CRITERIA = {
   unsupported_operation: '申請の取り下げ・修正・承認・差し戻しなど、今回扱わない操作を求めている。',
   clarify: '申請の種類や目的が不明で、対象の画面を特定できない。再入力が必要。',
 };
+// NLIは候補名も仮説の文に含めるため、曖昧な申請という意味を明示する。
+const LOCAL_CRITERIA = {
+  leave_request: '利用者は有給休暇や半日休暇などの休暇を申請したい。',
+  expense_request: '利用者は電車代などの交通費を経費として申請・精算したい。',
+  application_status: '利用者は提出済み申請の承認待ち・承認済み・差し戻しなどの状態を確認したい。',
+  unsupported_feature: '利用者は出張申請や会議室予約など、休暇申請・交通費精算・申請状況の確認以外のサービスを利用したい。',
+  unsupported_operation: '利用者は申請を取り下げる、内容を変更する、または承認者の作業を実行したい。',
+  unspecified_application: '利用者は申請手続きを始めたいとだけ述べており、具体的な申請の用件は示していない。',
+};
+const LOCAL_INTENT_ALIASES = { unspecified_application: 'clarify' };
 
 // MVP.mdの9入力と、対象外・曖昧な4入力。ここではIntentだけを比較する。
 export const CASES = [
@@ -77,7 +87,7 @@ export function buildRequest(text, { model = MODEL } = {}) {
       intent: {
         type: 'choice',
         instructions: '入力の利用者が何を求めているかを、候補の説明に従って分類してください。',
-        criteria: { ...CRITERIA },
+        criteria: { ...(model === LOCAL_MODEL ? LOCAL_CRITERIA : CRITERIA) },
       },
     },
   };
@@ -90,11 +100,12 @@ const isTokenCount = (value) => Number.isSafeInteger(value) && value >= 0;
 export function validateResponse(body, { model = MODEL, probabilityTolerance = 0.000001 } = {}) {
   const answer = body?.answers?.intent;
   const probabilities = answer?.probabilities;
-  const names = Object.keys(CRITERIA);
+  const criteria = model === LOCAL_MODEL ? LOCAL_CRITERIA : CRITERIA;
+  const names = Object.keys(criteria);
   if (
     !isRecord(body) || body.model !== model ||
     !isRecord(answer) || answer.type !== 'choice' ||
-    !Object.hasOwn(CRITERIA, answer.choice) || !isProbability(answer.confidence) ||
+    typeof answer.choice !== 'string' || !Object.hasOwn(criteria, answer.choice) || !isProbability(answer.confidence) ||
     !isRecord(probabilities) || Object.keys(probabilities).length !== names.length ||
     !names.every((name) => Object.hasOwn(probabilities, name) && isProbability(probabilities[name])) ||
     !isRecord(body.usage) || !isTokenCount(body.usage.input_tokens) || !isTokenCount(body.usage.output_tokens)
@@ -107,9 +118,16 @@ export function validateResponse(body, { model = MODEL, probabilityTolerance = 0
   if (probabilities[answer.choice] < Math.max(...names.map((name) => probabilities[name]))) {
     throw new ProbeError('Jevの選択と最大確率の候補が一致しません。');
   }
+  // 生のwire候補を検証した後だけ、固定の1対1対応で内部Intentへ戻す。
+  const canonicalName = (name) => model === LOCAL_MODEL ? (LOCAL_INTENT_ALIASES[name] ?? name) : name;
   return {
     model: body.model,
-    answer,
+    answer: {
+      type: answer.type,
+      choice: canonicalName(answer.choice),
+      confidence: answer.confidence,
+      probabilities: Object.fromEntries(names.map((name) => [canonicalName(name), probabilities[name]])),
+    },
     usage: { input_tokens: body.usage.input_tokens, output_tokens: body.usage.output_tokens },
   };
 }

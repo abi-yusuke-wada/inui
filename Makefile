@@ -2,7 +2,7 @@
 # devShell（direnvまたは `nix develop`）に入った状態で実行する。
 
 .DEFAULT_GOAL := help
-.PHONY: help check sandbox-check jev-check jev-probe jev-probe-dry-run jev-probe-live jev-probe-local jev-local-setup jev-local-serve
+.PHONY: help check sandbox-check jev-check jev-probe jev-probe-dry-run jev-probe-live jev-probe-local jev-prompt-study jev-local-setup jev-local-serve
 
 LOCAL_JEV_REV := 64a0b31ff343dca32142496cf9edca5a0174a18d
 LOCAL_JEV_ARCHIVE := https://github.com/amithgc/local-jev/archive/$(LOCAL_JEV_REV).tar.gz
@@ -30,6 +30,9 @@ jev-probe-live: ## JEVへ最大13回接続する（APIキー・通信許可・�
 
 jev-probe-local: ## ローカルNLIへ最大13回接続してIntentを検証する
 	node scripts/jev-probe.mjs --local
+
+jev-prompt-study: ## キャッシュ済みの既定NLIで候補説明を比較する（外部通信なし）
+	@env -u TYPESAFE_API_KEY -u HF_TOKEN HF_HOME="$$(pwd)/.local-jev/cache" HF_HUB_DISABLE_IMPLICIT_TOKEN=1 HF_HUB_OFFLINE=1 TRANSFORMERS_OFFLINE=1 PYTHONDONTWRITEBYTECODE=1 OMP_NUM_THREADS=4 MKL_NUM_THREADS=4 OPENBLAS_NUM_THREADS=4 .local-jev/venv/bin/python -u scripts/jev-prompt-study.py
 
 jev-local-setup: ## local-jevとCPU用Python依存を取得する（ネットワーク使用）
 	@# 外部へのPython symlinkを作らず、既存のvenvは再作成しない。

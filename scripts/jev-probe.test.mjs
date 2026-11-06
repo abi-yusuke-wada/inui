@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict';
+import { readFile } from 'node:fs/promises';
 import test from 'node:test';
 import {
   MODEL,
@@ -20,6 +21,11 @@ const intents = [
   'unsupported_operation',
   'clarify',
 ];
+const localWireIntents = [...intents.slice(0, -1), 'unspecified_application'];
+
+function wireIntent(intent, model) {
+  return model === LOCAL_MODEL && intent === 'clarify' ? 'unspecified_application' : intent;
+}
 
 function capture() {
   const lines = [];
@@ -38,9 +44,9 @@ function responseBody(choice = 'leave_request', model = MODEL) {
     answers: {
       intent: {
         type: 'choice',
-        choice,
+        choice: wireIntent(choice, model),
         confidence: 1,
-        probabilities: Object.fromEntries(intents.map((intent) => [intent, intent === choice ? 1 : 0])),
+        probabilities: Object.fromEntries(intents.map((intent) => [wireIntent(intent, model), intent === choice ? 1 : 0])),
       },
     },
     usage: { input_tokens: 100, output_tokens: 10 },
@@ -237,6 +243,7 @@ test('未許可のChoice、不正な確率・confidence・使用量、異なる�
   const invalidCases = [
     ['Choice欠落', (body) => { delete body.answers.intent; }],
     ['未許可のChoice', (body) => { body.answers.intent.choice = 'admin'; }],
+    ['Choiceが配列', (body) => { body.answers.intent.choice = ['leave_request']; }],
     ['異なる回答形式', (body) => { body.answers.intent.type = 'text'; }],
     ['confidence欠落', (body) => { delete body.answers.intent.confidence; }],
     ['confidenceがNaN', (body) => { body.answers.intent.confidence = NaN; }],
@@ -405,17 +412,20 @@ test('localの4桁丸め誤差を許容しつつ、公式の厳密な確率検�
   const provider = selectProvider({ mode: 'local' });
   const body = responseBody('leave_request', LOCAL_MODEL);
   body.answers.intent.confidence = 0.1667;
-  body.answers.intent.probabilities = Object.fromEntries(intents.map((intent) => [intent, 0.1667]));
+  body.answers.intent.probabilities = Object.fromEntries(localWireIntents.map((intent) => [intent, 0.1667]));
 
   assert.equal(buildRequest('ローカル入力', { model: LOCAL_MODEL }).model, LOCAL_MODEL);
   assert.equal(validateResponse(body, provider).model, LOCAL_MODEL);
   assert.throws(() => validateResponse(body));
+  const officialBody = responseBody();
+  officialBody.answers.intent.probabilities = Object.fromEntries(intents.map((intent) => [intent, 0.1667]));
+  assert.throws(() => validateResponse(officialBody));
   body.model = MODEL;
   assert.throws(() => validateResponse(body));
   assert.throws(() => validateResponse(body, provider));
 
   body.model = LOCAL_MODEL;
-  body.answers.intent.probabilities = Object.fromEntries(intents.map((intent) => [intent, 0.1668]));
+  body.answers.intent.probabilities = Object.fromEntries(localWireIntents.map((intent) => [intent, 0.1668]));
   assert.throws(() => validateResponse(body, provider));
 });
 
@@ -434,7 +444,7 @@ test('キーなしautoはlocalへ認証情報を送らず、ローカルモデ�
       assert.equal(JSON.parse(options.body).model, LOCAL_MODEL);
       const body = responseBody(CASES[calls].expected, LOCAL_MODEL);
       body.answers.intent.confidence = 0.1667;
-      body.answers.intent.probabilities = Object.fromEntries(intents.map((intent) => [intent, 0.1667]));
+      body.answers.intent.probabilities = Object.fromEntries(localWireIntents.map((intent) => [intent, 0.1667]));
       calls += 1;
       return successfulResponse(body);
     },
@@ -448,6 +458,7 @@ test('キーなしautoはlocalへ認証情報を送らず、ローカルモデ�
     assert.equal(record.provider, 'local-jev');
     assert.equal(record.model, LOCAL_MODEL);
     assert.equal(record.matched, true);
+    assert.deepEqual(Object.keys(record.probabilities).sort(), [...intents].sort());
   }
 });
 
@@ -655,4 +666,222 @@ test('多言語モデルを指定したとき既定モデルの応答を成功�
   assert.equal(calls, 1);
   assert.ok(output.lines.some((line) => typeof JSON.parse(line).error === 'string'));
   assert.equal(output.lines.some((line) => JSON.parse(line).matched === true), false);
+});
+
+test('基準モデルだけ曖昧入力のwire名を変更し、公式と多言語モデルの6キーを維持する', () => {
+  const text = '申請の目的を確認したい';
+  const localRequest = buildRequest(text, { model: LOCAL_MODEL });
+  assert.equal(localRequest.state, text);
+  assert.deepEqual(Object.keys(localRequest.questions.intent.criteria).sort(), [...localWireIntents].sort());
+  assert.equal(Object.hasOwn(localRequest.questions.intent.criteria, 'clarify'), false);
+  assert.equal(typeof localRequest.questions.intent.criteria.unspecified_application, 'string');
+
+  for (const model of [MODEL, MULTILINGUAL_LOCAL_MODEL]) {
+    const request = buildRequest(text, { model });
+    assert.equal(request.model, model);
+    assert.equal(request.state, text);
+    assert.deepEqual(Object.keys(request.questions.intent.criteria).sort(), [...intents].sort());
+    assert.equal(Object.hasOwn(request.questions.intent.criteria, 'unspecified_application'), false);
+  }
+});
+
+test('基準モデルのwire応答を、検証してから6つのcanonical Intentへ正規化する', async (t) => {
+  const provider = selectProvider({ mode: 'local' });
+  for (const intent of intents) {
+    await t.test(intent, () => {
+      const body = responseBody(intent, LOCAL_MODEL);
+      const result = validateResponse(body, provider);
+
+      assert.equal(result.model, LOCAL_MODEL);
+      assert.equal(result.answer.type, 'choice');
+      assert.equal(result.answer.choice, intent);
+      assert.equal(result.answer.confidence, 1);
+      assert.deepEqual(result.answer.probabilities, Object.fromEntries(intents.map((name) => [name, name === intent ? 1 : 0])));
+      assert.equal(Object.hasOwn(result.answer.probabilities, 'unspecified_application'), false);
+      assert.deepEqual(result.usage, { input_tokens: 100, output_tokens: 10 });
+    });
+  }
+});
+
+test('wireの不正なchoiceや確率キーを、正規化で無視・補完・上書きして通さない', async (t) => {
+  const provider = selectProvider({ mode: 'local' });
+  const invalidCases = [
+    ['canonical名をwire choiceに混ぜる', (body) => { body.answers.intent.choice = 'clarify'; }],
+    ['未知のchoice', (body) => { body.answers.intent.choice = 'unknown-intent'; }],
+    ['配列choiceのキー暗黙変換', (body) => { body.answers.intent.choice = ['unspecified_application']; }],
+    ['wire確率の欠落', (body) => { delete body.answers.intent.probabilities.unspecified_application; }],
+    ['wire名をcanonical確率キーで置換する', (body) => {
+      body.answers.intent.probabilities.clarify = body.answers.intent.probabilities.unspecified_application;
+      delete body.answers.intent.probabilities.unspecified_application;
+    }],
+    ['未知の確率キーを追加する', (body) => { body.answers.intent.probabilities.extra_intent = 0; }],
+    ['aliasとcanonicalの確率キーが併存する', (body) => { body.answers.intent.probabilities.clarify = 0; }],
+    ['6キーでもaliasとcanonicalが衝突する', (body) => {
+      body.answers.intent.probabilities.clarify = 0;
+      delete body.answers.intent.probabilities.unsupported_feature;
+    }],
+    ['wire確率がNaN', (body) => { body.answers.intent.probabilities.unspecified_application = NaN; }],
+    ['wire確率がInfinity', (body) => { body.answers.intent.probabilities.unspecified_application = Infinity; }],
+    ['wire choiceと最大確率が矛盾する', (body) => {
+      body.answers.intent.probabilities.unspecified_application = 0;
+      body.answers.intent.probabilities.leave_request = 1;
+    }],
+    ['別モデルの応答', (body) => { body.model = MULTILINGUAL_LOCAL_MODEL; }],
+  ];
+
+  for (const [name, mutate] of invalidCases) {
+    await t.test(name, () => {
+      const body = responseBody('clarify', LOCAL_MODEL);
+      mutate(body);
+      assert.throws(() => validateResponse(body, provider));
+    });
+  }
+});
+
+test('公式・多言語モデルではcanonical応答だけを受理し、基準モデルのwire aliasを拒否する', () => {
+  for (const model of [MODEL, MULTILINGUAL_LOCAL_MODEL]) {
+    const options = { model };
+    assert.equal(validateResponse(responseBody('clarify', model), options).answer.choice, 'clarify');
+    const body = responseBody('clarify', LOCAL_MODEL);
+    body.model = model;
+    assert.throws(() => validateResponse(body, options));
+  }
+  assert.throws(() => validateResponse(responseBody('clarify', LOCAL_MODEL), { model: MODEL }));
+});
+
+test('localの記録はcanonicalだけを使い、公式キー・外部のdebug情報を出力しない', async () => {
+  const output = capture();
+  const apiKey = 'official-api-key-never-send-to-local';
+  const externalSecret = 'untrusted-debug-secret-never-log';
+  let calls = 0;
+  const result = await runProbe({
+    mode: 'local',
+    apiKey,
+    write: output.write,
+    fetchImpl: async (url, options) => {
+      assert.equal(url, 'http://127.0.0.1:8765/v1/systemone');
+      assert.equal(new Headers(options.headers).has('authorization'), false);
+      assert.equal(options.body.includes(apiKey), false);
+      const request = JSON.parse(options.body);
+      assert.deepEqual(Object.keys(request.questions.intent.criteria).sort(), [...localWireIntents].sort());
+      const body = responseBody(CASES[calls].expected, LOCAL_MODEL);
+      body.answers.intent.debug = externalSecret;
+      body.usage.debug = { secret: externalSecret };
+      calls += 1;
+      return successfulResponse(body);
+    },
+  });
+
+  assert.equal(result, 0);
+  assert.equal(calls, CASES.length);
+  assert.equal(output.lines.length, CASES.length);
+  for (const [index, line] of output.lines.entries()) {
+    const record = JSON.parse(line);
+    assert.equal(record.provider, 'local-jev');
+    assert.equal(record.actual, CASES[index].expected);
+    assert.equal(record.matched, true);
+    assert.deepEqual(Object.keys(record.probabilities).sort(), [...intents].sort());
+    assert.deepEqual(record.usage, { input_tokens: 100, output_tokens: 10 });
+  }
+  const serialized = output.lines.join('\n');
+  assert.equal(serialized.includes('unspecified_application'), false);
+  assert.equal(serialized.includes(apiKey), false);
+  assert.equal(serialized.includes(externalSecret), false);
+});
+
+test('localの未知wire値は中断して固定エラーだけを記録する', async () => {
+  const output = capture();
+  const secret = 'untrusted-wire-value-do-not-log';
+  const body = responseBody('clarify', LOCAL_MODEL);
+  body.answers.intent.choice = secret;
+  body.answers.intent.probabilities[secret] = 0;
+  let calls = 0;
+  const result = await runProbe({
+    mode: 'local',
+    write: output.write,
+    fetchImpl: async () => {
+      calls += 1;
+      return successfulResponse(body);
+    },
+  });
+
+  assert.equal(result, 1);
+  assert.equal(calls, 1);
+  assert.ok(output.lines.some((line) => typeof JSON.parse(line).error === 'string'));
+  assert.equal(output.lines.join('\n').includes(secret), false);
+});
+
+test('保存実推論応答のリプレイで13件をcanonicalへ正規化する（HTTP実接続ではない）', async () => {
+  const fixture = JSON.parse(await readFile(new URL('../docs/jev-prompt-study-2026-11-06.json', import.meta.url), 'utf8'));
+  const run = fixture.runs.find((entry) => entry.profile === fixture.selected_profile);
+  assert.ok(run, '採用した実測プロファイルが保存されていること');
+  assert.equal(run.metadata.model, LOCAL_MODEL);
+  assert.equal(run.results.length, CASES.length);
+  assert.equal(CASES.length, 13);
+  const canonicalToWire = Object.fromEntries(Object.entries(run.intent_aliases).map(([wire, canonical]) => [canonical, wire]));
+  for (const [index, row] of run.results.entries()) {
+    assert.equal(row.case_id, CASES[index].id);
+    assert.equal(row.text, CASES[index].text);
+    assert.equal(row.expected, CASES[index].expected);
+    assert.equal(row.actual, row.expected);
+    assert.equal(row.matched, true);
+    assert.equal(row.provider, 'local-jev');
+    assert.equal(row.model, LOCAL_MODEL);
+    assert.equal(row.wire_choice, canonicalToWire[row.actual] ?? row.actual);
+    assert.deepEqual(Object.keys(row.probabilities).sort(), [...intents].sort());
+    assert.deepEqual(buildRequest(row.text, { model: LOCAL_MODEL }).questions.intent, run.question);
+  }
+
+  const output = capture();
+  const apiKey = 'replay-api-key-never-send-to-local';
+  let calls = 0;
+  const result = await runProbe({
+    mode: 'local',
+    apiKey,
+    write: output.write,
+    fetchImpl: async (url, options) => {
+      const row = run.results[calls];
+      calls += 1;
+      assert.equal(url, 'http://127.0.0.1:8765/v1/systemone');
+      assert.equal(options.method, 'POST');
+      assert.equal(new Headers(options.headers).has('authorization'), false);
+      assert.deepEqual(JSON.parse(options.body), {
+        model: row.model,
+        state: row.text,
+        questions: { intent: run.question },
+      });
+      return successfulResponse({
+        model: row.model,
+        answers: {
+          intent: {
+            type: 'choice',
+            choice: row.wire_choice,
+            confidence: row.confidence,
+            probabilities: Object.fromEntries(Object.entries(row.probabilities).map(([canonical, probability]) => [canonicalToWire[canonical] ?? canonical, probability])),
+          },
+        },
+        usage: row.usage,
+      });
+    },
+  });
+
+  assert.equal(result, 0);
+  assert.equal(calls, 13);
+  assert.equal(output.lines.length, 13);
+  for (const [index, line] of output.lines.entries()) {
+    const record = JSON.parse(line);
+    const row = run.results[index];
+    assert.equal(record.case_id, row.case_id);
+    assert.equal(record.text, row.text);
+    assert.equal(record.expected, row.expected);
+    assert.equal(record.actual, row.actual);
+    assert.equal(record.matched, true);
+    assert.equal(record.model, LOCAL_MODEL);
+    assert.equal(record.provider, 'local-jev');
+    assert.equal(record.confidence, row.confidence);
+    assert.deepEqual(record.probabilities, row.probabilities);
+    assert.deepEqual(record.usage, { input_tokens: row.usage.input_tokens, output_tokens: row.usage.output_tokens });
+  }
+  assert.equal(output.lines.join('\n').includes(apiKey), false);
+  assert.equal(output.lines.join('\n').includes('unspecified_application'), false);
 });
