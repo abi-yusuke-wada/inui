@@ -67,7 +67,7 @@ JEV接続プローブの範囲・手順・未検証事項は [接続検証の説
 
 ローカル開発では`TYPESAFE_API_KEY`が設定されていれば公式Jev、未設定・空白のみならlocal-jevの実モデルを使います。導入後に`make jev-local-serve`を起動し、別のdevShellからプローブを実行します。ローカルの結果は、公式Jevによる正式なMVP評価と分けて扱います（[ADR-0005](docs/adr/0005-local-jev-for-development.md)）。
 
-既定モデルの日本語13入力は7件一致でした。多言語NLIの比較候補は、サーバーとプローブの両方で`LOCAL_JEV_MODEL=nli-multilingual-minilm`を指定して試せます。候補の日本語精度は未確認です。既定モデルの結果と比較手順は [接続検証の説明](docs/jev-connection-check.md) を参照してください。
+日本語の固定13入力は、既定モデルと多言語NLIの比較候補のどちらも7件一致でした。候補は正常入力7/9件、対象外・曖昧入力0/4件で、期待結果を満たしていません。比較候補は、サーバーとプローブの両方で`LOCAL_JEV_MODEL=nli-multilingual-minilm`を指定して再現できます。結果と比較手順は [接続検証の説明](docs/jev-connection-check.md) を参照してください。
 
 アプリのビルド・起動等のターゲットは、Issue #4の実装に合わせて追加します。
 
