@@ -105,9 +105,7 @@ def validate_config(config: object) -> list[str]:
             "mcp.bearer_token_env_var")
     require(server.get("default_tools_approval_mode") == "prompt", "mcp.default_approval")
     enabled = server.get("enabled_tools")
-    require(isinstance(enabled, list) and len(enabled) == len(TOOLS)
-            and all(isinstance(tool, str) for tool in enabled) and set(enabled) == set(TOOLS),
-            "mcp.enabled_tools")
+    require(enabled == list(TOOLS), "mcp.enabled_tools")
     require(server.get("http_headers") == {"X-MCP-Tools": ",".join(TOOLS)}, "mcp.http_headers")
     overrides = server.get("tools")
     if not isinstance(overrides, dict):

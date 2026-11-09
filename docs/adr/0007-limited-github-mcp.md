@@ -9,6 +9,8 @@ Codexから`gh`を使うと、読み取り拒否対象の`~/.config/gh`へアク
 
 この運用上の課題は[Issue #16](https://github.com/abi-yusuke-wada/inui/issues/16)の検証結果をPRへ反映し、CodeRabbitの指摘を取得・確認する作業で顕在化した。分類検証の成果を引き渡すための開発支援として同じPRに含めるが、Issue #16の分類完了条件へMCP接続を追加するものではない。
 
+PR #22は分類検証と開発支援設定の2つを含む。開発支援は独立したIssueで追跡し、PR本文から両課題を参照する。分類検証のIssue #16だけをClose対象とし、実接続・承認表示の未確認事項が残る開発支援Issueは参照にとどめる。
+
 利用者は、既存の認証情報の拒否を維持し、GitHubの必要操作だけを公開して書き込みを承認対象にする変更を承認した。これは開発支援の接続であり、[ADR-0006](0006-local-model-for-mvp.md)で延期した製品MVPのMCP導入とは別の用途である。
 
 ## 比較した案
@@ -24,6 +26,7 @@ Codexから`gh`を使うと、読み取り拒否対象の`~/.config/gh`へアク
 - プロジェクトの[Codex設定](../../.codex/config.toml)へ`inui_github`を追加し、接続先を`https://api.githubcopilot.com/mcp/`とする。認証は`INUI_GITHUB_MCP_TOKEN`という環境変数名だけを参照し、値を設定ファイルや会話へ保存しない。[GitHub公式の導入方法](https://github.com/github/github-mcp-server/blob/main/docs/installation-guides/install-codex.md)
 - 専用fine-grained PATは書き込み先を`abi-yusuke-wada/inui`だけにし、Issues・Pull requestsをRead and write、MetadataをRead-onlyとする。Contentsや管理用の権限は付けない。リポジトリ制限はPAT側の設定であり、MCPの`owner`・`repo`引数を固定する設定ではない。公開リポジトリ一般への読み取りも残る。[PATの仕様](https://docs.github.com/en/authentication/keeping-your-account-and-data-secure/managing-your-personal-access-tokens)
 - 読み取りは`issue_read`・`list_issues`・`pull_request_read`・`list_pull_requests`、書き込みは`issue_write`・`create_pull_request`・`update_pull_request`・`add_issue_comment`・`add_reply_to_pull_request_comment`だけを公開する。Codexの`enabled_tools`とGitHubの`X-MCP-Tools`を同じ9操作にする。[GitHubの個別操作設定](https://github.com/github/github-mcp-server/blob/main/docs/server-configuration.md#enabling-specific-tools)
+- 設定検証では、両一覧を同じ固定順序と完全一致で比較する。これは設定の表記を一貫させるためで、GitHubの操作順を制御する設定ではない。
 - 既定の承認モードを`prompt`、既知の読み取り4操作だけを`approve`、書き込み5操作を`prompt`とする。承認先はトップレベルの`approvals_reviewer = "user"`で人に指定する。[CodexのMCP設定](https://learn.chatgpt.com/docs/extend/mcp?surface=cli)
 - 既存の権限プロファイル、機密ファイルの拒否、コマンドの通信制限、`inherit = "core"`、ログインシェルの無効化は維持する。
 
