@@ -1,0 +1,338 @@
+{
+  "reported_date": "2026-11-06",
+  "provenance": "利用者がホスト側で実行したmake jev-probe-localの提示ログ。エージェントによる再実行結果ではない。",
+  "probe_commit": "bb41dc8",
+  "runtime_metadata_observed_after_report": {
+    "local-jev": "0.2.0",
+    "torch": "2.15.0+cpu",
+    "transformers": "5.22.1"
+  },
+  "summary": {
+    "responses": 13,
+    "matched": 7,
+    "mismatched": 6,
+    "normal_cases": {
+      "matched": 5,
+      "total": 9
+    },
+    "unsupported_or_ambiguous_cases": {
+      "matched": 2,
+      "total": 4
+    },
+    "elapsed_ms": {
+      "min": 2982,
+      "max": 5578,
+      "median": 3823,
+      "mean": 3935.076923076923,
+      "total": 51156
+    },
+    "reported_exit_code": 1,
+    "timing_scope": "Node.jsプローブ内の各API呼び出しと応答検証。ブラウザを含む正式な30秒条件の実測ではない。"
+  },
+  "limitations": [
+    "公式Jevの実行結果ではない。",
+    "同じ固定13入力を1回ずつ確認した結果であり、一般的な日本語精度の保証ではない。",
+    "モデルの言語、候補説明、実行環境等の要因は切り分けていない。"
+  ],
+  "results": [
+    {
+      "case_id": "leave-no-date",
+      "provider": "local-jev",
+      "text": "有給を取りたい",
+      "expected": "leave_request",
+      "actual": "leave_request",
+      "matched": true,
+      "model": "nli-deberta-large",
+      "confidence": 0.3024,
+      "probabilities": {
+        "leave_request": 0.4187,
+        "expense_request": 0.0953,
+        "application_status": 0.118,
+        "unsupported_feature": 0.1282,
+        "unsupported_operation": 0.1135,
+        "clarify": 0.1263
+      },
+      "usage": {
+        "input_tokens": 48,
+        "output_tokens": 1
+      },
+      "elapsed_ms": 4679
+    },
+    {
+      "case_id": "leave-tomorrow",
+      "provider": "local-jev",
+      "text": "明日有給を取りたい",
+      "expected": "leave_request",
+      "actual": "unsupported_feature",
+      "matched": false,
+      "model": "nli-deberta-large",
+      "confidence": 0.035,
+      "probabilities": {
+        "leave_request": 0.1501,
+        "expense_request": 0.1421,
+        "application_status": 0.1589,
+        "unsupported_feature": 0.1958,
+        "unsupported_operation": 0.1637,
+        "clarify": 0.1894
+      },
+      "usage": {
+        "input_tokens": 60,
+        "output_tokens": 1
+      },
+      "elapsed_ms": 3049
+    },
+    {
+      "case_id": "leave-afternoon",
+      "provider": "local-jev",
+      "text": "11月10日の午後に半休を取りたい",
+      "expected": "leave_request",
+      "actual": "leave_request",
+      "matched": true,
+      "model": "nli-deberta-large",
+      "confidence": 0.0773,
+      "probabilities": {
+        "leave_request": 0.2311,
+        "expense_request": 0.1495,
+        "application_status": 0.1357,
+        "unsupported_feature": 0.206,
+        "unsupported_operation": 0.1462,
+        "clarify": 0.1315
+      },
+      "usage": {
+        "input_tokens": 90,
+        "output_tokens": 1
+      },
+      "elapsed_ms": 3583
+    },
+    {
+      "case_id": "expense-no-values",
+      "provider": "local-jev",
+      "text": "交通費を精算したい",
+      "expected": "expense_request",
+      "actual": "expense_request",
+      "matched": true,
+      "model": "nli-deberta-large",
+      "confidence": 0.4428,
+      "probabilities": {
+        "leave_request": 0.0325,
+        "expense_request": 0.5357,
+        "application_status": 0.0642,
+        "unsupported_feature": 0.2227,
+        "unsupported_operation": 0.0624,
+        "clarify": 0.0825
+      },
+      "usage": {
+        "input_tokens": 54,
+        "output_tokens": 1
+      },
+      "elapsed_ms": 2982
+    },
+    {
+      "case_id": "expense-yesterday",
+      "provider": "local-jev",
+      "text": "昨日の交通費1,200円を精算したい",
+      "expected": "expense_request",
+      "actual": "expense_request",
+      "matched": true,
+      "model": "nli-deberta-large",
+      "confidence": 0.1019,
+      "probabilities": {
+        "leave_request": 0.081,
+        "expense_request": 0.2516,
+        "application_status": 0.1438,
+        "unsupported_feature": 0.1618,
+        "unsupported_operation": 0.1597,
+        "clarify": 0.202
+      },
+      "usage": {
+        "input_tokens": 96,
+        "output_tokens": 1
+      },
+      "elapsed_ms": 3320
+    },
+    {
+      "case_id": "expense-dated",
+      "provider": "local-jev",
+      "text": "2026年10月30日の電車代640円を申請したい",
+      "expected": "expense_request",
+      "actual": "unsupported_feature",
+      "matched": false,
+      "model": "nli-deberta-large",
+      "confidence": 0.043,
+      "probabilities": {
+        "leave_request": 0.0868,
+        "expense_request": 0.177,
+        "application_status": 0.1786,
+        "unsupported_feature": 0.2025,
+        "unsupported_operation": 0.194,
+        "clarify": 0.161
+      },
+      "usage": {
+        "input_tokens": 102,
+        "output_tokens": 1
+      },
+      "elapsed_ms": 3872
+    },
+    {
+      "case_id": "status-all",
+      "provider": "local-jev",
+      "text": "申請の状況を見たい",
+      "expected": "application_status",
+      "actual": "application_status",
+      "matched": true,
+      "model": "nli-deberta-large",
+      "confidence": 0.2112,
+      "probabilities": {
+        "leave_request": 0.1424,
+        "expense_request": 0.1017,
+        "application_status": 0.3427,
+        "unsupported_feature": 0.1593,
+        "unsupported_operation": 0.1481,
+        "clarify": 0.1058
+      },
+      "usage": {
+        "input_tokens": 60,
+        "output_tokens": 1
+      },
+      "elapsed_ms": 4248
+    },
+    {
+      "case_id": "status-pending",
+      "provider": "local-jev",
+      "text": "承認待ちの申請を見せて",
+      "expected": "application_status",
+      "actual": "unsupported_operation",
+      "matched": false,
+      "model": "nli-deberta-large",
+      "confidence": 0.0686,
+      "probabilities": {
+        "leave_request": 0.1417,
+        "expense_request": 0.1212,
+        "application_status": 0.2012,
+        "unsupported_feature": 0.1695,
+        "unsupported_operation": 0.2238,
+        "clarify": 0.1425
+      },
+      "usage": {
+        "input_tokens": 72,
+        "output_tokens": 1
+      },
+      "elapsed_ms": 3576
+    },
+    {
+      "case_id": "status-returned",
+      "provider": "local-jev",
+      "text": "差し戻された申請はある？",
+      "expected": "application_status",
+      "actual": "unsupported_operation",
+      "matched": false,
+      "model": "nli-deberta-large",
+      "confidence": 0.1737,
+      "probabilities": {
+        "leave_request": 0.1065,
+        "expense_request": 0.098,
+        "application_status": 0.1463,
+        "unsupported_feature": 0.1501,
+        "unsupported_operation": 0.3114,
+        "clarify": 0.1877
+      },
+      "usage": {
+        "input_tokens": 60,
+        "output_tokens": 1
+      },
+      "elapsed_ms": 5578
+    },
+    {
+      "case_id": "unsupported-travel",
+      "provider": "local-jev",
+      "text": "出張を申請したい",
+      "expected": "unsupported_feature",
+      "actual": "unsupported_feature",
+      "matched": true,
+      "model": "nli-deberta-large",
+      "confidence": 0.0668,
+      "probabilities": {
+        "leave_request": 0.1785,
+        "expense_request": 0.0905,
+        "application_status": 0.1803,
+        "unsupported_feature": 0.2223,
+        "unsupported_operation": 0.1415,
+        "clarify": 0.1868
+      },
+      "usage": {
+        "input_tokens": 48,
+        "output_tokens": 1
+      },
+      "elapsed_ms": 4103
+    },
+    {
+      "case_id": "unsupported-room",
+      "provider": "local-jev",
+      "text": "会議室を予約したい",
+      "expected": "unsupported_feature",
+      "actual": "clarify",
+      "matched": false,
+      "model": "nli-deberta-large",
+      "confidence": 0.0771,
+      "probabilities": {
+        "leave_request": 0.1274,
+        "expense_request": 0.1147,
+        "application_status": 0.1789,
+        "unsupported_feature": 0.2008,
+        "unsupported_operation": 0.1473,
+        "clarify": 0.2309
+      },
+      "usage": {
+        "input_tokens": 54,
+        "output_tokens": 1
+      },
+      "elapsed_ms": 3714
+    },
+    {
+      "case_id": "unsupported-cancel",
+      "provider": "local-jev",
+      "text": "申請を取り下げたい",
+      "expected": "unsupported_operation",
+      "actual": "unsupported_operation",
+      "matched": true,
+      "model": "nli-deberta-large",
+      "confidence": 0.5386,
+      "probabilities": {
+        "leave_request": 0.0564,
+        "expense_request": 0.0541,
+        "application_status": 0.0817,
+        "unsupported_feature": 0.1204,
+        "unsupported_operation": 0.6155,
+        "clarify": 0.072
+      },
+      "usage": {
+        "input_tokens": 60,
+        "output_tokens": 1
+      },
+      "elapsed_ms": 4629
+    },
+    {
+      "case_id": "clarify-application",
+      "provider": "local-jev",
+      "text": "申請したい",
+      "expected": "clarify",
+      "actual": "application_status",
+      "matched": false,
+      "model": "nli-deberta-large",
+      "confidence": 0.0473,
+      "probabilities": {
+        "leave_request": 0.1762,
+        "expense_request": 0.135,
+        "application_status": 0.2061,
+        "unsupported_feature": 0.1859,
+        "unsupported_operation": 0.1708,
+        "clarify": 0.126
+      },
+      "usage": {
+        "input_tokens": 30,
+        "output_tokens": 1
+      },
+      "elapsed_ms": 3823
+    }
+  ]
+}
