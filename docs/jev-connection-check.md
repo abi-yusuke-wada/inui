@@ -201,7 +201,7 @@ APIキーがある場合、`make jev-probe`の自動選択は引き続き公式J
 
 採用した質問と固定aliasを反映したHTTPプローブで、利用者の提示ログから正常9/9件・異常4/4件の一致を確認した。HTTPの追加再確認を現在の必須次作業にはしない。confidenceの較正と未使用の言い換え入力は引き続き追加検証事項で、固定13入力だけで一般的な精度を断定しない。
 
-Issue #16の改定ゴールの本文更新は、利用者がホスト側で実施済みと報告し、ローカルの更新内容との一致を確認した。今回の成果と追加の開発支援設定はPR #22へ反映し、レビュー対応を進めている。Issue本文への検証結果追記とCloseの最新状態は再取得しておらず、確認済みとは扱わない。
+Issue #16の改定ゴールの本文更新は、利用者がホスト側で実施済みと報告し、ローカルの更新内容との一致を確認した。今回の分類検証の成果はPR #22へ反映し、レビュー対応を進めている。Issue本文への検証結果追記とCloseの最新状態は再取得しておらず、確認済みとは扱わない。
 
 公式Jev・引数自動補完・MCPは、部署展開と費用に関する社内承認後に再検討する。Choiceや日付・金額の公式例は、その将来検証の参考資料として残す。現在のMVPでは日付・金額・区分・状態を画面上で明示的に操作する。[Choice](https://docs.typesafe.ai/primitives/choice)、[Date extraction](https://docs.typesafe.ai/cookbooks/date_extraction_cookbook)、[Pre-parsed value extraction](https://docs.typesafe.ai/cookbooks/pre_parsed_value_extraction_cookbook)
 

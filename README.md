@@ -54,9 +54,8 @@ direnvを使わない場合は `nix develop` で開発環境に入ります。
 
 | コマンド | 内容 |
 | --- | --- |
-| `make check` | Codexの権限設定、開発環境の定義（`nix flake check`）、差分の空白を検証する |
+| `make check` | 開発環境の定義（`nix flake check`）と差分の空白を検証する |
 | `make sandbox-check` | CLIのサンドボックスの前提条件を確認する |
-| `make agent-config-check` | 認証情報を参照せず、Codexの権限とGitHub連携の公開操作・承認設定を検証する |
 | `make jev-check` | JEV接続プローブのオフラインテストを実行する |
 | `make jev-probe` | 従来の自動選択。APIキーありは公式Jev（従量課金）、なしはローカルNLIへ接続する。MVP評価には`make jev-probe-local`を使う |
 | `make jev-probe-dry-run` | 将来検証用の公式Jevリクエストを固定13入力で表示する（通信なし） |
@@ -77,8 +76,6 @@ Issue #16の分類条件は、固定13入力で正常9/9件・対象外と曖昧
 過去の多言語NLI比較は正常7/9件・異常0/4件でした。今回の改善ではモデルを変更していません。固定13入力を見ながら調整した結果であり、日本語全般の精度を保証するものではありません。質問・応答契約と再現手順は [接続検証の説明](docs/jev-connection-check.md) を参照してください。
 
 アプリのビルド・起動等のターゲットは、Issue #4の実装に合わせて追加します。
-
-開発支援用のGitHub接続は、専用PATを使う限定MCPでIssue・PRだけを扱います。認証情報の読み取り拒否を維持し、書き込みには人の承認を求めます。初回接続と未検証事項は[権限と運用](docs/agent-security.md)、判断理由は[ADR-0007](docs/adr/0007-limited-github-mcp.md)を参照してください。製品MVPで延期したMCPとは別の用途です。
 
 ### Linuxでのサンドボックスの前提条件
 

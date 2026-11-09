@@ -2,7 +2,6 @@
 
 - 状態: 決定（2026-10-30）
 - 更新: 2026-11-02、Codexの機密ファイル拒否を追加。
-- 更新: 2026-11-06、GitHubのIssue・PR操作を限定MCPへ分離する判断を[ADR-0007](0007-limited-github-mcp.md)に記録。
 - 関連: [Issue #3](https://github.com/abi-yusuke-wada/inui/issues/3)、[ADR-0001](0001-mvp-hosting-and-storage.md)
 
 ## 背景
@@ -59,8 +58,6 @@ Linux・WSLの再帰globは `glob_scan_max_depth = 8` とし、各サンドボ�
 以下は、当初の `inui` プロファイル（`:workspace` を継承）を既定としていた時点で、Codex CLI 0.165.0 / LinuxのNix環境からプロファイルの強制指定をせずに `codex sandbox -- ...` を実行した検証の記録である。現行の `inui-readonly`・`inui-dev` での同等の検証は未実施で、状況は [AI開発エージェントの権限と運用](../agent-security.md) に記録する。プロジェクト内・入れ子・ホーム配下のプロジェクト外のダミー `.env`、プロジェクトとホームの `.aws` 内のダミー、作業領域内を参照先とするシンボリックリンク経由（作業領域外を参照先とするリンクは前述のとおり読み取れるため対象外）について、Pythonの読み取り・`cat`・書き込みが拒否された。通常ファイルの読み書きと作業領域外の書き込み拒否も確認した。実際の機密情報は使用せず、作成した一時ファイルは削除済み。macOS・Windowsと、外部MCPツール等の別の実行経路は未検証とする。
 
 ## GitHubへの通信と認証情報（2026-11-02追加・同日改定）
-
-以下は2026-11-02時点の判断である。2026-11-06、CodexのIssue・PR操作には専用PATと操作別承認を使う限定MCPを追加することにした（[ADR-0007](0007-limited-github-mcp.md)）。コマンドの通信制限と認証情報の読み取り拒否は維持し、コードのpushはこのMCPの対象に含めない。
 
 当初、Codexの実行環境からGitHub CLI・Gitで情報を取得できなかったため、`features.network_proxy` と `permissions.inui.network` で `github.com`・`api.github.com` への通信を許可した。再起動後にGitHub CLI・Gitの取得が成功し、許可外の `example.com` が拒否されることを確認した。
 

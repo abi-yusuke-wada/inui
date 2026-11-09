@@ -4,8 +4,6 @@ inuiでCodex CLIとClaude Codeを使うときの権限設定・起動方法・�
 
 確認時点（2026-11-02）の環境: Codex CLI 0.165.0（2026-11-03に0.166.0へ自動更新）、Claude Code 2.1.316、Ubuntu 22.04.5 LTS on WSL2（カーネル 6.18.54.1-microsoft-standard-WSL2）。DevContainerは使っていない。
 
-2026-11-06、利用者の承認で開発支援用の限定GitHub MCPを追加した（[ADR-0007](adr/0007-limited-github-mcp.md)）。設定の静的検証は完了し、再起動後の接続・承認表示は未検証である。以下の2026-11-02の実測結果は当時の履歴として保持する。
-
 各対策の状態は次の表記で区別する。
 
 | 表記 | 意味 |
@@ -25,7 +23,7 @@ inuiでCodex CLIとClaude Codeを使うときの権限設定・起動方法・�
 | --- | --- | --- | --- |
 | A. 調査 | 読み取り専用 | `codex`（既定のプロファイル `inui-readonly`） | `claude --permission-mode plan` |
 | B. 実装・テスト | 作業領域への書き込み | `codex` で起動し、`/permissions` で `inui-dev` に切り替える | `claude`（既定）。編集を自動で許可する場合は `claude --permission-mode acceptEdits` |
-| C. GitHubへの反映 | 制限付きの書き込み | 限定MCPでIssue・PRを操作し、書き込みは人に承認を求める。ソースのpushは別経路 | `gh`・`git push` を毎回承認して実行する |
+| C. GitHubへの反映 | 制限付きの書き込み | 使わない（通信不可） | `gh`・`git push` を毎回承認して実行する |
 
 どちらのCLIも、devShellに入った状態（direnvまたは `nix develop`）で起動する。Codexは起動後と切り替え後に `/status` で権限が `inui-readonly`・`inui-dev` になっていることを確認してから作業する。起動オプション `-c 'default_permissions="…"'` での指定は、ワークスペースの要件設定の読み込みに失敗して起動できない（2026-11-02確認）。`codex` だけで起動すると `inui-readonly` が適用され、`/permissions` で `inui-dev` を選択できることを確認した。`-s/--sandbox`・`--full-auto` 等の起動オプションやエイリアスがあると、プロジェクトの権限プロファイルより優先される場合がある（2026-11-02、権限プロファイルが適用されず `workspace-write` で起動したセッションでは、GitHubのトークン等を読み取れることを確認した）。調査で整理した作業スコープをユーザーと合意してから、段階Bで起動し直す。
 
@@ -34,50 +32,13 @@ inuiでCodex CLIとClaude Codeを使うときの権限設定・起動方法・�
 設定: [.codex/config.toml](../.codex/config.toml)
 
 - `approval_policy = "on-request"`。危険な操作や権限外の操作は、モデルが承認を求める。
-- `approvals_reviewer = "user"`。承認要求の提示先を人に指定する。実際のMCP承認表示は再起動後に確認する。
 - 既定のプロファイルは `inui-readonly`（組み込みの `:read-only` を継承）。実装時だけ、セッション内の `/permissions` で `inui-dev`（`:workspace` を継承）に切り替える。
 - 依頼文にあった `sandbox_mode = "read-only"` と `[sandbox_workspace_write] network_access = false` は使わない。Codex 0.165.0では、旧 `sandbox_mode`・`sandbox_workspace_write` を権限プロファイルと併用できないため、機密ファイルの拒否ができるプロファイル方式を採る。CLIの `-s/--sandbox` も旧方式の指定なので使わない。
 - どちらのプロファイルもネットワークの許可を持たない（既定で無効）。
 - 両プロファイルで、`.env`・`.env.*`、`.aws`・`~/.aws`、`~/.ssh`、`~/.gnupg`、`~/.netrc`、`~/.git-credentials`、`~/.npmrc`、`~/.config/pnpm`、`~/.docker/config.json`、`~/.config/gh`（GitHubのトークン）、`~/.claude/.credentials.json`、`~/.codex/auth.json` の読み取りを拒否する。
 - グローバル設定（`~/.codex/config.toml`）にはモデルと信頼済みプロジェクトの設定だけがあり、権限・サンドボックスの設定はない。プロジェクト設定が適用されるのは、信頼済みのプロジェクトとして開いた場合に限られる。
 - `--dangerously-bypass-approvals-and-sandbox`、`-s danger-full-access`、`-a never` は使わない（設定で禁止はできないため、指示による制御）。
-- 開発支援用の`inui_github`を設定する。MCPはシェルのサンドボックスでは保護されないため、下記の公開操作と承認で別に制御する。
-
-### Codexの限定GitHub接続
-
-GitHub公式remote MCPの接続先・公開する9操作・操作別承認をプロジェクト設定で管理する。公開操作は次のとおりで、Codexの`enabled_tools`とサーバーの`X-MCP-Tools`を一致させる。
-
-| 用途 | 公開操作 | 承認設定 |
-| --- | --- | --- |
-| 読み取り | `issue_read`、`list_issues`、`pull_request_read`、`list_pull_requests` | `approve` |
-| 書き込み | `issue_write`、`create_pull_request`、`update_pull_request`、`add_issue_comment`、`add_reply_to_pull_request_comment` | `prompt` |
-
-既定は`prompt`とし、merge・レビュー承認・コード書き込み・管理用操作は公開しない。更新操作はclose等も含むため、承認時にはメソッド・対象・本文等の引数を確認する。取得内容の扱いは[AGENTS.md](../AGENTS.md)のTrust Boundaryに従う。
-
-`inui-readonly`はMCPの書き込み操作を技術的に隠す設定ではない。MCPの承認はファイルシステムの制限とは別である。調査段階の合意外の書き込みは行わず、承認時にも作業スコープを確認する。環境変数の継承制限だけで、ホスト全体の完全な秘密隔離を保証したとは扱わない。
-
-#### 初回設定（人がホストで行う）
-
-1. GitHubのSettings → Developer settings → Personal access tokens → Fine-grained tokensから専用PATを発行する。Resource ownerを`abi-yusuke-wada`、Only select repositoriesを`inui`にする。
-2. Issues・Pull requestsをRead and write、MetadataをRead-onlyにする。Contentsや管理権限は追加せず、有効期限を指定する。書き込み先の制限はPAT側で行う。公開リポジトリ一般への読み取りは残る。
-3. ホストのdevShellで、次のように非表示入力しCodexを起動する。読み取り・export・起動を同じサブシェル内で行い、親シェルに新たな値を残さない。値はチャット・ファイル・シェル履歴へ保存しない。既に起動中のCodexにはこの環境変数は後から反映されない。
-
-以前の手順で親シェルに設定済みの場合は、先に`unset INUI_GITHUB_MCP_TOKEN`でその値を破棄してから入力し直す。値を表示して確認しない。
-
-```bash
-(
-  read -rsp 'GitHub MCP用PAT: ' INUI_GITHUB_MCP_TOKEN
-  printf '\n'
-  export INUI_GITHUB_MCP_TOKEN
-  codex
-)
-```
-
-設定にはトークン値を保存せず、`bearer_token_env_var`に環境変数名だけを書く。`shell_environment_policy.inherit = "core"`を維持してシェルへ明示継承しない。既存の`~/.config/gh`の認証情報も取得・複製しない。
-
-再起動後に`/mcp`で`inui_github`を確認し、inuiのIssue・PRの読み取りと、合意済みの書き込みに対する人への承認表示を確認する。権限不足や取得エラーを指摘0件と扱わない。この接続ではローカルコミットの`git push`はできず、認可された別経路を使う。製品MVPのMCP延期とは別の接続である。
-
-`make agent-config-check`は、認証情報や環境変数の値を読まずにプロジェクトの権限・公開操作・承認設定を静的検証する。2026-11-06に正常設定の成功、既存permissionsの完全一致、危険な変更13種の拒否を確認した。実接続・人への承認表示・PATの実スコープはまだ検証していない。
+- MCPサーバーは設定していない。追加する場合は、シェルのサンドボックスでは保護されない前提で、サーバーごとに権限を確認する。
 
 ## 3. Claude Codeの実効権限
 
@@ -142,7 +103,6 @@ GitHub公式remote MCPの接続先・公開する9操作・操作別承認をプ
 | 認証情報 | 配置 | 対策 | 状態 |
 | --- | --- | --- | --- |
 | GitHubのトークン（`gho_`、`repo`・`workflow`・`gist`・`read:org`） | `~/.config/gh` | 両CLIで読み取り拒否。Claudeの `gh` は毎回承認 | 強制（Claude・Codexの `inui-readonly` で確認済み、`inui-dev` は未検証） |
-| 限定GitHub MCP専用fine-grained PAT | Codex起動時の`INUI_GITHUB_MCP_TOKEN` | 値をファイルに保存しない。inuiのIssues・PRだけを書き込み対象にし、MCP操作を制限・書き込みを人の承認対象にする | 設定の静的検証済み。実接続・実スコープ・承認表示は未検証 |
 | AWS | `~/.aws`（空のディレクトリ） | 両CLIで拒否 | 強制（Codexは未検証） |
 | GnuPG | `~/.gnupg` | 両CLIで拒否 | 強制（Claude・Codexの `inui-readonly` で確認済み、`inui-dev` は未検証） |
 | CLI自身の認証 | `~/.claude/.credentials.json`・`~/.codex/auth.json` | 両CLIのサンドボックスで拒否 | 強制（Claudeは両方、Codexの `inui-readonly` は `~/.codex/auth.json` で確認済み。`inui-dev` は未検証） |
