@@ -131,7 +131,8 @@ finally:
 metadata["device"] = backend.device
 metadata["dtype"] = str(backend.model.dtype)
 metadata["hf_model"] = engine.models[MODEL].options["hf_model"]
-cached_config = try_to_load_from_cache(metadata["hf_model"], "config.json")
+model_path = Path(metadata["hf_model"])
+cached_config = str(model_path / "config.json") if model_path.is_dir() else try_to_load_from_cache(metadata["hf_model"], "config.json")
 metadata["hf_revision"] = Path(cached_config).parent.name if isinstance(cached_config, str) else None
 metadata["temperature"] = engine.models[MODEL].temperature
 metadata["model_load_ms"] = round((time.perf_counter() - started) * 1000)

@@ -63,7 +63,9 @@ direnvを使わない場合は `nix develop` で開発環境に入ります。
 | `make jev-probe-live` | 将来の公式Jev検証用。最大13回接続する（APIキー・通信許可・利用料金の確認が必要） |
 | `make jev-probe-local` | 正式MVPの基準としてローカルNLIで固定13入力を検証する（公式APIキーを使わない） |
 | `make jev-prompt-study` | キャッシュ済み重みで元の質問と採用した質問を比較する（外部通信・HTTPなし） |
-| `make jev-local-setup` | 固定版local-jevとCPU用Python依存を取得する |
+| `make jev-local-setup` | ソースSHAを固定したlocal-jevと、バージョン未固定のCPU用runtimeを取得する |
+| `make jev-local-versions` | 導入済みruntimeの実バージョンを表示する（通信なし） |
+| `make jev-local-pin-model` | 実測revisionの重み・tokenizerを取得し、同名モデルのローカルカードへ固定する |
 | `make jev-local-serve` | ローカルNLIを起動する（初回はモデル重み約0.87GBを取得） |
 
 ローカルNLIの範囲・手順・未検証事項は [接続検証の説明](docs/jev-connection-check.md) を参照してください。MVP基準の検証では、サーバーとプローブの両方で`LOCAL_JEV_MODEL=nli-deberta-large`を明示し、`make jev-local-serve`と`make jev-probe-local`を使います。

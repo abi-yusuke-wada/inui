@@ -1,6 +1,6 @@
 # ローカルNLI接続・Intent分類の検証（Issue #16）
 
-状態: 基準モデル`nli-deberta-large`を維持し、実Engine比較と利用者ホストでのHTTP再実測の両方で正常9/9件・異常4/4件を確認した。保存応答のスキーマとNodeの検証・正規化も13件で通過し、Issue #16のローカル分類・HTTP応答検証条件は達成済み。GitHubへの進捗反映・Close・PR反映は未実施である。以前の7/13件の記録と導入確認の履歴は保持する（[ADR-0006](adr/0006-local-model-for-mvp.md)）。
+状態: 基準モデル`nli-deberta-large`を維持し、実Engine比較と利用者ホストでのHTTP再実測の両方で正常9/9件・異常4/4件を確認した。保存応答のスキーマとNodeの検証・正規化も13件で通過し、Issue #16のローカル分類・HTTP応答検証条件は達成済み。検証結果と分類変更は[PR #22](https://github.com/abi-yusuke-wada/inui/pull/22)に反映し、レビュー対応を進めている。IssueのCloseは未実施。以前の7/13件の記録と導入確認の履歴は保持する（[ADR-0006](adr/0006-local-model-for-mvp.md)）。
 
 ## 今回の範囲
 
@@ -39,13 +39,15 @@ MVPは、自然言語のIntentから休暇申請・経費精算（交通費）�
 | `make jev-probe-dry-run` | 通信せずに13入力と公式Jev向けChoiceリクエストを表示する。APIキー不要 |
 | `make jev-probe-live` | 将来の公式Jev検証用。公式APIを強制し、最大13回の呼び出しで課金が発生し得る。APIキーが必要 |
 | `make jev-probe-local` | 正式MVP基準の検証用。ローカルを強制し、公式APIキーを読まず、送信しない |
-| `make jev-local-setup` | Python 3.12・uvで固定版local-jevを導入する。runtime等のダウンロードを伴う |
+| `make jev-local-setup` | Python 3.12・uvでソースSHAを固定したlocal-jevを導入する。runtimeの依存バージョンは未固定で、ダウンロードを伴う |
+| `make jev-local-versions` | 導入済み環境のパッケージバージョンを確認する。モデル実行・ダウンロードは行わない |
+| `make jev-local-pin-model` | 実測したrevisionの重み・tokenizerを取得し、基準モデルのローカルカードへ固定する。ダウンロードを伴う |
 | `make jev-local-serve` | 基準の`nli-deberta-large`を`127.0.0.1:8765`で起動する。未取得の重みは初回にダウンロードする |
 
-MVP基準の実推論では、導入済みの環境で次を実行する。未導入の場合のみ、事前に`make jev-local-setup`で導入する。固定応答mockを開発用の代替には使わない。
+MVP基準の実推論では、導入済みの環境で次を実行する。未導入の場合のみ、事前に`make jev-local-setup`で導入する。[固定revisionの再取得](#実測revisionの重みとtokenizerの再取得)を先に行い、既存サーバーを停止してから起動する。固定応答mockを開発用の代替には使わない。
 
 ```sh
-LOCAL_JEV_MODEL=nli-deberta-large make jev-local-serve
+HF_HUB_OFFLINE=1 TRANSFORMERS_OFFLINE=1 LOCAL_JEV_MODEL=nli-deberta-large make jev-local-serve
 ```
 
 別のdevShellで同じ基準モデルを指定し、公式APIキーの有無によらずローカルの13入力を検証する。
@@ -57,6 +59,33 @@ LOCAL_JEV_MODEL=nli-deberta-large make jev-probe-local
 HTTP経由の再現には、利用者のホスト側で上記のサーバ起動と別devShellからのプローブを実行する。この手順による全13件一致の提示ログを受領済みである。再現時は13件の分類と応答契約を確認し、数値の終了コードも記録する。実Engine分類比較や保存応答の検証は、HTTPの提示ログとは分けて扱う。
 
 local-jevは`64a0b31ff343dca32142496cf9edca5a0174a18d`に固定する。環境・キャッシュは`.local-jev/`、モデルキャッシュは`.local-jev/cache/`へ置き、Gitには含めない。既定モデルの重み約0.87 GBとは別にruntimeのダウンロード・ディスクと推論用メモリが必要である。利用者のホスト側で導入と実推論の成功を確認した。[local-jev](https://github.com/amithgc/local-jev)、[モデルカード](https://huggingface.co/MoritzLaurer/deberta-v3-large-zeroshot-v2.0)
+
+ただし、`make jev-local-setup`のTorchは`>=2.4`、固定したlocal-jevのTransformers依存は`>=5.2`という下限指定であり、依存全体のlockやconstraintsはない。新しい環境では、記録した実測と異なるruntimeが導入され、分類結果も変わる可能性がある。ソースSHAの固定だけで実行環境全体が再現されるとは扱わない。
+
+導入後、サーバーや実Engine比較の実行前に同じdevShellで次を実行し、表示された実際のバージョンを13件の結果・終了コードと一緒に記録する。
+
+```sh
+make jev-local-versions
+```
+
+実Engine比較の観測値はlocal-jev `0.2.0`、Torch `2.15.0+cpu`、Transformers `5.22.1`である。異なるバージョンでの再実測はその値を明記し、同じruntimeの再現とは扱わない。これらは採用説明での利用者ホストHTTP実測の観測値ではなく、そのサーバー側runtimeは未確認である。
+
+### 実測revisionの重みとtokenizerの再取得
+
+Issue #4へはモデル名だけでなく、実Engine比較で記録した`MoritzLaurer/deberta-v3-large-zeroshot-v2.0`のrevision `cf44676c28ba7312e5c5f8f8d2c22b3e0c9cdae2`を取得して使用する次の手順を引き継ぐ。
+
+```sh
+make jev-local-versions
+make jev-local-pin-model
+```
+
+`jev-local-pin-model`は既存の`huggingface_hub.snapshot_download`へrepo・revision・取得対象ファイルを明示する。`token=False`で既存のHugging Face認証を使わず、重み・config・tokenizerを`.local-jev/cache/hub/`の同じsnapshotへ取得する。ネットワーク利用の承認があるときに実行する。
+
+組込みカード全体をコピーし、`hf_model`だけを返却されたsnapshotの絶対パスへ変更して`.local-jev/models/cards/nli-deberta-large.json`へ保存する。モデル名・較正値・batch_sizeは維持する。local-jevはユーザーカードで同名の組込みカードを上書きし、tokenizerと重みの両方にこのパスを使う。カードへ`revision`という項目だけを追加しても、現在のbackendは参照しない。
+
+続いて上記のオフライン指定で`make jev-local-serve`を起動する。`make jev-prompt-study`も同じカード探索先を使い、出力の`hf_model`がこのsnapshotパス、`hf_revision`が固定revisionであることを確認する。基準モデルと同名の別カードを追加して上書きしない。カード・重みはGitに含めない。
+
+この手順は選択する重み・tokenizerのrevisionを固定するが、前述のPython依存までは固定しない。新規環境でのダウンロード・HTTP実推論を再実測した記録とは区別し、実行したバージョン・snapshot・13件の結果・終了コードを別途保存する。
 
 `LOCAL_JEV_BASE_URL`でローカル接続先を変える場合も、loopback URLだけを許可する。公式Jevの失敗時にはローカルへ自動fallbackせず、その失敗を記録する。
 
@@ -121,7 +150,7 @@ aliasは`{"unspecified_application": "clarify"}`という固定1対1の正規化
 
 先行したエージェント環境での確認では、TCPソケットが`EPERM`で拒否され、ASGI TestClientも`from_thread`のportal待機から完了しなかった。この別環境での制約を成功へ読み替えず、HTTP成功の根拠には[利用者ホストでの提示ログ](jev-local-http-results-2026-11-06.json)を使う。
 
-実Engine比較、保存入出力13件の契約検証、Nodeの105テストに加え、利用者ホストのHTTP再実測でも13件全一致を確認した。Issue #16のローカル分類・HTTP応答検証条件は達成済みであり、HTTP未確認は現在の未完了事項から外す。GitHubへの進捗反映・Close・PR反映は未実施で、Issue #4のアプリ実装と推論配置、Issue #15のブラウザを含む正式30秒測定も未完了である。
+実Engine比較、保存入出力13件の契約検証、Nodeの105テストに加え、利用者ホストのHTTP再実測でも13件全一致を確認した。Issue #16のローカル分類・HTTP応答検証条件は達成済みであり、HTTP未確認は現在の未完了事項から外す。検証結果と分類変更はPR #22へ反映済み。Issue #4のアプリ実装と推論配置、Issue #15のブラウザを含む正式30秒測定は未完了である。
 
 ## 導入確認の履歴（以前の終了基準）
 
@@ -172,7 +201,7 @@ APIキーがある場合、`make jev-probe`の自動選択は引き続き公式J
 
 採用した質問と固定aliasを反映したHTTPプローブで、利用者の提示ログから正常9/9件・異常4/4件の一致を確認した。HTTPの追加再確認を現在の必須次作業にはしない。confidenceの較正と未使用の言い換え入力は引き続き追加検証事項で、固定13入力だけで一般的な精度を断定しない。
 
-Issue #16の改定ゴールの本文更新は、利用者がホスト側で実施済みと報告し、ローカルの更新内容との一致を確認した。今回の達成を受けた進捗反映・Close・PR反映はまだ行っていない。リモート本文の再取得はできておらず、GitHub上の最新状態を独立に確認したとは扱わない。
+Issue #16の改定ゴールの本文更新は、利用者がホスト側で実施済みと報告し、ローカルの更新内容との一致を確認した。今回の成果と追加の開発支援設定はPR #22へ反映し、レビュー対応を進めている。Issue本文への検証結果追記とCloseの最新状態は再取得しておらず、確認済みとは扱わない。
 
 公式Jev・引数自動補完・MCPは、部署展開と費用に関する社内承認後に再検討する。Choiceや日付・金額の公式例は、その将来検証の参考資料として残す。現在のMVPでは日付・金額・区分・状態を画面上で明示的に操作する。[Choice](https://docs.typesafe.ai/primitives/choice)、[Date extraction](https://docs.typesafe.ai/cookbooks/date_extraction_cookbook)、[Pre-parsed value extraction](https://docs.typesafe.ai/cookbooks/pre_parsed_value_extraction_cookbook)
 

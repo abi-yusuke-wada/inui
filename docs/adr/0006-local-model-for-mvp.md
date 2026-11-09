@@ -43,6 +43,8 @@ Issue #16では、基準モデルを固定したうえで候補説明・出力�
 
 実Engine比較で観測したモデルは同じ`nli-deberta-large`、重みrevisionは`cf44676c28ba7312e5c5f8f8d2c22b3e0c9cdae2`。CPU・float32・4threads・warmup無効、local-jev `0.2.0`・Torch `2.15.0+cpu`・Transformers `5.22.1`で、既存の較正値を維持した。HTTPや外部通信を使わず分類を比較し、採用する質問をローカル基準モデル向けプローブへ反映した。
 
+Issue #4へは[実測revisionの再取得手順](../jev-connection-check.md#実測revisionの重みとtokenizerの再取得)も渡す。`make jev-local-pin-model`で重み・config・tokenizerを同じ固定revisionから取得し、同名モデルのカードの`hf_model`をsnapshotの絶対パスへ設定する。モデル名・較正値を維持して起動し、再実測の記録へrevisionと実際のruntimeバージョンを併記する。local-jevのソースSHA、Hugging Faceのrevision、未固定のPython依存を区別し、過去の実測値を取得設定の固定と読み替えない。
+
 実Engine比較は固定入力の分類を分離した検証であり、一般的な日本語精度の保証やHTTP成功の根拠とはしない。採用する質問と現在のプローブの一致、保存した13件の入出力スキーマ、Nodeの応答検証と正規化も確認した。これらのデータ検証は、HTTP経路の検証とは分けて記録する。
 
 その後、[利用者ホストでのHTTP再実測](../jev-local-http-results-2026-11-06.json)でも正常9/9件・異常4/4件が一致し、Issue #16のローカル分類・HTTP応答検証条件を達成した。全13件一致とmakeエラーなしを確認したが、数値の終了コードは未提示であり、`0`は現実装からの推定である。このHTTP実行のruntime・重みrevision・スレッド数は未観測のため、実Engine比較の値と混同しない。

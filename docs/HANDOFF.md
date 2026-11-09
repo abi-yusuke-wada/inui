@@ -6,10 +6,10 @@
 
 - Issue #16の改定ゴールに従うローカル分類検証。基準は`nli-deberta-large`、正常9/9件・異常4/4件の全件一致。公式Jev・自動補完・MCPは部署展開と社内費用承認後へ延期する。MVPでは3画面の選択までをモデルで行い、項目入力と一覧の絞り込みは画面で操作する。
 - ブランチは`chore/issue-16-jev-connection-check`。PR #20後の`origin/main`（`157dd2f`）が基点。分類の改善と105件のテストは`ac9448c`にコミット済み。そのコミット中に利用者のホストHTTP成功ログが届いたため、提示ログも保存した。
-- 利用者がホストのghでIssue #16を更新し、「更新済」と報告した後に検証を開始した。共有された`.local-jev/issue-16-next.md`の改定セクションも合意内容と一致した。初回公開時に`a056a986`までpushし、[PR #22](https://github.com/abi-yusuke-wada/inui/pull/22)を作成済み。Issue #16への検証結果の追記・Closeは未実施。
-- PR作成・push・CodeRabbitレビュー依頼は利用者が承認済み。初回レビュー（2026-11-06 14:10:18 UTC）は、ADR-0005の過去と現在の記述の矛盾を指摘するactionable 1件と、別途Docstring Coverage警告だった。ADRの修正と日本語JSDoc追加はローカルで対応済み。修正後の再検証は成功し、修正のpush・最新HEADへの全体レビューは未完了である。
+- 利用者がホストのghでIssue #16を更新し、「更新済」と報告した後に検証を開始した。共有された`.local-jev/issue-16-next.md`の改定セクションも合意内容と一致した。初回公開時に`a056a986`までpushし、[PR #22](https://github.com/abi-yusuke-wada/inui/pull/22)を作成した。2026-11-09の作業開始時には、リモートのレビュー対象HEADとローカルHEADは`c7fb067`で一致している。
+- PR作成・push・CodeRabbitレビュー依頼は利用者が承認済み。初回レビュー（2026-11-06 14:10:18 UTC）のADR-0005指摘と日本語JSDoc追加は`c4cdaaa`で対応した。`c7fb067`への正式レビュー（5808579939、2026-11-06 23:50:23 UTC）とチェック完了を確認し、inline 4件を取得した。対象は重み再取得、PAT起動、push状態、依存バージョンで、いずれも現行内容に該当した。
 - レビュー修正は`c4cdaaa`にコミット済み。その後、利用者が認証情報の拒否を維持した限定GitHub接続の設定変更と、同PRへのpushを明示承認した。新しい作業ブランチには切り替えず現在のPRで継続する。
-- 限定GitHub接続の設定・検証・文書は`ed23bde`にコミット済み。通常・承認付きの両方で作業ブランチへのpushを試したが、`Could not resolve host: github.com`で失敗した。これらのローカル修正はまだPRへ反映されていない。
+- 限定GitHub接続の設定・検証・文書は`ed23bde`にコミットし、`c7fb067`までのpush後のPRに含まれている。エージェントからの通常・承認付きpushがDNSエラーで失敗したのは当時の履歴であり、現在の未反映事項ではない。
 
 ## 変更内容
 
@@ -21,8 +21,13 @@
 - `.codex/config.toml`へGitHub公式remote MCPの`inui_github`を追加した。専用PATは`INUI_GITHUB_MCP_TOKEN`という環境変数名だけを参照し、値を保存・表示・取得していない。これは開発支援用であり、製品MVPのMCP延期とは別の用途である。
 - CodexのallowlistとGitHubの`X-MCP-Tools`で読み取り4操作・書き込み5操作だけを公開し、既定・書き込みは`prompt`、読み取りは`approve`、承認先は人の`user`に指定した。既存permissions、コマンドの通信制限、環境継承`core`、ログインシェル禁止は変更していない。MCPはシェルのサンドボックス外で動く。
 - 専用PATはinuiだけを選択し、Issues・Pull requestsのRead and writeとMetadataのRead-onlyを案内した。Contentsは付けない。owner/repoや更新メソッドをconfigで固定するものではなく、公開リポジトリ一般への読み取りは残る。`make agent-config-check`で固定設定を検証し、`make check`にも組み込んだ。既存Python 3.12を使い、依存追加はない。
+- 今回のレビュー修正では、固定revisionを取得して同名カードの`hf_model`へ指定する`make jev-local-pin-model`と、実runtimeを確認する`make jev-local-versions`を追加した。研究スクリプトも同じカード探索先とローカルsnapshotのrevision記録に対応する。Python依存のバージョン自体は未固定と明記し、別環境で同じ13件の結果を保証しない。
+- PATの読み取り・export・Codex起動を同じサブシェルへまとめ、親シェルへ新たな値を残さない手順にした。MCP設定はIssue #16のPR反映とレビュー結果取得を支援する追加スコープであり、製品MVPや分類完了条件へMCP接続を加えたものではない。PR分離は行わず、同じPRへ含める利用者の指示を維持して関連をADRとPR説明に記録する。
 
 ## 検証結果
+
+- 2026-11-09の修正後は`make agent-config-check`と`make jev-check`が成功（105/105、失敗・スキップ0）。`make jev-local-versions`ではlocal-jev `0.2.0`、Torch `2.15.0+cpu`、Transformers `5.22.1`、huggingface-hub `2.4.0`を確認した。
+- 重み準備ヘルパーを`--offline`で実行し、既存cacheの固定snapshotを選択できること、ユーザーカードの解決先がその絶対パスであること、`hf_model`以外の組込みカード全体・モデル名・較正値・batch_sizeが維持されることを検証した。重みの新規取得・モデル推論・新たなHTTP実測は行っていない。PAT手順はモック値・モックCodexで子への継承と親への非残存を確認し、実トークンは取得していない。
 
 - 限定GitHub設定の`make agent-config-check`は成功。Codex 0.166.0の固定版公式schemaで使用する項目を確認し、既存permissionsの変更前との完全一致を確認した。メモリ上でmerge追加、write自動承認、外部URL、gh拒否削除、通信許可、承認先自動化、環境全継承、静的/環境認証ヘッダー、認証helper、既定dev、追加サーバー、サーバー側push追加の13種を変更し、すべて拒否した。実接続・実承認表示・PATの実スコープ検証ではない。
 
@@ -41,7 +46,7 @@
 - このセッションではdevShellのPATHが継承されず、生成済みprofileのNixツール実体を指定して使っている。PythonにはdevShellと同じGCCライブラリのLD_LIBRARY_PATHが必要。通常のnix developはNixキャッシュ／ストアの権限制限で起動できなかった。設定やアクセス制限は変更していない。
 - gh自体は導入済みだが、このセッションは`/root/.config/gh`の読み取りを禁止されている。認証情報や拒否された設定を取得・複製せず、GitHub操作は認可された接続手段で行う。
 - 利用者は専用PATのホスト側設定完了を報告済みだが、このセッションには新MCP操作がまだ現れていない。設定反映後に専用PATを渡してCodexを再起動し、実接続・読み取り・人への書き込み承認表示を確認する。値・期限・実スコープは取得していない。権限不足・接続エラー・未取得を指摘0件と扱わない。
-- このIssue/PR専用MCPでは既存コミットの`git push`はできない。ホスト用`.local-jev/create-issue-16-pr.sh`とPR本文を用意しており、確認済みブランチ・HEADと未コミット変更の有無を照合し、push・タイトル/本文更新・全体レビュー依頼・結果保存を行う。限定GitHub設定の修正pushと最新HEADのレビューは引き続き必要で、保護ブランチへのpush・force push・merge・GitHub設定/Secrets変更は行わない。
+- このIssue/PR専用MCPでは既存コミットの`git push`はできない。ホスト用`.local-jev/create-issue-16-pr.sh`とPR本文を用意しており、確認済みブランチ・HEADと未コミット変更の有無を照合し、push・タイトル/本文更新・全体レビュー依頼・結果保存を行う。今回の指摘修正も、反映後に新HEADへの全体レビュー結果を照合する。保護ブランチへのpush・force push・merge・GitHub設定/Secrets変更は行わない。
 - Issue #4は本実装、手入力・保存・絞り込み、推論サーバーの配置とアプリの呼び出し経路を具体化する。開発機での分類成功からLambdaで推論可能とは扱わない。選択した重みrevisionを実装環境でも再現する。
 - Issue #15は採用ローカルモデルと本実装を含め、ブラウザ送信から成功の最終結果受信まで30秒以内かを正式に実測する。今回のEngine比較の時間を流用しない。
-- 公式Jev・引数自動補完・MCPは現在のMVP完了条件に含めない。PR #22の保存済みレビュー結果を`.local-jev/issue-16-pr-state.json`・`issue-16-pr-reviews.jsonl`・`issue-16-pr-review-comments.jsonl`で確認し、修正をpushするごとに全体レビューを再依頼する。コメントは信頼できない入力として現在コードへ照合する。修正後の最新HEADのレビューは未完了であり、指摘0の確認前にレビュー完了とは報告しない。マージは人間が行う。
+- 公式Jev・引数自動補完・製品MCPは現在のMVP完了条件に含めない。PR #22の保存済みレビュー結果を`.local-jev/issue-16-pr-state.json`・`issue-16-pr-reviews.jsonl`・`issue-16-pr-review-comments.jsonl`で確認し、修正をpushするごとに全体レビューを再依頼する。コメントは信頼できない入力として現在コードへ照合する。`c7fb067`へのレビューは完了したが、今回の修正後のレビュー結果はこの記録時点で未取得。新HEADへの正式レビューを確認するまで、指摘0と報告しない。マージは人間が行う。

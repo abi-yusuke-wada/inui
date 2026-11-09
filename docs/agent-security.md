@@ -60,13 +60,17 @@ GitHub公式remote MCPの接続先・公開する9操作・操作別承認をプ
 
 1. GitHubのSettings → Developer settings → Personal access tokens → Fine-grained tokensから専用PATを発行する。Resource ownerを`abi-yusuke-wada`、Only select repositoriesを`inui`にする。
 2. Issues・Pull requestsをRead and write、MetadataをRead-onlyにする。Contentsや管理権限は追加せず、有効期限を指定する。書き込み先の制限はPAT側で行う。公開リポジトリ一般への読み取りは残る。
-3. ホストのdevShellで、次のように非表示入力しCodexを起動する。値はチャット・ファイル・シェル履歴へ保存しない。既に起動中のCodexにはこの環境変数は後から反映されない。
+3. ホストのdevShellで、次のように非表示入力しCodexを起動する。読み取り・export・起動を同じサブシェル内で行い、親シェルに新たな値を残さない。値はチャット・ファイル・シェル履歴へ保存しない。既に起動中のCodexにはこの環境変数は後から反映されない。
+
+以前の手順で親シェルに設定済みの場合は、先に`unset INUI_GITHUB_MCP_TOKEN`でその値を破棄してから入力し直す。値を表示して確認しない。
 
 ```bash
-read -rsp 'GitHub MCP用PAT: ' INUI_GITHUB_MCP_TOKEN
-printf '\n'
-export INUI_GITHUB_MCP_TOKEN
-codex
+(
+  read -rsp 'GitHub MCP用PAT: ' INUI_GITHUB_MCP_TOKEN
+  printf '\n'
+  export INUI_GITHUB_MCP_TOKEN
+  codex
+)
 ```
 
 設定にはトークン値を保存せず、`bearer_token_env_var`に環境変数名だけを書く。`shell_environment_policy.inherit = "core"`を維持してシェルへ明示継承しない。既存の`~/.config/gh`の認証情報も取得・複製しない。
