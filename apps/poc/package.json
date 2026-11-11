@@ -1,0 +1,13 @@
+{
+  "name": "@inui/poc",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "dependencies": {
+    "@hono/node-server": "2.1.6",
+    "@inui/core": "workspace:*",
+    "hono": "4.13.17",
+    "react": "19.3.1",
+    "react-dom": "19.3.1"
+  }
+}

@@ -2,6 +2,68 @@
 # devShell（direnvまたは `nix develop`）に入った状態で実行する。
 
 .DEFAULT_GOAL := help
+.PHONY: app-setup app-lock app-build app-check app-ui-check app-replay-check app-model-check app-probe app-diagnose app-dev app-smoke core-check app-run app-reset
+
+# 公開npmパッケージだけを取得し、利用者の認証設定は参照しない。
+INUI_PNPM := env -i PATH="$(PATH)" XDG_CONFIG_HOME="$(CURDIR)/.local-poc/config" XDG_CACHE_HOME="$(CURDIR)/.local-poc/cache" XDG_STATE_HOME="$(CURDIR)/.local-poc/state" pnpm --config.userconfig=/dev/null --config.globalconfig=/dev/null --config.store-dir="$(CURDIR)/.local-poc/pnpm-store" --config.verify-deps-before-run=error
+
+app-setup: ## ローカルPoCの公開npm依存を取得する（ネットワーク使用・インストールscript無効）
+	@mkdir -p .local-poc/config .local-poc/cache .local-poc/state .local-poc/pnpm-store
+	@$(INUI_PNPM) install --frozen-lockfile --ignore-scripts --fetch-retries=0 --fetch-timeout=10000
+
+app-lock: ## 変更した依存定義を取得済みキャッシュからlockへ反映する（通信なし）
+	@$(INUI_PNPM) install --offline --lockfile-only --ignore-scripts
+
+core-check: ## 独立コアを外部通信なしで検証する
+	node --test --test-isolation=none packages/core/src/*.test.ts
+
+app-build: ## 独立コアとローカルPoCをビルドする
+	node_modules/.bin/tsc -p packages/core/tsconfig.build.json
+	node_modules/.bin/esbuild apps/poc/src/server.ts --bundle --platform=node --packages=external --format=esm --target=node24 --outfile=apps/poc/dist/server.js
+	node_modules/.bin/esbuild apps/poc/src/web/main.tsx --bundle --format=esm --target=es2022 --jsx=automatic --minify --define:process.env.NODE_ENV='"production"' --outfile=apps/poc/dist/public/app.js
+	cp apps/poc/src/web/index.html apps/poc/dist/public/index.html
+
+app-ui-check: app-build ## DOM上でフォーム保存・人名選択・従来UIの操作を検証する
+	node_modules/.bin/esbuild apps/poc/src/web/App.test.tsx --bundle --packages=external --platform=node --format=esm --target=node24 --jsx=automatic --outfile=apps/poc/dist/ui-tests/App.test.js
+	node --test --test-isolation=none apps/poc/dist/ui-tests/App.test.js
+
+app-replay-check: ## 保存した19件の実NLI応答と現コアを再照合する（推論・通信なし）
+	@mkdir -p .local-poc
+	@node scripts/poc-probe.mjs --replay docs/poc-nli-responses-2026-11-10.jsonl > .local-poc/replay-verification.json
+	@node -p 'JSON.stringify(JSON.parse(require("node:fs").readFileSync(".local-poc/replay-verification.json", "utf8")).summary)'
+
+app-check: app-ui-check app-replay-check ## コア・API・永続化・UIのテストと型・差分を検証する
+	node_modules/.bin/tsc -p packages/core/tsconfig.json
+	node_modules/.bin/tsc -p apps/poc/tsconfig.json
+	node --test --test-isolation=none packages/core/src/*.test.ts apps/poc/src/*.test.ts apps/poc/src/web/*.test.ts scripts/poc-probe.test.mjs scripts/poc-local.test.mjs
+	git diff --check
+
+app-model-check: ## キャッシュ済み実NLIの7候補を19入力で検証する（外部通信なし）
+	@mkdir -p .local-poc
+	@env -u TYPESAFE_API_KEY -u HF_TOKEN HF_HOME="$$(pwd)/.local-jev/cache" LOCAL_JEV_MODELS="$$(pwd)/.local-jev/models" HF_HUB_DISABLE_IMPLICIT_TOKEN=1 HF_HUB_OFFLINE=1 TRANSFORMERS_OFFLINE=1 PYTHONDONTWRITEBYTECODE=1 OMP_NUM_THREADS=4 MKL_NUM_THREADS=4 OPENBLAS_NUM_THREADS=4 .local-jev/venv/bin/python -u scripts/poc-model-check.py > .local-poc/model-responses.jsonl
+	@node scripts/poc-probe.mjs --replay .local-poc/model-responses.jsonl > .local-poc/model-verification.json
+	@node -p 'JSON.stringify(JSON.parse(require("node:fs").readFileSync(".local-poc/model-verification.json", "utf8")).summary)'
+
+app-probe: ## 起動中のPoCと実NLIを19入力でHTTP検証する（申請の保存はしない）
+	@mkdir -p .local-poc
+	@node scripts/poc-probe.mjs > .local-poc/http-verification.json
+	@node -p 'JSON.stringify(JSON.parse(require("node:fs").readFileSync(".local-poc/http-verification.json", "utf8")).summary)'
+
+app-diagnose: ## アプリと推論サーバーの接続を個別に確認する（保存なし）
+	@mkdir -p .local-poc
+	@node scripts/poc-probe.mjs --diagnose > .local-poc/connection-check.json
+
+app-dev: app-build ## アプリと実NLIをまとめて起動する
+	node scripts/poc-local.mjs --dev
+
+app-smoke: app-build ## アプリと実NLIを起動して19入力を検証する
+	node scripts/poc-local.mjs --smoke
+
+app-run: app-build ## アプリだけを127.0.0.1:3000で起動する（実NLIは別途起動）
+	node apps/poc/dist/server.js
+
+app-reset: ## ローカルPoCの検証データだけを初期2件へ戻す
+	node apps/poc/src/reset.ts
 .PHONY: help check sandbox-check jev-check jev-probe jev-probe-dry-run jev-probe-live jev-probe-local jev-prompt-study jev-local-setup jev-local-versions jev-local-pin-model jev-local-serve
 
 LOCAL_JEV_REV := 64a0b31ff343dca32142496cf9edca5a0174a18d

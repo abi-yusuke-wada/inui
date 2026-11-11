@@ -1,0 +1,18 @@
+{
+  "name": "inui",
+  "private": true,
+  "type": "module",
+  "packageManager": "pnpm@11.27.0",
+  "engines": {
+    "node": ">=24.22.1 <25"
+  },
+  "devDependencies": {
+    "@types/node": "24.19.2",
+    "@types/jsdom": "30.0.0",
+    "@types/react": "19.3.0",
+    "@types/react-dom": "19.3.0",
+    "esbuild": "0.28.2",
+    "jsdom": "31.0.0",
+    "typescript": "7.0.2"
+  }
+}
