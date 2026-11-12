@@ -213,6 +213,10 @@ test('loopback Host・同一Origin・JSON・本文上限を強制し、CORSを�
     assert.equal((await h.app.request(base + '/api/employees')).status, 403);
   }
   assert.equal((await h.app.request(ORIGIN + '/api/employees', { headers: { Host: 'external.example:8766' } })).status, 403);
+  // 外部サイトのフレームに埋め込ませない。
+  const framed = await h.app.request(ORIGIN + '/api/employees');
+  assert.equal(framed.headers.get('Content-Security-Policy'), "frame-ancestors 'none'");
+  assert.equal(framed.headers.get('X-Frame-Options'), 'DENY');
   for (const origin of [undefined, 'null', 'http://external.example', 'http://localhost:8766', 'http://127.0.0.1:3000']) {
     const headers: Record<string, string> = { 'Content-Type': 'application/json' };
     if (origin !== undefined) headers.Origin = origin;

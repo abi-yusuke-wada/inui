@@ -10,6 +10,7 @@ BIOME_FLAGS ?= --error-on-warnings
 
 app-setup: ## ローカルPoCの公開npm依存を取得する（ネットワーク使用・インストールscript無効）
 	@mkdir -p .local-poc/config .local-poc/cache .local-poc/state .local-poc/pnpm-store
+	@chmod 700 .local-poc
 	@$(INUI_PNPM) install --frozen-lockfile --ignore-scripts --fetch-retries=0 --fetch-timeout=10000
 
 app-setup-offline: ## 取得済み依存だけでworkspaceのリンクを更新する（通信なし）
@@ -42,7 +43,7 @@ app-ui-check: app-build ## DOM上でフォーム保存・人名選択・従来UI
 	node --test --test-isolation=none tests/scripts/poc-web.test.mjs
 
 app-replay-check: ## 保存した19件の実NLI応答と現コアを再照合する（推論・通信なし）
-	@mkdir -p .local-poc
+	@mkdir -p -m 700 .local-poc
 	@node scripts/poc-probe.mjs --replay docs/poc-nli-responses-2026-11-10.jsonl > .local-poc/replay-verification.json
 	@node -p 'JSON.stringify(JSON.parse(require("node:fs").readFileSync(".local-poc/replay-verification.json", "utf8")).summary)'
 
@@ -53,22 +54,22 @@ app-check: app-ui-check app-replay-check ## コア・API・永続化・UIのテ�
 	git diff --check
 
 app-model-check: ## キャッシュ済み実NLIの7候補を19入力で検証する（外部通信なし）
-	@mkdir -p .local-poc
+	@mkdir -p -m 700 .local-poc
 	@env -u TYPESAFE_API_KEY -u HF_TOKEN HF_HOME="$$(pwd)/.local-jev/cache" LOCAL_JEV_MODELS="$$(pwd)/.local-jev/models" HF_HUB_DISABLE_IMPLICIT_TOKEN=1 HF_HUB_OFFLINE=1 TRANSFORMERS_OFFLINE=1 PYTHONDONTWRITEBYTECODE=1 OMP_NUM_THREADS=4 MKL_NUM_THREADS=4 OPENBLAS_NUM_THREADS=4 .local-jev/venv/bin/python -u scripts/poc-model-check.py > .local-poc/model-responses.jsonl
 	@node scripts/poc-probe.mjs --replay .local-poc/model-responses.jsonl > .local-poc/model-verification.json
 	@node -p 'JSON.stringify(JSON.parse(require("node:fs").readFileSync(".local-poc/model-verification.json", "utf8")).summary)'
 
 app-probe: ## 起動中のPoCと実NLIを19入力でHTTP検証する（申請の保存はしない）
-	@mkdir -p .local-poc
+	@mkdir -p -m 700 .local-poc
 	@node scripts/poc-probe.mjs > .local-poc/http-verification.json
 	@node -p 'JSON.stringify(JSON.parse(require("node:fs").readFileSync(".local-poc/http-verification.json", "utf8")).summary)'
 
 app-diagnose: ## アプリと推論サーバーの接続を個別に確認する（保存なし）
-	@mkdir -p .local-poc
+	@mkdir -p -m 700 .local-poc
 	@node scripts/poc-probe.mjs --diagnose > .local-poc/connection-check.json
 
 app-web-diagnose: ## HTML・JS・CSSの受信完了とビルドとの一致を確認する（推論なし）
-	@mkdir -p .local-poc
+	@mkdir -p -m 700 .local-poc
 	@node scripts/poc-probe.mjs --web-diagnose > .local-poc/web-check.json
 
 app-dev: app-build ## アプリと実NLIをまとめて起動する

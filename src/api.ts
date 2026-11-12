@@ -138,6 +138,9 @@ export function createApp({ store, routeIntent = createIntentRouter(), port = DE
   app.use('*', async (c, next) => {
     c.header('Cache-Control', 'no-store');
     c.header('X-Content-Type-Options', 'nosniff');
+    // 外部サイトのフレームに埋め込ませず、意図しない申請の送信を防ぐ。
+    c.header('Content-Security-Policy', "frame-ancestors 'none'");
+    c.header('X-Frame-Options', 'DENY');
     const url = new URL(c.req.url);
     const host = c.req.header('Host');
     if (url.protocol !== 'http:' || !allowedHosts.includes(url.host)

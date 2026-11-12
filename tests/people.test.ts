@@ -60,6 +60,17 @@ test('敬称なしの未知名を既知姓・全名の部分一致から選択�
     selectedIds: ['person-yamada-taro', 'person-sato-hanako'], ambiguous: [], unknownNames: [],
   });
   assert.deepEqual(selectPeople('佐藤川を比較したい').unknownNames, ['佐藤川']);
+  // 敬称なしの列挙に含まれる未知名を落とさず、確認の対象に残す。
+  assert.deepEqual(selectPeople('山田太郎と佐藤花子と田中を比較'), {
+    selectedIds: ['person-yamada-taro', 'person-sato-hanako'], ambiguous: [], unknownNames: ['田中'],
+  });
+  assert.deepEqual(selectPeople('田中と鈴木一郎の予定'), {
+    selectedIds: ['person-suzuki-ichiro'], ambiguous: [], unknownNames: ['田中'],
+  });
+  // 「空き」「都合」を未知名として扱わない。
+  assert.deepEqual(selectPeople('鈴木一郎さんの空きと佐藤花子さんの予定'), {
+    selectedIds: ['person-sato-hanako', 'person-suzuki-ichiro'], ambiguous: [], unknownNames: [],
+  });
   assert.deepEqual(selectPeople('佐藤川と鈴木と山田太郎の予定を見たい'), {
     selectedIds: ['person-yamada-taro', 'person-suzuki-ichiro'], ambiguous: [], unknownNames: ['佐藤川'],
   });

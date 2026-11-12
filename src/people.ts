@@ -16,6 +16,7 @@ export function listEmployees(): Employee[] {
 /** 全名を優先し、同姓や辞書にない名前は選択済みにしない。 */
 export function selectPeople(text: string): PeopleSelection {
   let remaining = text.normalize('NFKC').replace(/\s/gu, '');
+  const normalized = remaining;
   const selected = new Set<string>();
   const ambiguous = new Map<string, string[]>();
   const unknown = new Set<string>();
@@ -36,7 +37,7 @@ export function selectPeople(text: string): PeopleSelection {
     (mention: string, raw: string, offset: number) => {
       // 前の「さん」に続く説明を分ける。「予定さん」という未知名は残す。
       let name = offset > 0
-        ? raw.replace(/^の(?:予定|スケジュール)(?:と|や)/u, '').replace(/^[とや]+/u, '')
+        ? raw.replace(/^の(?:予定|スケジュール|空き|都合)(?:と|や)/u, '').replace(/^[とや]+/u, '')
         : raw;
       name = name.replace(/^.*の(?=[\p{Script=Han}\p{Script=Katakana}A-Za-z])/u, '');
       const parts = name.split(/[とや]/u).filter(Boolean);
@@ -72,6 +73,14 @@ export function selectPeople(text: string): PeopleSelection {
         if (candidate) unknown.add(candidate);
       }
     }
+  }
+  // 「山田太郎と佐藤花子と田中を比較」のように敬称なしで並べた中の未知名も、確認の対象に残す。
+  // 既知の名前を1つ以上含む列挙だけを対象にし、「複数人の予定」等の一般語は未知名にしない。
+  const enumeration = /(?:[\p{Script=Han}\p{Script=Katakana}A-Za-z々ー]+[とや])+[\p{Script=Han}\p{Script=Katakana}A-Za-z々ー]+(?=を比較|の(?:予定|スケジュール|空き|都合)|$)/gu;
+  for (const [match] of normalized.matchAll(enumeration)) {
+    const parts = match.split(/[とや]/u).filter(Boolean);
+    if (!parts.some(knownName)) continue;
+    for (const part of parts) if (!knownName(part)) unknown.add(part);
   }
   return {
     selectedIds: PEOPLE.filter((person) => selected.has(person.id)).map((person) => person.id),

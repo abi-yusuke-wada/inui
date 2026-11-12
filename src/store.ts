@@ -13,7 +13,8 @@ export class LocalStore {
   private readonly db: DatabaseSync;
 
   constructor(path = DEFAULT_DB_PATH) {
-    if (path !== ':memory:') mkdirSync(dirname(path), { recursive: true });
+    // 申請内容を含むため、新しく作るディレクトリは所有者だけが開けるようにする。
+    if (path !== ':memory:') mkdirSync(dirname(path), { recursive: true, mode: 0o700 });
     this.db = new DatabaseSync(path);
     this.db.exec(`
       CREATE TABLE IF NOT EXISTS applications (

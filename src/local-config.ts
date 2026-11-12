@@ -1,8 +1,10 @@
 export const DEFAULT_APP_PORT = 8766;
-const PORT_ERROR = 'INUI_POC_PORTは1024〜65535の整数で指定してください。';
+/** 内部推論サーバー（local-jev）が使うため、アプリには割り当てない。 */
+export const RESERVED_NLI_PORT = 8765;
+const PORT_ERROR = 'INUI_POC_PORTは1024〜65535の整数（推論サーバーの8765を除く）で指定してください。';
 
 function checkedPort(port: number): number {
-  if (!Number.isInteger(port) || port < 1024 || port > 65535) throw new Error(PORT_ERROR);
+  if (!Number.isInteger(port) || port < 1024 || port > 65535 || port === RESERVED_NLI_PORT) throw new Error(PORT_ERROR);
   return port;
 }
 

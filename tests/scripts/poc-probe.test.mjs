@@ -3,6 +3,7 @@ import { readFile } from 'node:fs/promises';
 import test from 'node:test';
 import { CASES } from '../../scripts/jev-probe.mjs';
 import { POC_CASES, requests, requestsDigest, replay, probeHttp, diagnose, diagnoseWeb, runCli } from '../../scripts/poc-probe.mjs';
+import { listEmployees } from '../../src/people.ts';
 
 const SAVED_FILE = new URL('../../docs/poc-nli-responses-2026-11-10.jsonl', import.meta.url);
 const savedText = await readFile(SAVED_FILE, 'utf8');
@@ -65,6 +66,9 @@ test('欠落・重複・質問のdigest差・Tool混入を含む保存結果を�
     (records) => records.pop(),
     (records) => { records[2].sampleID = records[1].sampleID; },
     (records) => { records[0].metadata.requests_sha256 = 'wrong-digest'; },
+    // 較正値の欠落・変更を、固定revisionの結果として扱わない。
+    (records) => { records[0].metadata.temperature = {}; },
+    (records) => { records[0].metadata.temperature = { ...records[0].metadata.temperature, choice: 2 }; },
     (records) => { records[1].rawResponse.Tool = PRIVATE_DETAIL; },
   ];
   for (const corrupt of corruptions) {
@@ -151,7 +155,7 @@ test('app HTTP200とlocal-jev ECONNREFUSEDを区別し、診断CLIでも安全�
     assert.ok(init.signal instanceof AbortSignal);
     if (url === `${ORIGIN}/api/employees`) {
       assert.equal(init.method, undefined);
-      return { ok: true, status: 200, json: async () => assert.fail('app診断で本文を読まない') };
+      return { ok: true, status: 200, json: async () => ({ employees: listEmployees() }) };
     }
     assert.equal(url, 'http://127.0.0.1:8765/v1/systemone');
     assert.equal(init.method, 'POST');
@@ -170,6 +174,14 @@ test('app HTTP200とlocal-jev ECONNREFUSEDを区別し、診断CLIでも安全�
   assert.deepEqual(JSON.parse(output.lines[0]), expected);
   assert.deepEqual(output.status, ['app: HTTP 200', 'local-jev: ECONNREFUSED']);
   assert.equal(JSON.stringify(output).includes(PRIVATE_DETAIL), false);
+});
+
+test('別サービスが社員一覧のURLでHTTP 200を返しても、アプリ診断を正常にしない', async () => {
+  const fetchImpl = async (url) => (url.endsWith('/api/employees')
+    ? Response.json({ unexpected: true }) : Response.json(savedRecords[1].rawResponse));
+  const result = await diagnose({ fetchImpl, port: 8766 });
+  assert.equal(result.ok, false);
+  assert.deepEqual(result.checks[0], { service: 'app', ok: false, error: 'connection_or_contract_error' });
 });
 
 test('Web診断はHTML・JS・CSSの受信完了とビルド一致を確認し、推論や保存を呼ばない', async () => {
@@ -232,7 +244,7 @@ test('18766をHTTPの送信先・Origin・診断・Web配信確認で共有し�
   const output = capture();
   assert.equal(await runCli(['--diagnose'], { ...output, port: 18766, fetchImpl: async (url) => {
     diagnosed.push(url);
-    return Response.json(url.includes(':18766/') ? { employees: [] } : savedRecords[1].rawResponse);
+    return Response.json(url.includes(':18766/') ? { employees: listEmployees() } : savedRecords[1].rawResponse);
   } }), 0);
   assert.deepEqual(diagnosed, [`${origin}/api/employees`, 'http://127.0.0.1:8765/v1/systemone']);
   const paths = [];

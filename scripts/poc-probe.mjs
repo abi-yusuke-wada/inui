@@ -4,7 +4,7 @@ import { isDeepStrictEqual } from 'node:util';
 import { pathToFileURL } from 'node:url';
 import { CASES } from './jev-probe.mjs';
 import { LOCAL_MODEL, buildLocalRequest, parseLocalResponse } from '../packages/core/src/index.ts';
-import { selectPeople } from '../src/people.ts';
+import { listEmployees, selectPeople } from '../src/people.ts';
 import { appPort, appOrigin } from '../src/local-config.ts';
 
 const REVISION = 'cf44676c28ba7312e5c5f8f8d2c22b3e0c9cdae2';
@@ -115,6 +115,8 @@ function report(transport, metadata, results) {
   };
 }
 
+const EXPECTED_TEMPERATURE = Object.freeze({ choice: 1.395, score: 1.052, noul: 4.138 });
+
 /** 再生時の実行条件を限定し、別のモデルや質問の結果を現コアの実測へ混ぜない。 */
 function checkMetadata(metadata) {
   const keys = ['model', 'transport', 'response_conversion', 'http_route_executed', 'torch_threads',
@@ -128,8 +130,8 @@ function checkMetadata(metadata) {
       || typeof metadata.hf_model !== 'string' || !elapsedValid(metadata.model_load_ms)
       || !exactKeys(metadata.runtime, ['local-jev', 'torch', 'transformers'])
       || !Object.values(metadata.runtime).every((value) => typeof value === 'string' && value.length > 0)
-      || !isRecord(metadata.temperature)
-      || !Object.values(metadata.temperature).every((value) => typeof value === 'number' && Number.isFinite(value) && value > 0)
+      // 固定revisionのモデルカードの較正値と一致する結果だけを再生する。
+      || !isDeepStrictEqual(metadata.temperature, EXPECTED_TEMPERATURE)
       || !exactKeys(metadata.peak_rss, ['value', 'unit', 'platform', 'scope'])
       || !elapsedValid(metadata.peak_rss.value) || !['KiB', 'bytes', 'platform-native'].includes(metadata.peak_rss.unit)
       || typeof metadata.peak_rss.platform !== 'string'
@@ -217,6 +219,8 @@ export async function diagnose({ fetchImpl = globalThis.fetch, port } = {}) {
       });
       if (!response.ok) { checks.push({ service, ok: false, http_status: response.status }); continue; }
       if (service === 'local-jev') parseLocalResponse(await response.json());
+      // 別のサービスが同じポートでHTTP 200を返す場合を正常と扱わない。
+      else if (!isDeepStrictEqual(await response.json(), { employees: listEmployees() })) throw new Error('unexpected_app_response');
       checks.push({ service, ok: true, http_status: response.status });
     } catch (error) {
       const codes = ['ECONNREFUSED', 'ECONNRESET', 'EPERM', 'EACCES', 'ETIMEDOUT', 'EAI_AGAIN'];
