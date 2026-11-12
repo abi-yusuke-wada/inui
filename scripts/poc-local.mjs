@@ -113,7 +113,9 @@ export async function runLocal(mode, {
   const stopRequested = new Promise((_, reject) => { stopped = () => { shutdown.abort(); reject(new Stopped()); }; });
   void stopRequested.catch(() => {});
   const race = (operation) => Promise.race([operation, stopRequested, ...owned.map((child) => child.exited)]);
-  if (installSignals) { process.once('SIGINT', stopped); process.once('SIGTERM', stopped); }
+  // ターミナルを閉じたとき（SIGHUP）も、起動した子プロセスを片付ける。
+  const SIGNALS = ['SIGINT', 'SIGTERM', 'SIGHUP'];
+  if (installSignals) for (const name of SIGNALS) process.once(name, stopped);
   let code = 0;
   try {
     for (const service of SERVICES) {
@@ -136,6 +138,8 @@ export async function runLocal(mode, {
         ...init, signal: init?.signal ? AbortSignal.any([init.signal, shutdown.signal]) : shutdown.signal,
       }) }));
       await save(report);
+      // 保存中に停止を要求された場合は、成功の終了コードを返さない。
+      if (shutdown.signal.aborted) throw new Stopped();
       code = report.summary.criterion_met ? 0 : 1;
       log(`HTTP確認: ${report.summary.matched}/${report.summary.total}件一致`);
       for (const row of report.results.filter((result) => !result.matched)) {
@@ -153,7 +157,7 @@ export async function runLocal(mode, {
     const cleanup = await Promise.allSettled(owned.map((child) => child.stop()));
     if (cleanup.some((result) => result.status === 'rejected')) { log('起動したプロセスの一部を停止できませんでした。'); code = 1; }
     else if (mode === 'smoke' && owned.length) log('検証用に起動したサーバーを停止しました。画面を使うときは make app-dev を実行してください。');
-    if (installSignals) { process.removeListener('SIGINT', stopped); process.removeListener('SIGTERM', stopped); }
+    if (installSignals) for (const name of SIGNALS) process.removeListener(name, stopped);
   }
   return code;
 }

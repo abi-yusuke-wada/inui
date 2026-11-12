@@ -55,6 +55,11 @@ test('敬称なしの未知名を既知姓・全名の部分一致から選択�
   assert.deepEqual(selectPeople('山田太郎と佐藤花子の予定を見たい'), {
     selectedIds: ['person-yamada-taro', 'person-sato-hanako'], ambiguous: [], unknownNames: [],
   });
+  // 「を比較」の直前の全名も選択する。
+  assert.deepEqual(selectPeople('山田太郎と佐藤花子を比較したい'), {
+    selectedIds: ['person-yamada-taro', 'person-sato-hanako'], ambiguous: [], unknownNames: [],
+  });
+  assert.deepEqual(selectPeople('佐藤川を比較したい').unknownNames, ['佐藤川']);
   assert.deepEqual(selectPeople('佐藤川と鈴木と山田太郎の予定を見たい'), {
     selectedIds: ['person-yamada-taro', 'person-suzuki-ichiro'], ambiguous: [], unknownNames: ['佐藤川'],
   });

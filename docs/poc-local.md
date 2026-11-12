@@ -111,7 +111,7 @@ nix develop --command make app-smoke
 
 固定revisionの実Engine検証では19/19件と人名選択4/4件が一致した。[保存応答](poc-nli-responses-2026-11-10.jsonl)は`make app-replay-check`で推論・通信なしに再検証できる。これは新たなHTTP実測や実ブラウザの確認とは区別する。直近のEngine検証結果は`.local-poc/model-verification.json`、HTTPプローブ結果は`.local-poc/http-verification.json`へ保存する。
 
-利用者ホストの[HTTP検証結果](poc-http-results-2026-11-11.json)でも、19/19件と人名選択4/4件の一致を確認した。これはCLIからIntent受付APIへ送った結果であり、ブラウザ・保存・正式な30秒条件の結果とは区別する。
+利用者ホストの[HTTP検証結果](poc-http-results-2026-11-11.json)でも、19/19件と人名選択4/4件の一致を確認した。この結果は当時の既定ポート3000（`http://127.0.0.1:3000`）で取得したもので、現在の既定ポート8766での実測ではない。これはCLIからIntent受付APIへ送った結果であり、ブラウザ・保存・正式な30秒条件の結果とは区別する。
 
 `app-probe`の失敗時は、端末に入力ごとのHTTPステータスやエラー種別を表示する。`make app-diagnose`でアプリとlocal-jevを個別に確認でき、詳細は`.local-poc/connection-check.json`へ保存する。local-jev側の診断には固定入力1件を送る。アプリに接続できても推論サーバーが停止していれば、Intentの受付は503を返す。
 

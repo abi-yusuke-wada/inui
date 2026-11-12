@@ -52,7 +52,7 @@ export function selectPeople(text: string): PeopleSelection {
   const beforeName = (index: number): boolean => index === 0
     || /[\s\p{P}\p{S}とやの]/u.test(remaining.charAt(index - 1));
   const afterName = (index: number): boolean =>
-    /^(?:$|[\s\p{P}\p{S}]|[とや](?=[\s\p{Script=Han}\p{Script=Katakana}A-Za-z])|の(?:予定|スケジュール|空き|都合))/u.test(remaining.slice(index));
+    /^(?:$|[\s\p{P}\p{S}]|[とや](?=[\s\p{Script=Han}\p{Script=Katakana}A-Za-z])|の(?:予定|スケジュール|空き|都合)|を比較)/u.test(remaining.slice(index));
   for (const person of PEOPLE) {
     remaining = remaining.replaceAll(person.name, (match, index: number) => {
       if (!beforeName(index) || !afterName(index + match.length)) return match;
@@ -67,7 +67,7 @@ export function selectPeople(text: string): PeopleSelection {
       else {
         // 敬称なしの未知名も、既知の姓だけを切り出して選ばない。
         const candidate = remaining.slice(match.index).match(
-          /^(?:(?![とや](?=[\s\p{Script=Han}\p{Script=Katakana}A-Za-z])|の(?:予定|スケジュール|空き|都合))[\p{L}々ー])+/u,
+          /^(?:(?![とや](?=[\s\p{Script=Han}\p{Script=Katakana}A-Za-z])|の(?:予定|スケジュール|空き|都合)|を比較)[\p{L}々ー])+/u,
         )?.[0];
         if (candidate) unknown.add(candidate);
       }
