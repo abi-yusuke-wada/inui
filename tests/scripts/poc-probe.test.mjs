@@ -1,13 +1,13 @@
 import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
 import test from 'node:test';
-import { CASES } from './jev-probe.mjs';
-import { POC_CASES, requests, requestsDigest, replay, probeHttp, diagnose, runCli } from './poc-probe.mjs';
+import { CASES } from '../../scripts/jev-probe.mjs';
+import { POC_CASES, requests, requestsDigest, replay, probeHttp, diagnose, diagnoseWeb, runCli } from '../../scripts/poc-probe.mjs';
 
-const SAVED_FILE = new URL('../docs/poc-nli-responses-2026-11-10.jsonl', import.meta.url);
+const SAVED_FILE = new URL('../../docs/poc-nli-responses-2026-11-10.jsonl', import.meta.url);
 const savedText = await readFile(SAVED_FILE, 'utf8');
 const savedRecords = savedText.trim().split('\n').map((line) => JSON.parse(line));
-const ORIGIN = 'http://127.0.0.1:3000';
+const ORIGIN = 'http://127.0.0.1:8766';
 const PRIVATE_DETAIL = 'test-only-private-upstream-detail';
 
 /** 保存した結果を複製し、回帰テスト同士で変更を共有しない。 */
@@ -21,7 +21,7 @@ function changedReplay(change) {
 function capture() {
   const lines = [];
   const status = [];
-  return { lines, status, write: (line) => lines.push(line), writeStatus: (line) => status.push(line) };
+  return { lines, status, port: 8766, write: (line) => lines.push(line), writeStatus: (line) => status.push(line) };
 }
 
 test('旧13入力の期待値を維持し、予定比較を含む19入力と人名4期待を通信せず取得する', async () => {
@@ -94,7 +94,7 @@ test('有効な契約でも誤分類やtruncatedのtrue・不明を合格にし�
 
 test('HTTP成功の注入では同一OriginのIntent受付へ19回だけPOSTし、業務保存を呼ばない', async () => {
   let calls = 0;
-  const result = await probeHttp({ fetchImpl: async (url, init) => {
+  const result = await probeHttp({ port: 8766, fetchImpl: async (url, init) => {
     const sample = POC_CASES[calls++];
     assert.equal(url, `${ORIGIN}/api/intent`);
     assert.equal(init.method, 'POST');
@@ -163,13 +163,109 @@ test('app HTTP200とlocal-jev ECONNREFUSEDを区別し、診断CLIでも安全�
     { service: 'app', ok: true, http_status: 200 },
     { service: 'local-jev', ok: false, error: 'ECONNREFUSED' },
   ] };
-  assert.deepEqual(await diagnose({ fetchImpl }), expected);
+  assert.deepEqual(await diagnose({ fetchImpl, port: 8766 }), expected);
   const output = capture();
   assert.equal(await runCli(['--diagnose'], { ...output, fetchImpl }), 1);
   assert.equal(calls.length, 4);
   assert.deepEqual(JSON.parse(output.lines[0]), expected);
   assert.deepEqual(output.status, ['app: HTTP 200', 'local-jev: ECONNREFUSED']);
   assert.equal(JSON.stringify(output).includes(PRIVATE_DETAIL), false);
+});
+
+test('Web診断はHTML・JS・CSSの受信完了とビルド一致を確認し、推論や保存を呼ばない', async () => {
+  const files = { 'index.html': '<html>固定テスト画面</html>', 'app.js': 'testBundle();', 'app.css': 'body { color: black; }' };
+  const calls = [];
+  const output = await diagnoseWeb({
+    port: 8766,
+    readAsset: async (url) => Buffer.from(files[url.pathname.split('/').at(-1)]),
+    fetchImpl: async (url, init) => {
+      calls.push(url);
+      assert.equal(init.redirect, 'error');
+      assert.ok(init.signal instanceof AbortSignal);
+      const path = new URL(url).pathname;
+      const filename = path === '/' || path === '/legacy' ? 'index.html' : path.slice(1);
+      const contentType = { 'index.html': 'text/html; charset=utf-8', 'app.js': 'text/javascript', 'app.css': 'text/css' }[filename];
+      return new Response(files[filename], { headers: { 'Content-Type': contentType } });
+    },
+  });
+  assert.equal(output.ok, true);
+  assert.deepEqual(calls, ['/', '/legacy', '/app.js', '/app.css'].map((path) => ORIGIN + path));
+  assert.ok(output.checks.every((check) => check.http_status === 200 && check.content_matched && check.content_type_matched && check.bytes > 0));
+});
+
+test('Web診断は本文が終わらない200応答・別ビルド・不正MIME・接続拒否を切り分ける', async () => {
+  let calls = 0;
+  const output = await diagnoseWeb({
+    port: 8766,
+    timeoutMs: 5, readAsset: async () => Buffer.from('expected'),
+    fetchImpl: async () => {
+      switch (calls++) {
+        case 0: return { ok: true, status: 200, headers: new Headers({ 'Content-Type': 'text/html' }), arrayBuffer: () => new Promise(() => {}) };
+        case 1: return new Response(PRIVATE_DETAIL, { headers: { 'Content-Type': 'text/html' } });
+        case 2: return new Response('expected', { headers: { 'Content-Type': 'text/plain' } });
+        default: throw new Error(PRIVATE_DETAIL, { cause: { code: 'ECONNREFUSED' } });
+      }
+    },
+  });
+  assert.equal(output.ok, false);
+  assert.equal(output.checks[0].http_status, 200);
+  assert.equal(output.checks[0].error, 'timeout');
+  assert.equal(output.checks[1].content_matched, false);
+  assert.equal(output.checks[2].content_type_matched, false);
+  assert.equal(output.checks[2].content_matched, true);
+  assert.equal(output.checks[3].error, 'ECONNREFUSED');
+  assert.equal(JSON.stringify(output).includes(PRIVATE_DETAIL), false);
+});
+
+test('18766をHTTPの送信先・Origin・診断・Web配信確認で共有し、NLI接続先は8765のままにする', async () => {
+  const origin = 'http://127.0.0.1:18766';
+  let intentCalls = 0;
+  const report = await probeHttp({ port: 18766, fetchImpl: async (url, init) => {
+    intentCalls += 1;
+    assert.equal(url, `${origin}/api/intent`);
+    assert.equal(init.headers.Origin, origin);
+    return new Response(null, { status: 503 });
+  } });
+  assert.equal(intentCalls, 19);
+  assert.equal(report.metadata.endpoint, `${origin}/api/intent`);
+  const diagnosed = [];
+  const output = capture();
+  assert.equal(await runCli(['--diagnose'], { ...output, port: 18766, fetchImpl: async (url) => {
+    diagnosed.push(url);
+    return Response.json(url.includes(':18766/') ? { employees: [] } : savedRecords[1].rawResponse);
+  } }), 0);
+  assert.deepEqual(diagnosed, [`${origin}/api/employees`, 'http://127.0.0.1:8765/v1/systemone']);
+  const paths = [];
+  const web = await diagnoseWeb({
+    port: 18766, readAsset: async () => Buffer.from('fixed test asset'),
+    fetchImpl: async (url) => {
+      assert.equal(new URL(url).origin, origin);
+      const path = new URL(url).pathname;
+      paths.push(path);
+      const type = path.endsWith('.js') ? 'text/javascript' : path.endsWith('.css') ? 'text/css' : 'text/html';
+      return new Response('fixed test asset', { headers: { 'Content-Type': type } });
+    },
+  });
+  assert.equal(web.ok, true);
+  assert.equal(web.origin, origin);
+  assert.deepEqual(paths, ['/', '/legacy', '/app.js', '/app.css']);
+});
+
+test('不正ポートはHTTP通信の前に拒否し、CLIは環境の実値を含まない固定日本語エラーにする', async () => {
+  const noFetch = async () => assert.fail('不正ポートで通信しない');
+  for (const port of [0, 1023, 65536, 8766.5, '8766/raw-private-setting']) {
+    for (const check of [probeHttp, diagnose, diagnoseWeb]) {
+      await assert.rejects(check({ port, fetchImpl: noFetch }), (error) => error.code === 'invalid_port');
+    }
+    for (const args of [[], ['--diagnose'], ['--web-diagnose']]) {
+      const output = capture();
+      assert.equal(await runCli(args, { ...output, port, fetchImpl: noFetch }), 1);
+      const result = JSON.parse(output.lines[0]);
+      assert.equal(result.error, 'invalid_port');
+      assert.equal(result.message, 'INUI_POC_PORTには1024〜65535の整数を指定してください。');
+      assert.equal(JSON.stringify(output).includes('raw-private-setting'), false);
+    }
+  }
 });
 
 test('不正引数では通信せず、安全な失敗reportと終了1を返す', async () => {

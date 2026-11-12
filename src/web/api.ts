@@ -180,6 +180,8 @@ export function errorMessage(error: unknown, action: string): string {
   if (error instanceof ApiError && (error.status === 401 || error.status === 403)) {
     return 'この操作を利用できません。ページを再読み込みしてお試しください。';
   }
-  if (error instanceof ApiError && error.kind === 'timeout') return action + 'に時間がかかっています。時間をおいてお試しください。';
+  if (error instanceof ApiError && (error.kind === 'timeout' || error.status === 504)) {
+    return action + 'に時間がかかっています。時間をおいてお試しください。';
+  }
   return action + 'ができませんでした。接続を確認して、もう一度お試しください。';
 }

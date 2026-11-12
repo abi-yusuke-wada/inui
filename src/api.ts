@@ -1,8 +1,12 @@
+import { randomUUID } from 'node:crypto';
 import { Hono } from 'hono';
 import type { Context } from 'hono';
 import type { ContentfulStatusCode } from 'hono/utils/http-status';
 import { createIntentRouter, DecisionError } from '@inui/core';
 import type { RoutingDecision } from '@inui/core';
+import { appOrigin, DEFAULT_APP_PORT } from './local-config.ts';
+import { logRoute } from './logger.ts';
+import type { Logger } from './logger.ts';
 import { DEFAULT_DATE, listEmployees, listSchedules, selectPeople } from './people.ts';
 import type { LocalStore } from './store.ts';
 import type { ApplicationStatus, ExpenseInput, LeaveInput } from './types.ts';
@@ -15,7 +19,12 @@ const NOTICES = {
   clarify: '目的を特定できませんでした。申請の種類や確認したいことを入力してください。',
 };
 type Store = Pick<LocalStore, 'list' | 'addLeave' | 'addExpense'>;
-interface AppOptions { store: Store; routeIntent?: (text: string) => Promise<unknown> }
+interface AppOptions {
+  store: Store;
+  routeIntent?: (text: string) => Promise<unknown>;
+  port?: number;
+  logger?: Logger;
+}
 
 class RequestError extends Error {
   readonly status: ContentfulStatusCode;
@@ -44,7 +53,8 @@ export function isValidDate(value: unknown): value is string {
   if (year < 1 || month < 1 || month > 12 || day < 1) return false;
   const leap = year % 4 === 0 && (year % 100 !== 0 || year % 400 === 0);
   const days = [31, leap ? 29 : 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31];
-  return day <= days[month - 1]!;
+  const lastDay = days[month - 1];
+  return lastDay !== undefined && day <= lastDay;
 }
 
 function optionalText(value: unknown): string | undefined {
@@ -103,14 +113,34 @@ function checkedDecision(value: unknown): RoutingDecision {
 }
 
 /** 同一オリジンのローカルAPIを、推論と保存を差し替え可能な形で作る。 */
-export function createApp({ store, routeIntent = createIntentRouter() }: AppOptions) {
+export function createApp({ store, routeIntent = createIntentRouter(), port = DEFAULT_APP_PORT, logger }: AppOptions) {
+  const allowedHosts = [new URL(appOrigin(port)).host, `localhost:${port}`];
   const app = new Hono();
+  app.use('*', async (c, next) => {
+    const requestId = randomUUID();
+    const started = performance.now();
+    c.header('X-Request-Id', requestId);
+    await next();
+    const status = c.res.status;
+    const path = c.req.path;
+    const route = logRoute(path);
+    const errorCode = c.error instanceof RequestError || c.error instanceof DecisionError
+      ? c.error.code : status >= 500 ? 'internal_error' : status === 404 ? 'not_found' : undefined;
+    const level = status >= 500 ? 'error' : status >= 400 ? 'warn' : path.startsWith('/api/') ? 'info' : 'debug';
+    // URLや本文は渡さず、固定の経路名とサーバーが発行したIDで処理を追う。
+    try {
+      logger?.[level](path === '/api/intent' && c.req.method === 'POST' ? 'intent_request' : 'http_request', {
+        request_id: requestId, method: c.req.method, route, http_status: status,
+        elapsed_ms: Math.round(performance.now() - started), ...(errorCode ? { error_code: errorCode } : {}),
+      });
+    } catch { /* ログ出力の失敗で業務操作の応答を変更しない。 */ }
+  });
   app.use('*', async (c, next) => {
     c.header('Cache-Control', 'no-store');
     c.header('X-Content-Type-Options', 'nosniff');
     const url = new URL(c.req.url);
     const host = c.req.header('Host');
-    if (url.protocol !== 'http:' || !['127.0.0.1:3000', 'localhost:3000'].includes(url.host)
+    if (url.protocol !== 'http:' || !allowedHosts.includes(url.host)
         || (host !== undefined && host.toLowerCase() !== url.host)) {
       throw new RequestError(403, 'invalid_host', 'ローカルの検証用アドレスから開いてください。');
     }

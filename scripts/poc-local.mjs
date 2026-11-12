@@ -2,7 +2,9 @@ import { spawn } from 'node:child_process';
 import { mkdir, rename, writeFile } from 'node:fs/promises';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { isDeepStrictEqual } from 'node:util';
-import { listEmployees } from '../apps/poc/src/people.ts';
+import { listEmployees } from '../src/people.ts';
+import { appPort, appOrigin } from '../src/local-config.ts';
+import { logLevel } from '../src/logger.ts';
 import { LOCAL_MODEL } from '../packages/core/src/index.ts';
 import { probeHttp } from './poc-probe.mjs';
 
@@ -13,13 +15,14 @@ class LocalError extends Error {}
 class Stopped extends Error {}
 
 /** 子プロセスには実行環境だけを渡し、認証用の変数は引き継がない。 */
-export function serviceEnv(parent = process.env) {
+export function serviceEnv(parent = process.env, port) {
+  const selectedPort = appPort(port === undefined ? parent : { INUI_POC_PORT: String(port) });
   const env = {};
   for (const key of ['PATH', 'LD_LIBRARY_PATH', 'TMPDIR', 'TMP', 'TEMP', 'LANG', 'LC_ALL']) {
     if (typeof parent[key] === 'string') env[key] = parent[key];
   }
   return {
-    ...env, NODE_ENV: 'production',
+    ...env, NODE_ENV: 'production', INUI_POC_PORT: String(selectedPort), LOG_LEVEL: logLevel(parent.LOG_LEVEL),
     HF_HOME: `${ROOT}.local-jev/cache`, LOCAL_JEV_MODELS: `${ROOT}.local-jev/models`,
     HF_HUB_OFFLINE: '1', TRANSFORMERS_OFFLINE: '1', HF_HUB_DISABLE_IMPLICIT_TOKEN: '1',
     OMP_NUM_THREADS: '4', MKL_NUM_THREADS: '4', OPENBLAS_NUM_THREADS: '4',
@@ -27,8 +30,9 @@ export function serviceEnv(parent = process.env) {
 }
 
 /** 接続拒否だけを未起動とし、別のサービスや権限エラーを上書きしない。 */
-export async function checkService(service, fetchImpl = globalThis.fetch) {
-  const url = service === 'app' ? 'http://127.0.0.1:3000/api/employees' : 'http://127.0.0.1:8765/healthz';
+export async function checkService(service, fetchImpl = globalThis.fetch, port) {
+  const url = service === 'app' ? `${appOrigin(appPort(port === undefined ? undefined : { INUI_POC_PORT: String(port) }))}/api/employees`
+    : 'http://127.0.0.1:8765/healthz';
   let response;
   try { response = await fetchImpl(url, { redirect: 'error', signal: AbortSignal.timeout(1500) }); }
   catch (error) {
@@ -46,12 +50,12 @@ export async function checkService(service, fetchImpl = globalThis.fetch) {
 }
 
 /** PIDは自分が生成した子だけ保持し、そのプロセス群だけを終了する。 */
-export function launchService(service) {
+export function launchService(service, port) {
   const command = service === 'app' ? process.execPath : `${ROOT}.local-jev/venv/bin/local-jev`;
-  const args = service === 'app' ? [`${ROOT}apps/poc/dist/server.js`]
+  const args = service === 'app' ? [`${ROOT}dist/server.js`]
     : ['serve', '--model', LOCAL_MODEL, '--host', '127.0.0.1', '--port', '8765'];
   const grouped = process.platform !== 'win32';
-  const child = spawn(command, args, { cwd: ROOT, env: serviceEnv(), stdio: 'inherit', detached: grouped });
+  const child = spawn(command, args, { cwd: ROOT, env: serviceEnv(process.env, port), stdio: 'inherit', detached: grouped });
   let stopping = false;
   let closed = false;
   let onClose;
@@ -97,9 +101,12 @@ async function saveReport(report) {
 export async function runLocal(mode, {
   check = checkService, launch = launchService, probe = probeHttp, save = saveReport,
   sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms)),
-  now = Date.now, log = console.error, timeoutMs = 180_000, installSignals = true,
+  now = Date.now, log = console.error, timeoutMs = 180_000, installSignals = true, port,
 } = {}) {
   if (!['dev', 'smoke'].includes(mode)) { log('使い方: make app-dev または make app-smoke'); return 1; }
+  let selectedPort;
+  try { selectedPort = appPort(port === undefined ? undefined : { INUI_POC_PORT: String(port) }); }
+  catch { log('INUI_POC_PORTには1024〜65535の整数を指定してください。'); return 1; }
   const owned = [];
   const shutdown = new AbortController();
   let stopped;
@@ -110,21 +117,22 @@ export async function runLocal(mode, {
   let code = 0;
   try {
     for (const service of SERVICES) {
-      if (await race(check(service))) { log(`${LABELS[service]}: 起動済みを利用します。`); continue; }
+      if (await race(check(service, globalThis.fetch, selectedPort))) { log(`${LABELS[service]}: 起動済みを利用します。`); continue; }
       log(`${LABELS[service]}を起動します。`);
-      owned.push(launch(service));
+      owned.push(launch(service, selectedPort));
       const started = now();
       let lastMessage = started;
-      while (!(await race(check(service)))) {
+      while (!(await race(check(service, globalThis.fetch, selectedPort)))) {
         if (now() - started >= timeoutMs) throw new LocalError(`${LABELS[service]}の起動待ちが時間切れになりました。`);
         if (now() - lastMessage >= 5000) { log(`${LABELS[service]}の起動を待っています…`); lastMessage = now(); }
         await race(sleep(500));
       }
       log(`${LABELS[service]}: 起動しました。`);
     }
-    log('自然言語UI: http://127.0.0.1:3000/  比較用UI: http://127.0.0.1:3000/legacy');
+    const origin = appOrigin(selectedPort);
+    log(`自然言語UI: ${origin}/  比較用UI: ${origin}/legacy`);
     if (mode === 'smoke') {
-      const report = await race(probe({ fetchImpl: (url, init) => fetch(url, {
+      const report = await race(probe({ port: selectedPort, fetchImpl: (url, init) => fetch(url, {
         ...init, signal: init?.signal ? AbortSignal.any([init.signal, shutdown.signal]) : shutdown.signal,
       }) }));
       await save(report);

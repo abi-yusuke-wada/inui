@@ -2,30 +2,44 @@
 # devShell（direnvまたは `nix develop`）に入った状態で実行する。
 
 .DEFAULT_GOAL := help
-.PHONY: app-setup app-lock app-build app-check app-ui-check app-replay-check app-model-check app-probe app-diagnose app-dev app-smoke core-check app-run app-reset
+.PHONY: app-setup app-setup-offline app-lock app-build app-check app-ui-check app-replay-check app-model-check app-probe app-diagnose app-web-diagnose app-dev app-smoke core-check app-run app-reset lint lint-workflows ci
 
 # 公開npmパッケージだけを取得し、利用者の認証設定は参照しない。
 INUI_PNPM := env -i PATH="$(PATH)" XDG_CONFIG_HOME="$(CURDIR)/.local-poc/config" XDG_CACHE_HOME="$(CURDIR)/.local-poc/cache" XDG_STATE_HOME="$(CURDIR)/.local-poc/state" pnpm --config.userconfig=/dev/null --config.globalconfig=/dev/null --config.store-dir="$(CURDIR)/.local-poc/pnpm-store" --config.verify-deps-before-run=error
+BIOME_FLAGS ?= --error-on-warnings
 
 app-setup: ## ローカルPoCの公開npm依存を取得する（ネットワーク使用・インストールscript無効）
 	@mkdir -p .local-poc/config .local-poc/cache .local-poc/state .local-poc/pnpm-store
 	@$(INUI_PNPM) install --frozen-lockfile --ignore-scripts --fetch-retries=0 --fetch-timeout=10000
 
+app-setup-offline: ## 取得済み依存だけでworkspaceのリンクを更新する（通信なし）
+	@$(INUI_PNPM) install --offline --frozen-lockfile --ignore-scripts
+
 app-lock: ## 変更した依存定義を取得済みキャッシュからlockへ反映する（通信なし）
 	@$(INUI_PNPM) install --offline --lockfile-only --ignore-scripts
 
+lint: lint-workflows ## TypeScript・React・CSSとGitHub Actionsの定義を検査する
+	biome --version
+	biome lint $(BIOME_FLAGS) src tests packages/core/src packages/core/tests scripts
+
+lint-workflows: ## GitHub Actionsの定義を検査する
+	actionlint .github/workflows/ci.yml
+
+ci: lint app-check jev-check ## lint・型検査・ビルド・全オフラインテストを実行する（実モデル不要）
+
 core-check: ## 独立コアを外部通信なしで検証する
-	node --test --test-isolation=none packages/core/src/*.test.ts
+	node --test --test-isolation=none packages/core/tests/*.test.ts
 
 app-build: ## 独立コアとローカルPoCをビルドする
 	node_modules/.bin/tsc -p packages/core/tsconfig.build.json
-	node_modules/.bin/esbuild apps/poc/src/server.ts --bundle --platform=node --packages=external --format=esm --target=node24 --outfile=apps/poc/dist/server.js
-	node_modules/.bin/esbuild apps/poc/src/web/main.tsx --bundle --format=esm --target=es2022 --jsx=automatic --minify --define:process.env.NODE_ENV='"production"' --outfile=apps/poc/dist/public/app.js
-	cp apps/poc/src/web/index.html apps/poc/dist/public/index.html
+	node_modules/.bin/esbuild src/server.ts --bundle --platform=node --packages=external --format=esm --target=node24 --outfile=dist/server.js
+	node_modules/.bin/esbuild src/web/main.tsx --bundle --format=esm --target=es2022 --jsx=automatic --minify --define:process.env.NODE_ENV='"production"' --outfile=dist/public/app.js
+	cp src/web/index.html dist/public/index.html
 
 app-ui-check: app-build ## DOM上でフォーム保存・人名選択・従来UIの操作を検証する
-	node_modules/.bin/esbuild apps/poc/src/web/App.test.tsx --bundle --packages=external --platform=node --format=esm --target=node24 --jsx=automatic --outfile=apps/poc/dist/ui-tests/App.test.js
-	node --test --test-isolation=none apps/poc/dist/ui-tests/App.test.js
+	node_modules/.bin/esbuild tests/web/App.test.tsx --bundle --packages=external --platform=node --format=esm --target=node24 --jsx=automatic --outfile=dist/ui-tests/App.test.js
+	node --test --test-isolation=none dist/ui-tests/App.test.js
+	node --test --test-isolation=none tests/scripts/poc-web.test.mjs
 
 app-replay-check: ## 保存した19件の実NLI応答と現コアを再照合する（推論・通信なし）
 	@mkdir -p .local-poc
@@ -34,8 +48,8 @@ app-replay-check: ## 保存した19件の実NLI応答と現コアを再照合す
 
 app-check: app-ui-check app-replay-check ## コア・API・永続化・UIのテストと型・差分を検証する
 	node_modules/.bin/tsc -p packages/core/tsconfig.json
-	node_modules/.bin/tsc -p apps/poc/tsconfig.json
-	node --test --test-isolation=none packages/core/src/*.test.ts apps/poc/src/*.test.ts apps/poc/src/web/*.test.ts scripts/poc-probe.test.mjs scripts/poc-local.test.mjs
+	node_modules/.bin/tsc -p tsconfig.json
+	node --test --test-isolation=none packages/core/tests/*.test.ts tests/*.test.ts tests/web/*.test.ts tests/scripts/poc-probe.test.mjs tests/scripts/poc-local.test.mjs
 	git diff --check
 
 app-model-check: ## キャッシュ済み実NLIの7候補を19入力で検証する（外部通信なし）
@@ -53,17 +67,21 @@ app-diagnose: ## アプリと推論サーバーの接続を個別に確認する
 	@mkdir -p .local-poc
 	@node scripts/poc-probe.mjs --diagnose > .local-poc/connection-check.json
 
+app-web-diagnose: ## HTML・JS・CSSの受信完了とビルドとの一致を確認する（推論なし）
+	@mkdir -p .local-poc
+	@node scripts/poc-probe.mjs --web-diagnose > .local-poc/web-check.json
+
 app-dev: app-build ## アプリと実NLIをまとめて起動する
 	node scripts/poc-local.mjs --dev
 
 app-smoke: app-build ## アプリと実NLIを起動して19入力を検証する
 	node scripts/poc-local.mjs --smoke
 
-app-run: app-build ## アプリだけを127.0.0.1:3000で起動する（実NLIは別途起動）
-	node apps/poc/dist/server.js
+app-run: app-build ## アプリだけを127.0.0.1:8766で起動する（実NLIは別途起動）
+	node dist/server.js
 
 app-reset: ## ローカルPoCの検証データだけを初期2件へ戻す
-	node apps/poc/src/reset.ts
+	node src/reset.ts
 .PHONY: help check sandbox-check jev-check jev-probe jev-probe-dry-run jev-probe-live jev-probe-local jev-prompt-study jev-local-setup jev-local-versions jev-local-pin-model jev-local-serve
 
 LOCAL_JEV_REV := 64a0b31ff343dca32142496cf9edca5a0174a18d
@@ -78,7 +96,7 @@ check: ## 開発環境の定義と差分の空白を検証する
 
 jev-check: ## JEV接続プローブを実APIなしで検証する
 	@# 単一ファイルの各ケースを同一プロセスで実行し、子プロセス起動に依存しない。
-	node --test --test-isolation=none scripts/jev-probe.test.mjs
+	node --test --test-isolation=none tests/scripts/jev-probe.test.mjs
 	git diff --check HEAD
 
 jev-probe: ## APIキーありは公式Jev、なしはローカルNLIで13入力を検証する

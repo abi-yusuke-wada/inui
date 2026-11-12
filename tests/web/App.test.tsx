@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { JSDOM } from 'jsdom';
 import type { Root } from 'react-dom/client';
-import type { Application, Employee } from '../types.ts';
+import type { Application, Employee } from '../../src/types.ts';
 
 const employees: Employee[] = [
   { id: 'yamada-taro', name: '山田太郎' },
@@ -47,13 +47,13 @@ test('PoCの4つの利用経路をJSDOMで操作する（実ブラウザでは�
     const react = await import('react');
     act = react.act;
     const { createRoot } = await import('react-dom/client');
-    const { App } = await import('./App.tsx');
+    const { App } = await import('../../src/web/App.tsx');
     const document = dom.window.document;
     const response = (body: unknown, status = 200) =>
       new Response(JSON.stringify(body), { status, headers: { 'Content-Type': 'application/json' } });
     const visibleText = (element: Element) => {
       const copy = element.cloneNode(true) as Element;
-      copy.querySelectorAll('[aria-hidden="true"]').forEach((node) => node.remove());
+      copy.querySelectorAll('[aria-hidden="true"]').forEach((node) => { node.remove(); });
       return (copy.textContent ?? '').replace(/\s+/g, ' ').trim();
     };
     const button = (name: string) => {

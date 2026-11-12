@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { listEmployees, listSchedules, selectPeople } from './people.ts';
+import { listEmployees, listSchedules, selectPeople } from '../src/people.ts';
 
 test('全名を優先し、同姓の別社員を自動追加しない', () => {
   assert.deepEqual(selectPeople('山田 太郎と佐藤花子の予定を比べたい'), {
@@ -84,10 +84,18 @@ test('予定は明示した日・社員に限定し、戻り値の変更を内�
   assert.equal(result.employees.length, 2);
   assert.ok(result.events.length > 0);
   assert.ok(result.events.every((event) => result.employees.some((person) => person.id === event.personId)));
-  result.employees[0]!.name = '変更';
-  result.events[0]!.title = '変更';
-  assert.notEqual(listEmployees()[0]!.name, '変更');
-  assert.notEqual(listSchedules('2026-11-02', ['person-yamada-taro']).events[0]!.title, '変更');
+  const employee = result.employees[0];
+  const event = result.events[0];
+  assert.ok(employee);
+  assert.ok(event);
+  employee.name = '変更';
+  event.title = '変更';
+  const originalEmployee = listEmployees()[0];
+  const originalEvent = listSchedules('2026-11-02', ['person-yamada-taro']).events[0];
+  assert.ok(originalEmployee);
+  assert.ok(originalEvent);
+  assert.notEqual(originalEmployee.name, '変更');
+  assert.notEqual(originalEvent.title, '変更');
   assert.deepEqual(listSchedules('2026-11-02', []).events, []);
   assert.deepEqual(listSchedules('2026-11-04', ['person-yamada-taro']).events, []);
 });

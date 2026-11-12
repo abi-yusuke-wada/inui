@@ -6,7 +6,7 @@ import {
   buildLocalRequest,
   createIntentRouter,
   parseLocalResponse,
-} from './index.ts';
+} from '../src/index.ts';
 
 const wireIntents = [
   'leave_request', 'expense_request', 'application_status', 'schedule_compare',
@@ -132,33 +132,33 @@ test('使用量はゼロと安全な整数の上限を許す', () => {
   assert.equal(parseLocalResponse(body).intent, 'leave_request');
 });
 
-const corruptions: [string, (body: any) => unknown][] = [
+const corruptions: [string, (body: ReturnType<typeof responseBody>) => unknown][] = [
   ['別モデル', (body) => { body.model = 'jev-1.14.0'; return body; }],
   ['内部clarifyを直接返す', (body) => { body.answers.intent.choice = 'clarify'; return body; }],
   ['未知の候補', (body) => { body.answers.intent.choice = 'delete_everything'; return body; }],
-  ['配列の候補', (body) => { body.answers.intent.choice = ['leave_request']; return body; }],
+  ['配列の候補', (body) => { Reflect.set(body.answers.intent, 'choice', ['leave_request']); return body; }],
   ['Choice以外', (body) => { body.answers.intent.type = 'tool'; return body; }],
   ['負のconfidence', (body) => { body.answers.intent.confidence = -0.1; return body; }],
   ['1を超えるconfidence', (body) => { body.answers.intent.confidence = 1.1; return body; }],
   ['NaNのconfidence', (body) => { body.answers.intent.confidence = NaN; return body; }],
-  ['文字列のconfidence', (body) => { body.answers.intent.confidence = '0.7'; return body; }],
+  ['文字列のconfidence', (body) => { Reflect.set(body.answers.intent, 'confidence', '0.7'); return body; }],
   ['確率欠落', (body) => { delete body.answers.intent.probabilities.schedule_compare; return body; }],
   ['未知の確率', (body) => { body.answers.intent.probabilities.clarify = 0; return body; }],
   ['負の確率', (body) => { body.answers.intent.probabilities.leave_request = -0.1; return body; }],
   ['無限の確率', (body) => { body.answers.intent.probabilities.leave_request = Infinity; return body; }],
-  ['文字列の確率', (body) => { body.answers.intent.probabilities.leave_request = '0.7'; return body; }],
+  ['文字列の確率', (body) => { Reflect.set(body.answers.intent.probabilities, 'leave_request', '0.7'); return body; }],
   ['確率の合計不足', (body) => { body.answers.intent.probabilities.leave_request = 0.6; return body; }],
   ['確率の合計過多', (body) => { body.answers.intent.probabilities.leave_request = 0.8; return body; }],
   ['最大確率以外の選択', (body) => { body.answers.intent.choice = 'schedule_compare'; return body; }],
   ['負の使用量', (body) => { body.usage.input_tokens = -1; return body; }],
   ['小数の使用量', (body) => { body.usage.output_tokens = 0.5; return body; }],
-  ['文字列の使用量', (body) => { body.usage.input_tokens = '12'; return body; }],
+  ['文字列の使用量', (body) => { Reflect.set(body.usage, 'input_tokens', '12'); return body; }],
   ['安全整数を超える使用量', (body) => { body.usage.output_tokens = Number.MAX_SAFE_INTEGER + 1; return body; }],
   ['本文配列', () => []],
   ['本文null', () => null],
-  ['answers配列', (body) => { body.answers = []; return body; }],
-  ['intent欠落', (body) => { delete body.answers.intent; return body; }],
-  ['usage欠落', (body) => { delete body.usage; return body; }],
+  ['answers配列', (body) => { Reflect.set(body, 'answers', []); return body; }],
+  ['intent欠落', (body) => { Reflect.deleteProperty(body.answers, 'intent'); return body; }],
+  ['usage欠落', (body) => { Reflect.deleteProperty(body, 'usage'); return body; }],
 ];
 
 for (const [name, corrupt] of corruptions) {
@@ -170,9 +170,9 @@ for (const [name, corrupt] of corruptions) {
 for (const location of ['body', 'answers', 'intent', 'usage'] as const) {
   for (const key of ['Tool', 'UI', 'args']) {
     test(`未許可フィールドを拒否する: ${location}.${key}`, () => {
-      const body: any = responseBody();
+      const body = responseBody();
       const target = location === 'body' ? body : location === 'intent' ? body.answers.intent : body[location];
-      target[key] = { execute: true };
+      Reflect.set(target, key, { execute: true });
       assert.throws(() => parseLocalResponse(body), isDecisionError('invalid_response'));
     });
   }

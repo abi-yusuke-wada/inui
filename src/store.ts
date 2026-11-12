@@ -5,7 +5,7 @@ import { DatabaseSync } from 'node:sqlite';
 import { fileURLToPath } from 'node:url';
 import type { Application, ApplicationStatus, ExpenseInput, LeaveInput } from './types.ts';
 
-export const DEFAULT_DB_PATH = fileURLToPath(new URL('../../../.local-poc/app.sqlite', import.meta.url));
+export const DEFAULT_DB_PATH = fileURLToPath(new URL('../.local-poc/app.sqlite', import.meta.url));
 const SUBMITTED_ON = '2026-11-02';
 
 /** 単一の検証利用者の申請を実SQLiteファイルへ保存する。 */

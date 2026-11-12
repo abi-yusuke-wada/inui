@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { ApiError, LatestRequest, fetchJson, parseDecision, parseEmployees, parseSchedules, validDate } from './api.ts';
+import { ApiError, LatestRequest, errorMessage, fetchJson, parseDecision, parseEmployees, parseSchedules, validDate } from '../../src/web/api.ts';
 
 test('新しい要求と画面の破棄は、以前の応答の反映を無効にする', () => {
   const gate = new LatestRequest();
@@ -67,6 +67,45 @@ test('HTTPエラー本文を取得・表示用エラーへ含めず、保存POST
   });
   assert.equal(calls, 1);
   assert.equal(readBody, false);
+});
+
+test('HTTP504は本文を読まず時間超過として案内し、分類POSTを自動再試行しない', async () => {
+  let calls = 0;
+  let bodyReads = 0;
+  const privateDetail = 'テスト用の非公開上流情報';
+  await assert.rejects(fetchJson('/api/intent', {
+    method: 'POST', body: { text: '山田太郎さんと佐藤花子さんの予定を見たい' },
+    fetchImpl: async () => {
+      calls++;
+      return {
+        ok: false, status: 504,
+        json: async () => { bodyReads++; throw new Error(privateDetail); },
+      } as unknown as Response;
+    },
+  }), (error: unknown) => {
+    assert.ok(error instanceof ApiError);
+    assert.equal(error.kind, 'http');
+    assert.equal(error.status, 504);
+    assert.equal(errorMessage(error, '画面の表示'), '画面の表示に時間がかかっています。時間をおいてお試しください。');
+    assert.equal(error.message.includes(privateDetail), false);
+    return true;
+  });
+  assert.equal(calls, 1);
+  assert.equal(bodyReads, 0);
+});
+
+test('時間超過の案内を入力・権限・接続・応答形式の失敗と区別する', () => {
+  const action = '画面の表示';
+  const timeoutMessage = '画面の表示に時間がかかっています。時間をおいてお試しください。';
+  const connectionMessage = '画面の表示ができませんでした。接続を確認して、もう一度お試しください。';
+  assert.equal(errorMessage(new ApiError('timeout'), action), timeoutMessage);
+  assert.equal(errorMessage(new ApiError('http', 400), action), '入力内容を確認して、もう一度お試しください。');
+  for (const status of [401, 403]) {
+    assert.equal(errorMessage(new ApiError('http', status), action), 'この操作を利用できません。ページを再読み込みしてお試しください。');
+  }
+  for (const error of [new ApiError('http', 500), new ApiError('http', 502), new ApiError('http', 503), new ApiError('network'), new ApiError('invalid')]) {
+    assert.equal(errorMessage(error, action), connectionMessage);
+  }
 });
 
 test('既に取り消した要求はネットワークへ送らない', async () => {

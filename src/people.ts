@@ -25,7 +25,8 @@ export function selectPeople(text: string): PeopleSelection {
     const exact = PEOPLE.find((person) => person.name === name);
     if (exact) { selected.add(exact.id); return true; }
     const candidates = PEOPLE.filter((person) => person.surname === name);
-    if (candidates.length === 1) selected.add(candidates[0]!.id);
+    const candidate = candidates[0];
+    if (candidates.length === 1 && candidate) selected.add(candidate.id);
     else if (candidates.length > 1) ambiguous.set(name, candidates.map((person) => person.id));
     return candidates.length > 0;
   };
@@ -49,7 +50,7 @@ export function selectPeople(text: string): PeopleSelection {
     },
   );
   const beforeName = (index: number): boolean => index === 0
-    || /[\s\p{P}\p{S}とやの]/u.test(remaining[index - 1]!);
+    || /[\s\p{P}\p{S}とやの]/u.test(remaining.charAt(index - 1));
   const afterName = (index: number): boolean =>
     /^(?:$|[\s\p{P}\p{S}]|[とや](?=[\s\p{Script=Han}\p{Script=Katakana}A-Za-z])|の(?:予定|スケジュール|空き|都合))/u.test(remaining.slice(index));
   for (const person of PEOPLE) {

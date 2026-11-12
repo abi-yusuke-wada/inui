@@ -332,7 +332,8 @@ function Applications() {
     {applications && (applications.length === 0
       ? <div className="empty-state" role="status"><p>該当する申請はありません。</p><span>別の状態を選ぶと、表示を切り替えられます。</span></div>
       : <><p className="result-count" role="status">{applications.length}件の申請</p>
-        <div className="table-scroll" role="region" aria-label="申請の一覧" tabIndex={0}>
+        {/* biome-ignore lint/a11y/noNoninteractiveTabindex: 横スクロールをキーボードで操作できるよう、領域へのフォーカスを許可する。 */}
+        <section className="table-scroll" aria-label="申請の一覧" tabIndex={0}>
           <table><thead><tr><th scope="col">申請日</th><th scope="col">種類</th><th scope="col">内容</th><th scope="col">状態</th></tr></thead>
             <tbody>{applications.map((application) => <tr key={application.id}>
               <td className="date-cell">{application.submittedOn.replaceAll('-', '/')}</td>
@@ -343,7 +344,7 @@ function Applications() {
                 {application.type === 'leave' && application.reason && <small className="application-detail">{application.reason}</small>}</td>
               <td><span className={'status-pill status-' + application.status}>{STATUS_NAMES[application.status]}</span></td>
             </tr>)}</tbody></table>
-        </div></>)}
+        </section></>)}
   </div>;
 }
 
@@ -454,7 +455,8 @@ function Schedules({ people = EMPTY_PEOPLE }: { people?: PeopleSelection | undef
     </div>}
     {result && <section className="schedule-results" aria-label="予定の比較結果">
       <h3>{result.date.replaceAll('-', '/')}の予定</h3>
-      <div className="schedule-scroll" tabIndex={0} role="region" aria-label="社員ごとの予定">
+      {/* biome-ignore lint/a11y/noNoninteractiveTabindex: 横スクロールをキーボードで操作できるよう、領域へのフォーカスを許可する。 */}
+      <section className="schedule-scroll" tabIndex={0} aria-label="社員ごとの予定">
         <div className="schedule-columns">
           {result.employees.map((employee) => {
             const events = result.events.filter((event) => event.personId === employee.id)
@@ -469,7 +471,7 @@ function Schedules({ people = EMPTY_PEOPLE }: { people?: PeopleSelection | undef
             </section>;
           })}
         </div>
-      </div>
+      </section>
     </section>}
   </div>;
 }

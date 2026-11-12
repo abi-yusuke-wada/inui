@@ -3,7 +3,7 @@ import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import test from 'node:test';
-import { LocalStore } from './store.ts';
+import { LocalStore } from '../src/store.ts';
 
 test('実ファイルを再openして保存を確認し、seedを重複させない', (t) => {
   const directory = mkdtempSync(join(tmpdir(), 'inui-poc-'));

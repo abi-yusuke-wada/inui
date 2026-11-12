@@ -4,9 +4,9 @@ import { isDeepStrictEqual } from 'node:util';
 import { pathToFileURL } from 'node:url';
 import { CASES } from './jev-probe.mjs';
 import { LOCAL_MODEL, buildLocalRequest, parseLocalResponse } from '../packages/core/src/index.ts';
-import { selectPeople } from '../apps/poc/src/people.ts';
+import { selectPeople } from '../src/people.ts';
+import { appPort, appOrigin } from '../src/local-config.ts';
 
-const ORIGIN = 'http://127.0.0.1:3000';
 const REVISION = 'cf44676c28ba7312e5c5f8f8d2c22b3e0c9cdae2';
 const ENGINE_TRANSPORT = 'in-process-local-jev-engine';
 const SCREENS = ['leave_request', 'expense_request', 'application_status', 'schedule_compare'];
@@ -51,6 +51,12 @@ export function requestsDigest() {
 
 class ProbeError extends Error {
   constructor(code, httpStatus) { super(code); this.code = code; this.httpStatus = httpStatus; }
+}
+
+/** ポートだけを設定可能にし、接続先のホストはloopbackへ固定する。 */
+function selectedOrigin(port) {
+  try { return appOrigin(appPort(port === undefined ? undefined : { INUI_POC_PORT: String(port) })); }
+  catch { throw new ProbeError('invalid_port'); }
 }
 const isRecord = (value) => value !== null && typeof value === 'object' && !Array.isArray(value);
 const exactKeys = (value, keys) => isRecord(value) && Object.keys(value).length === keys.length && keys.every((key) => Object.hasOwn(value, key));
@@ -161,7 +167,8 @@ export function replay(jsonl) {
 }
 
 /** 業務保存を呼ばず、同一OriginのIntent受付だけを30秒ずつ確認する。 */
-export async function probeHttp({ fetchImpl = globalThis.fetch } = {}) {
+export async function probeHttp({ fetchImpl = globalThis.fetch, port } = {}) {
+  const origin = selectedOrigin(port);
   const results = [];
   for (const sample of POC_CASES) {
     const started = performance.now();
@@ -172,8 +179,8 @@ export async function probeHttp({ fetchImpl = globalThis.fetch } = {}) {
     });
     try {
       const operation = async () => {
-        const response = await fetchImpl(`${ORIGIN}/api/intent`, {
-          method: 'POST', headers: { Origin: ORIGIN, 'Content-Type': 'application/json' },
+        const response = await fetchImpl(`${origin}/api/intent`, {
+          method: 'POST', headers: { Origin: origin, 'Content-Type': 'application/json' },
           body: JSON.stringify({ text: sample.text }), redirect: 'error', signal: controller.signal,
         });
         if (!response.ok) throw new ProbeError('http_error', response.status);
@@ -189,18 +196,19 @@ export async function probeHttp({ fetchImpl = globalThis.fetch } = {}) {
     } finally { clearTimeout(timer); }
   }
   return report('http-local-poc-api', {
-    endpoint: `${ORIGIN}/api/intent`, expected_model: LOCAL_MODEL, requests_sha256: requestsDigest(),
+    endpoint: `${origin}/api/intent`, expected_model: LOCAL_MODEL, requests_sha256: requestsDigest(),
     runtime: null, hf_revision: null, server_configuration_observed: false,
     measurement_scope: 'Intent受付のみ。ブラウザ・画面表示・業務保存・正式なIssue #15の測定を含まない。',
   }, results);
 }
 
 /** 固定の2サービスだけを確認し、応答本文や外部例外の詳細は表示しない。 */
-export async function diagnose({ fetchImpl = globalThis.fetch } = {}) {
+export async function diagnose({ fetchImpl = globalThis.fetch, port } = {}) {
+  const origin = selectedOrigin(port);
   const checks = [];
   for (const service of ['app', 'local-jev']) {
     try {
-      const response = await fetchImpl(service === 'app' ? `${ORIGIN}/api/employees` : 'http://127.0.0.1:8765/v1/systemone', {
+      const response = await fetchImpl(service === 'app' ? `${origin}/api/employees` : 'http://127.0.0.1:8765/v1/systemone', {
         ...(service === 'local-jev' ? {
           method: 'POST', headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify(buildLocalRequest(POC_CASES[0].text)),
@@ -220,19 +228,70 @@ export async function diagnose({ fetchImpl = globalThis.fetch } = {}) {
   return { ok: checks.every((check) => check.ok), checks };
 }
 
+/** 配信を本文受信まで確認し、公開ビルドとの一致だけを記録する。推論は呼ばない。 */
+export async function diagnoseWeb({ fetchImpl = globalThis.fetch, readAsset = readFile, timeoutMs = 3000, port } = {}) {
+  const origin = selectedOrigin(port);
+  const checks = [];
+  const assets = [
+    ['/', 'index.html', 'text/html'], ['/legacy', 'index.html', 'text/html'],
+    ['/app.js', 'app.js', 'text/javascript'], ['/app.css', 'app.css', 'text/css'],
+  ];
+  for (const [path, filename, contentType] of assets) {
+    const started = performance.now();
+    const controller = new AbortController();
+    let timer;
+    let httpStatus;
+    try {
+      let expected;
+      try { expected = await readAsset(new URL(`../dist/public/${filename}`, import.meta.url)); }
+      catch { throw new ProbeError('build_missing'); }
+      const deadline = new Promise((_, reject) => {
+        timer = setTimeout(() => { reject(new ProbeError('timeout')); controller.abort(); }, timeoutMs);
+      });
+      const operation = async () => {
+        const response = await fetchImpl(`${origin}${path}`, { redirect: 'error', signal: controller.signal });
+        httpStatus = response.status;
+        if (!response.ok) throw new ProbeError('http_error');
+        const typeMatched = response.headers.get('Content-Type')?.split(';')[0]?.trim().toLowerCase() === contentType;
+        const body = new Uint8Array(await response.arrayBuffer());
+        const digest = (bytes) => createHash('sha256').update(bytes).digest('hex');
+        const contentMatched = digest(body) === digest(expected);
+        return { ok: typeMatched && contentMatched, bytes: body.byteLength,
+          content_type_matched: typeMatched, content_matched: contentMatched };
+      };
+      const result = await Promise.race([operation(), deadline]);
+      checks.push({ path, http_status: httpStatus, ...result, elapsed_ms: Math.round(performance.now() - started) });
+    } catch (error) {
+      const codes = ['ECONNREFUSED', 'ECONNRESET', 'EPERM', 'EACCES', 'ETIMEDOUT', 'EAI_AGAIN'];
+      checks.push({ path, ok: false, http_status: httpStatus ?? null,
+        error: error instanceof ProbeError ? error.code : codes.includes(error?.cause?.code) ? error.cause.code : 'request_failed',
+        elapsed_ms: Math.round(performance.now() - started) });
+    } finally { clearTimeout(timer); controller.abort(); }
+  }
+  return { origin, ok: checks.every((check) => check.ok), checks };
+}
+
 /** CLIは安全なエラー種別だけを出し、読み込んだ本文や上流例外を表示しない。 */
-export async function runCli(args, { write = console.log, writeStatus = console.error, fetchImpl = globalThis.fetch } = {}) {
+export async function runCli(args, { write = console.log, writeStatus = console.error, fetchImpl = globalThis.fetch, port } = {}) {
   try {
     if (args.length === 1 && args[0] === '--requests') { write(JSON.stringify(requests())); return 0; }
+    if (args.length === 1 && args[0] === '--web-diagnose') {
+      const output = await diagnoseWeb({ fetchImpl, port });
+      write(JSON.stringify(output));
+      for (const check of output.checks) {
+        writeStatus(`${check.path}: ${check.http_status ? `HTTP ${check.http_status}, ` : ''}${check.ok ? '配信完了・ビルドと一致' : check.error ?? '形式または内容がビルドと不一致'}`);
+      }
+      return output.ok ? 0 : 1;
+    }
     if (args.length === 1 && args[0] === '--diagnose') {
-      const output = await diagnose({ fetchImpl });
+      const output = await diagnose({ fetchImpl, port });
       write(JSON.stringify(output));
       for (const check of output.checks) writeStatus(`${check.service}: ${check.http_status ? `HTTP ${check.http_status}` : check.error}`);
       return output.ok ? 0 : 1;
     }
     let output;
     if (args.length === 2 && args[0] === '--replay') output = replay(await readFile(args[1], 'utf8'));
-    else if (args.length === 0) output = await probeHttp({ fetchImpl });
+    else if (args.length === 0) output = await probeHttp({ fetchImpl, port });
     else throw new ProbeError('invalid_arguments');
     write(JSON.stringify(output));
     if (args.length === 0) {
@@ -245,7 +304,9 @@ export async function runCli(args, { write = console.log, writeStatus = console.
   } catch (error) {
     write(JSON.stringify({ ...report(args[0] === '--replay' ? ENGINE_TRANSPORT : 'not-run', null, []),
       error: error instanceof ProbeError ? error.code : 'validation_failed',
-      message: '検証を完了できませんでした。入力ファイルとローカルの設定を確認してください。' }));
+      message: error instanceof ProbeError && error.code === 'invalid_port'
+        ? 'INUI_POC_PORTには1024〜65535の整数を指定してください。'
+        : '検証を完了できませんでした。入力ファイルとローカルの設定を確認してください。' }));
     return 1;
   }
 }

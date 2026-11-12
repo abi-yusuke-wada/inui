@@ -20,6 +20,8 @@
           packages = [
             pkgs.nodejs_24
             pkgs.pnpm
+            pkgs.biome
+            pkgs.actionlint
             pkgs.python312
             pkgs.uv
           ]

@@ -57,10 +57,13 @@ direnvを使わない場合は `nix develop` で開発環境に入ります。
 | `make check` | 開発環境の定義（`nix flake check`）と差分の空白を検証する |
 | `make sandbox-check` | CLIのサンドボックスの前提条件を確認する |
 | `make app-setup` | 固定lockfileの公開npm依存を取得する。利用者の認証設定を参照せず、インストールscriptを実行しない |
-| `make app-dev` | アプリと実NLIをまとめて起動し、ローカルPoCを`127.0.0.1:3000`で利用する |
+| `make app-setup-offline` | 取得済み依存だけでworkspaceのリンクを更新する（通信なし） |
+| `make app-dev` | アプリ（`127.0.0.1:8766`）と実NLI（`127.0.0.1:8765`）をまとめて起動する |
 | `make app-smoke` | 不足しているサーバーを起動し、実NLIを含む19入力のHTTP検証を行う |
 | `make app-run` | アプリだけを起動する。実NLIを別に管理する場合に使う |
 | `make app-check` | コア・API・SQLite・Webの単体テスト、DOM操作テスト、型検査・ビルドを実行する |
+| `make lint` | BiomeでTypeScript・React・CSSを、actionlintでGitHub Actionsの定義を検査する |
+| `make ci` | lint・型検査・ビルド・テストをまとめて実行する。実NLIやAPIキーは不要 |
 | `make core-check` | 独立コアの単体テストだけを通信なしで実行する |
 | `make app-model-check` | キャッシュ済み実NLIで7候補・19入力を検証する（HTTP・外部通信なし） |
 | `make app-probe` | 起動中のPoCを19入力でHTTP検証する。申請の保存はしない |
@@ -86,6 +89,12 @@ Issue #16の分類条件は、固定13入力で正常9/9件・対象外と曖昧
 過去の多言語NLI比較は正常7/9件・異常0/4件でした。今回の改善ではモデルを変更していません。固定13入力を見ながら調整した結果であり、日本語全般の精度を保証するものではありません。質問・応答契約と再現手順は [接続検証の説明](docs/jev-connection-check.md) を参照してください。
 
 ローカルPoCの起動・予定比較・保存・旧形式での操作は[実行手順](docs/poc-local.md)を参照してください。自然言語UIと`/legacy`は同じ業務UI・API・データを使います。ローカルSQLiteによる保存であり、Turso・GitHub認証・AWSへの配置は未実装です。
+
+アプリのコードはルートの`src/`、ブラウザの画面とCSSは`src/web/`、独立したIntent判定は`packages/core/`に置きます。アプリ・画面・実行スクリプトのテストは`tests/`へまとめ、コアのテストは`packages/core/tests/`に置きます。ビルド結果は`dist/`、申請DB・診断結果・依存キャッシュは`.local-poc/`に作られ、どちらもGitの管理対象外です。
+
+GitHub Actionsの[CI](.github/workflows/ci.yml)はPRとmainへのpushで`make ci`を実行します。Nixの固定環境とpnpmの固定lockfileを使い、モデルやクラウド環境は起動しません。lintツールを追加した環境へは`nix develop`で入り直してください。
+
+バックエンドのログは`src/logger.ts`で共通化し、時刻・レベル・イベント・リクエストID・処理時間などを1行JSONで出力します。既定は`info`で、`LOG_LEVEL=debug make app-dev`などで切り替えられます。出力内容と確認方法は[実行手順](docs/poc-local.md#バックエンドのログ)を参照してください。
 
 ### Linuxでのサンドボックスの前提条件
 
