@@ -26,9 +26,12 @@ ADR-0001で、フロントエンドはReact + TypeScript、APIはTypeScript + Ho
 - devShellには必要最小限として次を含める。
   - Node.js 24 LTS（`nodejs_24`）
   - pnpm（パッケージマネージャー）
+  - Biome（TypeScript・React・CSSのlint）とactionlint（GitHub Actions定義の検証。2026-11-11追加）
   - `bubblewrap`・`socat`（Linux・WSLのみ。CLIのサンドボックス実行用）
 - サンドボックスが利用できない場合は起動を止める設定とし、保護なしで実行しない。
 - ビルド・実行・テスト等のコマンドは `Makefile` に集約する。pnpmのscriptsだけに置く案と比べ、Nixの検証やサンドボックスの確認などNode.js以外のコマンドも同じ入口から実行でき、READMEや開発支援CLIへの案内を `make <ターゲット>` に統一できる。GNU MakeはdevShell（`mkShell` の標準環境）に含まれ、追加費用はない。
+- 2026-11-11、利用者のCI・lint整備の依頼を受け、`make lint`と`make ci`を追加した。Biomeとactionlintは`flake.lock`で固定されたnixpkgsから提供する。ESLintと複数のプラグインを追加する案と比べ、JS／TS／TSX／CSSを同じツールで検査でき、npmの依存や設定を増やさずに済むためBiomeを採用した。今回はlintだけを有効にし、自動整形とimport並べ替えは行わない。テンプレート文字列への統一も対象外とし、書式変更だけの差分を増やさない。ライセンス費用はなく、ツール取得時の通信・ディスクは必要。
+- GitHub ActionsはPRとmainへのpushで1ジョブの`make ci`を実行する。ローカルと同じNix環境を使い、公開npm依存を固定lockfileから取得する。ビルド・型検査・テスト・lintまでとし、実モデルの取得・起動やデプロイは行わない。Actionsの利用枠・料金はリポジトリと組織の契約に依存するため、無料と確定しない。
 
 ## 影響
 

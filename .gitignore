@@ -17,3 +17,9 @@ CLAUDE.local.md
 
 # ローカルNLIのPython環境・パッケージとモデルのキャッシュ
 .local-jev/
+
+# PoCの依存・ビルド成果物とローカル検証データ
+node_modules/
+dist/
+.local-poc/
+*.tsbuildinfo
