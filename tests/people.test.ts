@@ -64,6 +64,15 @@ test('敬称なしの未知名を既知姓・全名の部分一致から選択�
   assert.deepEqual(selectPeople('山田太郎と佐藤花子と田中を比較'), {
     selectedIds: ['person-yamada-taro', 'person-sato-hanako'], ambiguous: [], unknownNames: ['田中'],
   });
+  // 「を比べたい」「を見比べたい」も同じ境界として扱う。
+  for (const text of ['山田太郎と佐藤花子と田中を比べたい', '山田太郎と佐藤花子と田中を見比べたい']) {
+    assert.deepEqual(selectPeople(text), {
+      selectedIds: ['person-yamada-taro', 'person-sato-hanako'], ambiguous: [], unknownNames: ['田中'],
+    });
+  }
+  assert.deepEqual(selectPeople('山田太郎と佐藤花子を比べたい'), {
+    selectedIds: ['person-yamada-taro', 'person-sato-hanako'], ambiguous: [], unknownNames: [],
+  });
   assert.deepEqual(selectPeople('田中と鈴木一郎の予定'), {
     selectedIds: ['person-suzuki-ichiro'], ambiguous: [], unknownNames: ['田中'],
   });

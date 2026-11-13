@@ -53,7 +53,7 @@ export function selectPeople(text: string): PeopleSelection {
   const beforeName = (index: number): boolean => index === 0
     || /[\s\p{P}\p{S}とやの]/u.test(remaining.charAt(index - 1));
   const afterName = (index: number): boolean =>
-    /^(?:$|[\s\p{P}\p{S}]|[とや](?=[\s\p{Script=Han}\p{Script=Katakana}A-Za-z])|の(?:予定|スケジュール|空き|都合)|を比較)/u.test(remaining.slice(index));
+    /^(?:$|[\s\p{P}\p{S}]|[とや](?=[\s\p{Script=Han}\p{Script=Katakana}A-Za-z])|の(?:予定|スケジュール|空き|都合)|を(?:比較|比べ|見比べ))/u.test(remaining.slice(index));
   for (const person of PEOPLE) {
     remaining = remaining.replaceAll(person.name, (match, index: number) => {
       if (!beforeName(index) || !afterName(index + match.length)) return match;
@@ -68,7 +68,7 @@ export function selectPeople(text: string): PeopleSelection {
       else {
         // 敬称なしの未知名も、既知の姓だけを切り出して選ばない。
         const candidate = remaining.slice(match.index).match(
-          /^(?:(?![とや](?=[\s\p{Script=Han}\p{Script=Katakana}A-Za-z])|の(?:予定|スケジュール|空き|都合)|を比較)[\p{L}々ー])+/u,
+          /^(?:(?![とや](?=[\s\p{Script=Han}\p{Script=Katakana}A-Za-z])|の(?:予定|スケジュール|空き|都合)|を(?:比較|比べ|見比べ))[\p{L}々ー])+/u,
         )?.[0];
         if (candidate) unknown.add(candidate);
       }
@@ -76,7 +76,7 @@ export function selectPeople(text: string): PeopleSelection {
   }
   // 「山田太郎と佐藤花子と田中を比較」のように敬称なしで並べた中の未知名も、確認の対象に残す。
   // 既知の名前を1つ以上含む列挙だけを対象にし、「複数人の予定」等の一般語は未知名にしない。
-  const enumeration = /(?:[\p{Script=Han}\p{Script=Katakana}A-Za-z々ー]+[とや])+[\p{Script=Han}\p{Script=Katakana}A-Za-z々ー]+(?=を比較|の(?:予定|スケジュール|空き|都合)|$)/gu;
+  const enumeration = /(?:[\p{Script=Han}\p{Script=Katakana}A-Za-z々ー]+[とや])+[\p{Script=Han}\p{Script=Katakana}A-Za-z々ー]+(?=を(?:比較|比べ|見比べ)|の(?:予定|スケジュール|空き|都合)|$)/gu;
   for (const [match] of normalized.matchAll(enumeration)) {
     const parts = match.split(/[とや]/u).filter(Boolean);
     if (!parts.some(knownName)) continue;
