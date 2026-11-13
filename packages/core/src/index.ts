@@ -207,7 +207,11 @@ export function createIntentRouter({
       } catch {
         throw new DecisionError('unavailable');
       }
-      if (!response.ok) throw new DecisionError('unavailable');
+      if (!response.ok) {
+        // 本文を読まないため、通信を中止して接続を解放する（再試行で接続が残り続けないようにする）。
+        controller.abort();
+        throw new DecisionError('unavailable');
+      }
       let body: unknown;
       try {
         body = await response.json();

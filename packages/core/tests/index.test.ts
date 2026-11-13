@@ -220,15 +220,21 @@ test('既定接続先を使い、上流例外の詳細を漏らさない', async
   await assert.rejects(router('有給を取りたい'), isDecisionError('unavailable'));
 });
 
-test('HTTPエラーは本文を読まず、固定エラーへ変換する', async () => {
+test('HTTPエラーは本文を読まず、通信を中止して固定エラーへ変換する', async () => {
   let bodyRead = false;
-  const router = createIntentRouter({ fetchImpl: fakeFetch(async () => ({
-    ok: false,
-    status: 500,
-    json: async () => { bodyRead = true; throw new Error('upstream-private-detail'); },
-  }) as unknown as Response) });
+  let signal: AbortSignal | undefined;
+  const router = createIntentRouter({ fetchImpl: fakeFetch(async (_input, init) => {
+    signal = init?.signal ?? undefined;
+    return {
+      ok: false,
+      status: 500,
+      json: async () => { bodyRead = true; throw new Error('upstream-private-detail'); },
+    } as unknown as Response;
+  }) });
   await assert.rejects(router('有給を取りたい'), isDecisionError('unavailable'));
   assert.equal(bodyRead, false);
+  // 本文を読まない応答の接続を解放する。
+  assert.equal(signal?.aborted, true);
 });
 
 test('JSON読取失敗の詳細を漏らさない', async () => {
