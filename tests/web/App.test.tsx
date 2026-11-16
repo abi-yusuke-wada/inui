@@ -313,6 +313,13 @@ test('PoCの利用経路をJSDOMで操作する（実ブラウザではない）
         await react.act(async () => { window.dispatchEvent(new dom.window.Event('inui-test-draw')); });
         await waitFor(() => document.body.textContent?.includes('未保存の変更があります') === true, '未保存の変更を表示しませんでした。');
         assert.deepEqual(saved, []);
+        // 未保存の変更があるときは、画面を閉じる前に確認し、キャンセルすれば残す。
+        const confirms: string[] = [];
+        dom.window.confirm = (message?: string) => { confirms.push(String(message)); return false; };
+        await click('← メニューに戻る');
+        assert.equal(confirms.length, 1);
+        assert.match(confirms[0] ?? '', /保存していない変更があります/);
+        assert.ok(document.querySelector('[data-testid="excalidraw-stub"]'));
         await click('保存');
         await waitFor(() => document.body.textContent?.includes('保存しました') === true, '保存できませんでした。');
         assert.equal(saved.length, 1);
@@ -321,33 +328,45 @@ test('PoCの利用経路をJSDOMで操作する（実ブラウザではない）
         assert.deepEqual(body.scene.elements.map((element) => element.type), ['freedraw']);
         assert.deepEqual(body.scene.appState, { viewBackgroundColor: '#ffffff' });
         assert.match(document.body.textContent ?? '', /保存済み/);
+        // 保存した後は確認なしでメニューへ戻れる。
+        await click('← メニューに戻る');
+        assert.equal(confirms.length, 1);
+        await waitFor(() => button('文書') !== undefined, 'メニューへ戻れませんでした。');
       });
     });
 
-    await suite.test('案内の表示中に再送信すると、前の案内を消してから新しい結果を表示する', async () => {
-      let resolveSecond: ((value: Response) => void) | undefined;
+    await suite.test('再送信すると、前に表示した案内や業務画面を消してから新しい結果を表示する', async () => {
+      const pending: ((value: Response) => void)[] = [];
       let calls = 0;
       const fetchImpl: typeof fetch = async (input) => {
         const url = new URL(String(input), 'http://localhost');
+        if (url.pathname === '/api/tasks/local') return response({ tasks: [] });
+        if (url.pathname === '/api/tasks/github' || url.pathname === '/api/tasks/backlog') return response({ configured: false });
         if (url.pathname !== '/api/intent') throw new Error('想定外のAPI: ' + url.pathname);
         calls++;
         if (calls === 1) return response({ kind: 'notice', intent: 'clarify', message: '目的を特定できませんでした。' });
-        return await new Promise<Response>((resolve) => { resolveSecond = resolve; });
+        return await new Promise<Response>((resolve) => { pending.push(resolve); });
       };
       await withApp('/', fetchImpl, async () => {
         await change('したいこと', '開いて');
         await click('画面を開く');
         await waitFor(() => heading('もう少し詳しく教えてください'), '曖昧な入力の案内を表示しませんでした。');
-        await change('したいこと', 'お腹がすいた');
+        await change('したいこと', '自分のタスクを確認したい');
         await click('画面を開く');
         // 結果を待つあいだも、前の案内は表示しない。見出しは送信後の表示のまま。
         assert.equal(heading('もう少し詳しく教えてください'), false);
         assert.equal(heading('ほかに、したいことはありますか？'), true);
         assert.match(document.body.textContent ?? '', /入力を確認しています/);
-        assert.ok(resolveSecond);
-        await react.act(async () => resolveSecond?.(response({ kind: 'notice', intent: 'unsupported_feature', message: '対象外です。' })));
+        await react.act(async () => pending.shift()?.(response({ kind: 'screen', intent: 'task_board', ui: 'task_board' })));
+        await waitFor(() => heading('自分のタスク'), 'タスク画面を表示しませんでした。');
+        // 業務画面を開いた後の再送信でも、前の画面は送信した時点で消す。
+        await change('したいこと', 'お腹がすいた');
+        await click('画面を開く');
+        assert.equal(heading('自分のタスク'), false);
+        assert.equal(heading('タスク'), false);
+        await react.act(async () => pending.shift()?.(response({ kind: 'notice', intent: 'unsupported_feature', message: '対象外です。' })));
         await waitFor(() => heading('この機能はまだ利用できません'), '新しい案内を表示しませんでした。');
-        assert.equal(calls, 2);
+        assert.equal(calls, 3);
       });
     });
 

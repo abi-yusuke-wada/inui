@@ -1,4 +1,4 @@
-import { Component, lazy, Suspense, useEffect, useRef, useState } from 'react';
+import { Component, lazy, Suspense, useCallback, useEffect, useRef, useState } from 'react';
 import type { ReactNode } from 'react';
 import type { PeopleSelection } from '@inui/feature-schedule/client';
 import { Feedback, Loading, useLatestRequest } from '@inui/feature-kit/react';
@@ -56,6 +56,16 @@ export function App() {
   const resultRegion = useRef<HTMLElement>(null);
   const instance = useRef(0);
   const routeRequest = useLatestRequest();
+  // 開いている画面に未保存の変更があるか（ホワイトボード）。画面を消す前に確認する。
+  const unsaved = useRef(false);
+  const reportUnsaved = useCallback((value: boolean) => { unsaved.current = value; }, []);
+
+  function confirmLeave(): boolean {
+    if (!unsaved.current) return true;
+    if (!window.confirm('保存していない変更があります。破棄して続けますか？')) return false;
+    unsaved.current = false;
+    return true;
+  }
 
   useEffect(() => {
     if (view.kind !== 'empty') resultRegion.current?.focus();
@@ -77,13 +87,13 @@ export function App() {
 
   async function route() {
     const submitted = text.trim();
-    if (!submitted || submitted.length > 2000) return;
+    if (!submitted || submitted.length > 2000 || !confirmLeave()) return;
     const request = routeRequest.begin();
     setAsked(true);
     setRouting(true);
     setRoutingError('');
-    // 前の案内は、新しい入力の結果と取り違えないよう、送信した時点で消す。開いている業務画面はそのまま残す。
-    setView((current) => current.kind === 'notice' ? { kind: 'empty' } : current);
+    // 前に表示した画面や案内は、新しい入力の結果と取り違えないよう、送信した時点で消す。
+    setView({ kind: 'empty' });
     try {
       const decision = parseDecision(await fetchJson('/api/intent', {
         method: 'POST', body: { text: submitted }, signal: request.signal,
@@ -99,6 +109,7 @@ export function App() {
   }
 
   function resetMenu() {
+    if (!confirmLeave()) return;
     routeRequest.cancel();
     setView({ kind: 'empty' });
     setCategory(null);
@@ -181,7 +192,7 @@ export function App() {
           <Suspense fallback={<Loading message="画面を読み込んでいます…" />}>
             {view.screen === 'markdown_view' && <MarkdownViewer />}
             {view.screen === 'task_board' && <TaskBoard />}
-            {view.screen === 'whiteboard' && <Whiteboard />}
+            {view.screen === 'whiteboard' && <Whiteboard onUnsavedChange={reportUnsaved} />}
             {view.screen === 'schedule_compare' && <Schedules people={view.people} />}
           </Suspense>
         </ScreenBoundary>}

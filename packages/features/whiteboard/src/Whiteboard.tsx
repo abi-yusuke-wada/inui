@@ -38,7 +38,8 @@ function currentScene(api: ExcalidrawImperativeAPI): BoardScene {
   return { elements: [...elements], files, appState: { viewBackgroundColor: api.getAppState().viewBackgroundColor } };
 }
 
-export default function Whiteboard() {
+/** onUnsavedChangeで、未保存の変更の有無を入口へ知らせる（再検索などで画面を閉じる前の確認に使う）。 */
+export default function Whiteboard({ onUnsavedChange }: { onUnsavedChange?: (unsaved: boolean) => void } = {}) {
   const [boards, setBoards] = useState<BoardSummary[]>();
   const [board, setBoard] = useState<Board>();
   const [name, setName] = useState('');
@@ -71,6 +72,11 @@ export default function Whiteboard() {
     }
   }, [listRequests]);
   useEffect(() => { void loadList(); }, [loadList]);
+
+  useEffect(() => {
+    onUnsavedChange?.(dirty);
+  }, [dirty, onUnsavedChange]);
+  useEffect(() => () => onUnsavedChange?.(false), [onUnsavedChange]);
 
   // 未保存の変更があるときは、画面を閉じる前に確認する。
   useEffect(() => {
