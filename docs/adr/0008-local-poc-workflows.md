@@ -1,6 +1,7 @@
 # ADR-0008: 4つの業務をローカルPoCで実装する
 
 - 状態: 決定（2026-11-10）。ローカル開発・検証の構成を決める。部署展開の構成・費用は未決定。
+- 更新: 2026-11-16、[ADR-0009](0009-feature-packages-and-subject-change.md)で申請系の3つの業務（画面・API・Intent・保存）を削除し、題材を文書・タスク・予定へ入れ替えた。予定比較は`packages/features/schedule`へ移した。ローカルで動かす構成（Node・SQLite・ローカルNLI・ポート・ログ・CI）は本ADRの決定を引き継ぐ。
 - 関連: [Issue #4](https://github.com/abi-yusuke-wada/inui/issues/4)、[MVP](../../MVP.md)、[ADR-0001](0001-mvp-hosting-and-storage.md)、[ADR-0003](0003-separate-core-from-poc-app.md)、[ADR-0006](0006-local-model-for-mvp.md)、[実行手順](../poc-local.md)
 
 ## 背景
