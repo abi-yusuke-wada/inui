@@ -83,6 +83,7 @@
     ],
     "ask": [
       "Bash(gh *)",
+      "Bash(git config *)",
       "Bash(git -c * push*)",
       "Bash(git -C * push*)",
       "WebFetch"
