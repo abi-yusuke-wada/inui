@@ -50,6 +50,8 @@ export function App() {
   const [routing, setRouting] = useState(false);
   const [routingError, setRoutingError] = useState('');
   const [category, setCategory] = useState<keyof typeof MENU | null>(null);
+  // 一度でも送信したら見出しを「ほかに…」へ切り替え、案内を消したときにレイアウトが戻らないようにする。
+  const [asked, setAsked] = useState(false);
   const input = useRef<HTMLTextAreaElement>(null);
   const resultRegion = useRef<HTMLElement>(null);
   const instance = useRef(0);
@@ -77,8 +79,11 @@ export function App() {
     const submitted = text.trim();
     if (!submitted || submitted.length > 2000) return;
     const request = routeRequest.begin();
+    setAsked(true);
     setRouting(true);
     setRoutingError('');
+    // 前の案内は、新しい入力の結果と取り違えないよう、送信した時点で消す。開いている業務画面はそのまま残す。
+    setView((current) => current.kind === 'notice' ? { kind: 'empty' } : current);
     try {
       const decision = parseDecision(await fetchJson('/api/intent', {
         method: 'POST', body: { text: submitted }, signal: request.signal,
@@ -110,9 +115,9 @@ export function App() {
     </header>
 
     <main id="main-content">
-      {!legacy && <section className={'composer ' + (view.kind === 'empty' ? 'composer-intro' : '')} aria-label="用件を入力">
+      {!legacy && <section className={'composer ' + (view.kind === 'empty' && !asked ? 'composer-intro' : '')} aria-label="用件を入力">
         <p className="eyebrow">YOUR INTENT, YOUR UI</p>
-        <h1>{view.kind === 'empty' ? '今日は、何をしますか？' : 'ほかに、したいことはありますか？'}</h1>
+        <h1>{view.kind === 'empty' && !asked ? '今日は、何をしますか？' : 'ほかに、したいことはありますか？'}</h1>
         <p className="intro-copy">用件をひとことで。必要な画面を開きます。</p>
         <form className="intent-form" onSubmit={(event) => { event.preventDefault(); void route(); }}>
           <label className="visually-hidden" htmlFor="intent-text">したいこと</label>

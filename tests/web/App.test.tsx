@@ -324,6 +324,33 @@ test('PoCの利用経路をJSDOMで操作する（実ブラウザではない）
       });
     });
 
+    await suite.test('案内の表示中に再送信すると、前の案内を消してから新しい結果を表示する', async () => {
+      let resolveSecond: ((value: Response) => void) | undefined;
+      let calls = 0;
+      const fetchImpl: typeof fetch = async (input) => {
+        const url = new URL(String(input), 'http://localhost');
+        if (url.pathname !== '/api/intent') throw new Error('想定外のAPI: ' + url.pathname);
+        calls++;
+        if (calls === 1) return response({ kind: 'notice', intent: 'clarify', message: '目的を特定できませんでした。' });
+        return await new Promise<Response>((resolve) => { resolveSecond = resolve; });
+      };
+      await withApp('/', fetchImpl, async () => {
+        await change('したいこと', '開いて');
+        await click('画面を開く');
+        await waitFor(() => heading('もう少し詳しく教えてください'), '曖昧な入力の案内を表示しませんでした。');
+        await change('したいこと', 'お腹がすいた');
+        await click('画面を開く');
+        // 結果を待つあいだも、前の案内は表示しない。見出しは送信後の表示のまま。
+        assert.equal(heading('もう少し詳しく教えてください'), false);
+        assert.equal(heading('ほかに、したいことはありますか？'), true);
+        assert.match(document.body.textContent ?? '', /入力を確認しています/);
+        assert.ok(resolveSecond);
+        await react.act(async () => resolveSecond?.(response({ kind: 'notice', intent: 'unsupported_feature', message: '対象外です。' })));
+        await waitFor(() => heading('この機能はまだ利用できません'), '新しい案内を表示しませんでした。');
+        assert.equal(calls, 2);
+      });
+    });
+
     await suite.test('旧形式のメニューで対象外の機能を選ぶと、NLIを呼ばずに案内する', async () => {
       let calls = 0;
       await withApp('/legacy', async () => { calls++; throw new Error('呼びません'); }, async () => {
