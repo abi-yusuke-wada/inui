@@ -84,6 +84,12 @@ test('敬称なしの未知名を既知姓・全名の部分一致から選択�
   }
   // 日付などの前置きがあっても、列挙の未知名は残す。
   assert.deepEqual(selectPeople('明日の山田太郎と田中の予定').unknownNames, ['田中']);
+  // 文頭の「今日は」等の前置きを名前に含めない。
+  for (const text of ['今日は山田太郎さんと佐藤花子さんの予定を比較したい', '明日も山田太郎さんと佐藤花子さんの予定']) {
+    assert.deepEqual(selectPeople(text), {
+      selectedIds: ['person-yamada-taro', 'person-sato-hanako'], ambiguous: [], unknownNames: [],
+    }, text);
+  }
   // 「空き」「都合」を未知名として扱わない。
   assert.deepEqual(selectPeople('鈴木一郎さんの空きと佐藤花子さんの予定'), {
     selectedIds: ['person-sato-hanako', 'person-suzuki-ichiro'], ambiguous: [], unknownNames: [],

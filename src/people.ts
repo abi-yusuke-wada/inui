@@ -39,7 +39,8 @@ export function selectPeople(text: string): PeopleSelection {
       let name = offset > 0
         ? raw.replace(/^の(?:予定|スケジュール|空き|都合)(?:と|や)/u, '').replace(/^[とや]+/u, '')
         : raw;
-      name = name.replace(/^.*の(?=[\p{Script=Han}\p{Script=Katakana}A-Za-z])/u, '');
+      // 「今日は山田太郎さん」の「今日は」のような前置きを、助詞までまとめて名前から外す。
+      name = name.replace(/^.*(?:の|は|が|も|で|に|を)(?=[\p{Script=Han}\p{Script=Katakana}A-Za-z])/u, '');
       const parts = name.split(/[とや]/u).filter(Boolean);
       // 「山田太郎と田中さん」のような列挙だけを分ける。不確かな仮名名は一名として残す。
       const separate = parts.length > 1 && parts.some(knownName)

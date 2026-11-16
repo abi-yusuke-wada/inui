@@ -293,3 +293,14 @@ test('不正引数では通信せず、安全な失敗reportと終了1を返す'
     assert.deepEqual(output.status, []);
   }
 });
+
+test('HTTPエラーで本文を読まない応答も、通信を中止して解放する', async () => {
+  const signals = [];
+  const report = await probeHttp({ port: 8766, fetchImpl: async (_url, init) => {
+    signals.push(init.signal);
+    return new Response(null, { status: 503 });
+  } });
+  assert.equal(report.results.length, 19);
+  assert.equal(signals.length, 19);
+  assert.ok(signals.every((signal) => signal.aborted));
+});

@@ -195,7 +195,11 @@ export async function probeHttp({ fetchImpl = globalThis.fetch, port } = {}) {
         matched: false, intent_matched: false, people_matched: sample.expectedPeople === null ? null : false,
         elapsed_ms: Math.round(performance.now() - started), error: error instanceof ProbeError ? error.code : 'request_failed',
         http_status: error instanceof ProbeError && Number.isInteger(error.httpStatus) ? error.httpStatus : null });
-    } finally { clearTimeout(timer); }
+    } finally {
+      clearTimeout(timer);
+      // 本文を読まずに終えた応答（HTTPエラー等）の通信も解放する。
+      controller.abort();
+    }
   }
   return report('http-local-poc-api', {
     endpoint: `${origin}/api/intent`, expected_model: LOCAL_MODEL, requests_sha256: requestsDigest(),
