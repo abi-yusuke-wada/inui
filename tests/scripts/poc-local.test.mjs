@@ -249,3 +249,40 @@ test('不正なポートはサービス確認や起動の前に安全なエラ�
     });
   }
 });
+
+test('停止処理中に2回目のシグナルが届いても、リスナーを保持して自分の子を最後まで停止する', async () => {
+  const baseline = Object.fromEntries(['SIGINT', 'SIGTERM', 'SIGHUP'].map((name) => [name, process.listenerCount(name)]));
+  const checks = new Map();
+  const duringStop = [];
+  const h = harness({
+    installSignals: true,
+    sleep: async () => {},
+    check: async (service) => {
+      const count = (checks.get(service) ?? 0) + 1;
+      checks.set(service, count);
+      return count > 1;
+    },
+    launch: (service) => {
+      h.launched.push(service);
+      return {
+        exited: new Promise(() => {}),
+        stop: async () => {
+          // Ctrl+Cの2回目を模す。リスナーが残っていれば既定動作（即終了）にならない。
+          // テスト実行器自身のSIGINT処理を動かさないよう、このスクリプトのリスナーだけを呼ぶ。
+          duringStop.push(process.listenerCount('SIGINT') - baseline.SIGINT);
+          for (const listener of ownSigint()) listener('SIGINT');
+          h.stopped.push(service);
+        },
+      };
+    },
+  });
+  // onceの包みも含めて呼び、実際のシグナル受信と同じく1回限りの登録なら外れるようにする。
+  const ownSigint = () => process.rawListeners('SIGINT').slice(baseline.SIGINT);
+  const running = runLocal('dev', h.options);
+  setTimeout(() => { for (const listener of ownSigint()) listener('SIGINT'); }, 10);
+  assert.equal(await running, 130);
+  assert.deepEqual(h.launched, ['local-jev', 'app']);
+  assert.deepEqual(h.stopped, ['local-jev', 'app']);
+  assert.deepEqual(duringStop, [1, 1]);
+  for (const name of ['SIGINT', 'SIGTERM', 'SIGHUP']) assert.equal(process.listenerCount(name), baseline[name]);
+});

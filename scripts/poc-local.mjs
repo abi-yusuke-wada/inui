@@ -115,7 +115,9 @@ export async function runLocal(mode, {
   const race = (operation) => Promise.race([operation, stopRequested, ...owned.map((child) => child.exited)]);
   // ターミナルを閉じたとき（SIGHUP）も、起動した子プロセスを片付ける。
   const SIGNALS = ['SIGINT', 'SIGTERM', 'SIGHUP'];
-  if (installSignals) for (const name of SIGNALS) process.once(name, stopped);
+  // 停止処理中にCtrl+Cが再度届いても既定動作で即終了しないよう、finallyで解除するまで保持する。
+  // stoppedは何度呼んでも安全（abortは冪等で、2回目以降のrejectは無視される）。
+  if (installSignals) for (const name of SIGNALS) process.on(name, stopped);
   let code = 0;
   try {
     for (const service of SERVICES) {
