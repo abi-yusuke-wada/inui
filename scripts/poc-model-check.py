@@ -1,4 +1,4 @@
-"""現コアの19入力を固定revisionの実NLIで評価する。HTTP経路は実行しない。"""
+"""現コアの23入力を固定revisionの実NLIで評価する。HTTP経路は実行しない。"""
 
 import hashlib
 import importlib.metadata
@@ -15,6 +15,10 @@ MODEL = "nli-deberta-large"
 REPOSITORY = "MoritzLaurer/deberta-v3-large-zeroshot-v2.0"
 REVISION = "cf44676c28ba7312e5c5f8f8d2c22b3e0c9cdae2"
 ROOT = Path(__file__).resolve().parent.parent
+# MVP.mdの入力例の件数（画面16件・案内7件）と、コアの候補数。
+CASE_COUNT = 23
+SCREEN_COUNT = 16
+CANDIDATE_COUNT = 7
 FILES = (
     "config.json", "model.safetensors", "added_tokens.json", "special_tokens_map.json",
     "spm.model", "tokenizer.json", "tokenizer_config.json",
@@ -28,15 +32,15 @@ def source_requests():
         cwd=ROOT, check=True, capture_output=True, text=True, timeout=30,
     )
     samples = json.loads(source.stdout)
-    screens = {"markdown_view", "task_board", "schedule_compare"}
-    if (not isinstance(samples, list) or len(samples) != 19
-            or len({sample["id"] for sample in samples}) != 19
-            or sum(sample["expected"] in screens for sample in samples) != 12
+    screens = {"markdown_view", "task_board", "whiteboard", "schedule_compare"}
+    if (not isinstance(samples, list) or len(samples) != CASE_COUNT
+            or len({sample["id"] for sample in samples}) != CASE_COUNT
+            or sum(sample["expected"] in screens for sample in samples) != SCREEN_COUNT
             or sum(sample["expectedPeople"] is not None for sample in samples) != 4
             or any(sample["request"]["model"] != MODEL
                    or sample["request"]["state"] != sample["text"]
                    or set(sample["request"]["questions"]) != {"intent"}
-                   or len(sample["request"]["questions"]["intent"]["criteria"]) != 6
+                   or len(sample["request"]["questions"]["intent"]["criteria"]) != CANDIDATE_COUNT
                    for sample in samples)):
         raise ValueError("fixed_cases")
     return samples, hashlib.sha256(source.stdout.strip().encode("utf-8")).hexdigest()
@@ -106,7 +110,7 @@ def run():
             "type": "result", "sampleID": sample["id"], "rawResponse": response,
             "elapsed_ms": elapsed, "truncated": truncated,
         })
-        print(f"poc-model-check: {index}/19 {sample['id']} completed", file=sys.stderr, flush=True)
+        print(f"poc-model-check: {index}/{len(samples)} {sample['id']} completed", file=sys.stderr, flush=True)
         if truncated is not False:
             raise ValueError("truncated_or_unknown")
     # ru_maxrssはLinuxではKiB、Darwinではbytes。他OSでは値の単位を推測しない。
@@ -114,7 +118,7 @@ def run():
         "value": resource.getrusage(resource.RUSAGE_SELF).ru_maxrss,
         "unit": "KiB" if sys.platform.startswith("linux") else "bytes" if sys.platform == "darwin" else "platform-native",
         "platform": sys.platform,
-        "scope": "Python process through 19 Engine calls; not a deployed Lambda measurement",
+        "scope": f"Python process through {len(samples)} Engine calls; not a deployed Lambda measurement",
     }
     print(json.dumps({"type": "metadata", "metadata": metadata}, ensure_ascii=False, allow_nan=False), flush=True)
     for record in records:

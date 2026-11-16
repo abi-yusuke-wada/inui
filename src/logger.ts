@@ -32,18 +32,21 @@ const MESSAGES: Record<LogEvent, string> = {
 const METHODS = new Set(['GET', 'HEAD', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS', 'CONNECT', 'TRACE']);
 const ROUTES = new Set([
   '/', '/legacy', '/app.js', '/app.css', '/assets/*', '/api/health', '/api/intent', '/api/employees', '/api/schedules',
-  '/api/tasks/local', '/api/tasks/local/:id', '/api/tasks/github', '/api/tasks/backlog', 'other',
+  '/api/tasks/local', '/api/tasks/local/:id', '/api/tasks/github', '/api/tasks/backlog',
+  '/api/whiteboards', '/api/whiteboards/:id', '/excalidraw/*', 'other',
 ]);
 // IDやファイル名を含む経路は、値を落とした固定の経路名へまとめる。
 const PATTERNS: [RegExp, string][] = [
   [/^\/api\/tasks\/local\/[^/]+$/, '/api/tasks/local/:id'],
   [/^\/assets\/[^/]+$/, '/assets/*'],
+  [/^\/api\/whiteboards\/[^/]+$/, '/api/whiteboards/:id'],
+  [/^\/excalidraw\//, '/excalidraw/*'],
 ];
 const ERROR_CODES = new Set([
   'invalid_input', 'invalid_content_type', 'body_too_large', 'invalid_host', 'invalid_origin',
   'unavailable', 'invalid_response', 'timeout', 'not_found', 'internal_error',
   'startup_failed', 'listen_failed', 'shutdown_failed', 'reset_failed',
-  'task_not_found', 'invalid_config', 'upstream_auth', 'upstream_unavailable', 'upstream_invalid', 'upstream_timeout',
+  'task_not_found', 'board_not_found', 'invalid_config', 'upstream_auth', 'upstream_unavailable', 'upstream_invalid', 'upstream_timeout',
 ]);
 const FIELD_CHECKS: Record<keyof LogFields, (value: unknown) => boolean> = {
   request_id: (value) => typeof value === 'string'

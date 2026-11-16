@@ -1,8 +1,8 @@
 # ローカルPoCの実行と確認
 
-Markdownの表示・タスク・予定比較を、開発機で実NLIと接続して確認する手順。設計判断と部署展開との区別は[ADR-0008](adr/0008-local-poc-workflows.md)と[ADR-0009](adr/0009-feature-packages-and-subject-change.md)、対象と完了条件は[MVP](../MVP.md)を参照する。
+Markdownの表示・タスク・ホワイトボード・予定比較を、開発機で実NLIと接続して確認する手順。設計判断と部署展開との区別は[ADR-0008](adr/0008-local-poc-workflows.md)と[ADR-0009](adr/0009-feature-packages-and-subject-change.md)、対象と完了条件は[MVP](../MVP.md)を参照する。
 
-入口（BFF・自然言語UI）はルートの`src/`、業務機能は`packages/features/`（`markdown`・`tasks`・`schedule`と共通部品の`kit`）、独立したIntent判定は`packages/core/`に置き、ビルド結果は`dist/`に出力する。業務画面は遅延読み込みのチャンクとして`dist/public/assets/`へ分かれる。依存定義を変えたブランチへ切り替えたときは、devShellで`make app-setup-offline`（取得済みでない依存があれば`make app-setup`）を実行して依存リンクを更新する。起動中のアプリには構成変更が反映されないため、Ctrl+Cで停止してから`make app-dev`で起動し直す。
+入口（BFF・自然言語UI）はルートの`src/`、業務機能は`packages/features/`（`markdown`・`tasks`・`whiteboard`・`schedule`と共通部品の`kit`）、独立したIntent判定は`packages/core/`に置き、ビルド結果は`dist/`に出力する。業務画面は遅延読み込みのチャンクとして`dist/public/assets/`へ分かれる。依存定義を変えたブランチへ切り替えたときは、devShellで`make app-setup-offline`（取得済みでない依存があれば`make app-setup`）を実行して依存リンクを更新する。起動中のアプリには構成変更が反映されないため、Ctrl+Cで停止してから`make app-dev`で起動し直す。
 
 テストは実装から分け、ルートの`tests/`に入口のAPI・ログ、`tests/web/`に画面、`tests/scripts/`に実行・検証スクリプトのテストを置く。コアと業務機能のテストは、それぞれのパッケージの`tests/`で管理する。型検査・lintにはテストも含め、製品のビルド対象は実装だけとする。
 
@@ -14,12 +14,12 @@ worktreeで作業する場合も、pnpmのストア・メタデータキャッ�
 
 | 内容 | 用途 |
 | --- | --- |
-| `app.sqlite` | タスク画面で追加した自分のタスク（以前の申請データのテーブルが残っていても読み書きしない） |
+| `app.sqlite` | タスク画面で追加した自分のタスクと、保存したホワイトボード（以前の申請データのテーブルが残っていても読み書きしない） |
 | `http-verification.json`など | 分類プローブ・接続診断・Web配信確認の結果 |
 | `pnpm-store/`・`cache/` | 取得済み依存などのキャッシュ（worktreeでは本体の`.local-poc/`のものを使う） |
 | `config/`・`state/` | 利用者の認証設定から分離した依存管理用の作業領域 |
 
-丸ごと削除すると保存済みのタスクも失われる。タスクだけ空に戻す場合は、アプリ停止後に`make app-reset`を使う。
+丸ごと削除すると保存済みのタスク・ボードも失われる。タスクとボードだけ空に戻す場合は、アプリ停止後に`make app-reset`を使う。
 
 ## 準備と起動
 
@@ -89,7 +89,9 @@ make app-dev
 2. 画面を開き直し、さらにCtrl+Cで停止して`make app-dev`で起動し直した後も、完了したタスクが残ることを確認する。
 3. Markdownの表示で、このリポジトリの`docs/adr/0009-feature-packages-and-subject-change.md`などをドロップまたは選択し、目次・表・コードブロックが表示されることを確認する。Mermaidを含む文書（`docs/adr/`の一部やIssueの下書き）では図が描画される。
 
-自然言語の送信や画面の表示だけでは保存しない。ファイルはブラウザ内だけで読み、サーバーへ送らない。
+4. `絵を描きたい`でホワイトボードを開き、名前を入力して「作成」を押す。開いた直後はペンが選ばれているので、ドラッグで線を描ける。図形・文字はツールバーから選ぶ。「保存」を押すと保存され、別のボードを開いてから戻っても描いた内容が残ることを確認する。画像の書き出しは左上のメニューから行う。
+
+自然言語の送信や画面の表示だけでは保存しない。Markdownのファイルはブラウザ内だけで読み、サーバーへ送らない。ホワイトボードのCSS・フォントはアプリが`/excalidraw/`から配信し、外部のCDNから読み込まない。
 
 ## 予定比較の確認
 
@@ -110,13 +112,13 @@ make app-reset
 make app-dev
 ```
 
-`app-reset`は`.local-poc/app.sqlite`の自分のタスクを空に戻す。予定・社員のサンプル、GitHub・Backlogのチケット、`.local-jev`のモデル重みは変更しない。
+`app-reset`は`.local-poc/app.sqlite`の自分のタスクとホワイトボードを空に戻す。予定・社員のサンプル、GitHub・Backlogのチケット、`.local-jev`のモデル重みは変更しない。
 
 型検査・ビルド・コア/API/SQLite/UI操作のテストは`make app-check`、コアの通信契約・失敗処理だけは`make core-check`で確認する。固定応答を注入したテストは実NLI精度の証拠にはしない。
 
 `make lint`でアプリ・コア・検証スクリプトのlintとGitHub Actions定義の検証を行い、`make ci`でlintと`app-check`をまとめて実行する。新たに追加したBiome・actionlintを使うにはdevShellへ入り直す。CIではモデルを起動せず、保存済み応答の再照合と通信を注入したテストを使う。
 
-`make app-model-check`はキャッシュ済みモデルを直接呼び、MVP.mdの19入力（画面12・案内7）を検証する。外部通信やHTTPを使わないため、HTTP経路とは別の記録になる。サーバー2つが起動したら、別のdevShellで`make app-probe`を実行すると、19入力を実際の受付APIへ送って分類と人名選択を照合できる。タスクは保存しない。
+`make app-model-check`はキャッシュ済みモデルを直接呼び、MVP.mdの23入力（画面16・案内7）を検証する。外部通信やHTTPを使わないため、HTTP経路とは別の記録になる。サーバー2つが起動したら、別のdevShellで`make app-probe`を実行すると、23入力を実際の受付APIへ送って分類と人名選択を照合できる。タスクは保存しない。
 
 起動からHTTP検証までを1コマンドで行う場合は、次を使う。検証が終わると、このコマンドが起動したサーバーを停止する。画面を使い続ける場合は`make app-dev`を使う。
 
@@ -126,7 +128,7 @@ nix develop --command make app-smoke
 
 `app-smoke`も既存の正常なサービスは再利用する。別サービス・別モデル・接続権限エラーは上書きせず停止する。手動で分けて管理したい場合だけ、`make jev-local-serve`と`make app-run`を別ターミナルで使う。
 
-2026-11-16、固定revisionの実Engine検証で、文書・タスク・予定の19入力すべて（画面12/12件・案内7/7件・人名選択4/4件）が一致した。最初は「レビュー待ちのプルリクを確認したい」が曖昧入力に分類されて18/19件だったため、タスクの候補説明にレビュー待ちのプルリクエストを明示した（入力・期待値は変更していない）。Engine直接呼び出しで平均約5.0秒・最大13.7秒、モデル読込10.6秒。[保存応答](poc-nli-responses-2026-11-16.jsonl)は`make app-replay-check`で推論・通信なしに再検証できる。申請を題材にしていたときの[保存応答](poc-nli-responses-2026-11-10.jsonl)は履歴であり、現コアでは再生しない。これは新たなHTTP実測や実ブラウザの確認とは区別する。直近のEngine検証結果は`.local-poc/model-verification.json`、HTTPプローブ結果は`.local-poc/http-verification.json`へ保存する。
+2026-11-17、固定revisionの実Engine検証で、文書・タスク・ホワイトボード・予定の23入力すべて（画面16/16件・案内7/7件・人名選択4/4件）が一致した。入力・期待値は変えず、候補説明だけを次のように調整した。最初の19入力では「レビュー待ちのプルリクを確認したい」が曖昧入力に分類されたため、タスクの説明にレビュー待ちのプルリクエストを明示した。ホワイトボードを加えた23入力では「ホワイトボードを開きたい」が曖昧入力に、「開いて」が対象外の機能に分類されたため、ホワイトボードの説明に「開いて」を加え、曖昧入力の説明を「動作だけを述べており、扱う対象を示していない」、対象外の機能の説明を「具体的に名前を挙げたサービス」に改めた。「開いて」（曖昧0.162・ホワイトボード0.153）と「確認したい」（曖昧0.170・タスク0.168）は1位と2位の差が小さく、確信度の低い入力の扱いは[Issue #27](https://github.com/abi-yusuke-wada/inui/issues/27)で検討する。Engine直接呼び出しで平均約5.8秒・最大9.4秒。[保存応答](poc-nli-responses-2026-11-17.jsonl)は`make app-replay-check`で推論・通信なしに再検証できる。申請を題材にしていたときの[保存応答](poc-nli-responses-2026-11-10.jsonl)は履歴であり、現コアでは再生しない。これは新たなHTTP実測や実ブラウザの確認とは区別する。直近のEngine検証結果は`.local-poc/model-verification.json`、HTTPプローブ結果は`.local-poc/http-verification.json`へ保存する。
 
 申請を題材にしていたときは、利用者ホストの[HTTP検証結果](poc-http-results-2026-11-11.json)でも19/19件と人名選択4/4件の一致を確認した。現行の19入力のHTTP検証（`make app-probe`）はまだ行っていない。この結果は当時の既定ポート3000（`http://127.0.0.1:3000`）で取得したもので、現在の既定ポート8766での実測ではない。これはCLIからIntent受付APIへ送った結果であり、ブラウザ・保存・正式な30秒条件の結果とは区別する。
 

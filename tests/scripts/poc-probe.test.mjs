@@ -6,7 +6,7 @@ import { CASES } from '../../scripts/jev-probe.mjs';
 import { POC_CASES, requests, requestsDigest, replay, probeHttp, diagnose, diagnoseWeb, runCli } from '../../scripts/poc-probe.mjs';
 import { listEmployees } from '../../packages/features/schedule/src/people.ts';
 
-const SAVED_FILE = new URL('../../docs/poc-nli-responses-2026-11-16.jsonl', import.meta.url);
+const SAVED_FILE = new URL('../../docs/poc-nli-responses-2026-11-17.jsonl', import.meta.url);
 const savedText = await readFile(SAVED_FILE, 'utf8');
 const savedRecords = savedText.trim().split('\n').map((line) => JSON.parse(line));
 const ORIGIN = 'http://127.0.0.1:8766';
@@ -26,16 +26,16 @@ function capture() {
   return { lines, status, port: 8766, write: (line) => lines.push(line), writeStatus: (line) => status.push(line) };
 }
 
-test('文書・タスク・予定の19入力と人名4期待を通信せず取得し、申請の13入力は履歴に残す', async () => {
+test('文書・タスク・ホワイトボード・予定の23入力と人名4期待を通信せず取得し、申請の13入力は履歴に残す', async () => {
   const current = requests();
-  assert.equal(current.length, 19);
-  assert.equal(new Set(current.map((sample) => sample.id)).size, 19);
+  assert.equal(current.length, 23);
+  assert.equal(new Set(current.map((sample) => sample.id)).size, 23);
   const count = (expected) => current.filter((sample) => sample.expected === expected).length;
-  assert.deepEqual([count('markdown_view'), count('task_board'), count('schedule_compare'),
-    count('unsupported_feature'), count('unsupported_operation'), count('clarify')], [3, 5, 4, 2, 3, 2]);
+  assert.deepEqual([count('markdown_view'), count('task_board'), count('whiteboard'), count('schedule_compare'),
+    count('unsupported_feature'), count('unsupported_operation'), count('clarify')], [4, 5, 3, 4, 2, 3, 2]);
   assert.equal(current.filter((sample) => sample.expectedPeople !== null).length, 4);
   assert.ok(current.every((sample) => sample.request.model === 'nli-deberta-large'
-    && sample.request.state === sample.text && Object.keys(sample.request.questions.intent.criteria).length === 6));
+    && sample.request.state === sample.text && Object.keys(sample.request.questions.intent.criteria).length === 7));
   // 申請を題材にした13入力（Issue #16の記録）は変更せず、現行の検証には使わない。
   assert.equal(CASES.length, 13);
   assert.ok(current.every((row) => !['leave_request', 'expense_request', 'application_status'].includes(row.expected)));
@@ -48,13 +48,13 @@ test('文書・タスク・予定の19入力と人名4期待を通信せず取�
   assert.equal(savedRecords[0].metadata.requests_sha256, requestsDigest());
 });
 
-test('保存した実NLI応答19件を現コアで再生し、正常・異常・人名を独立に集計する', async () => {
+test('保存した実NLI応答23件を現コアで再生し、正常・異常・人名を独立に集計する', async () => {
   const result = replay(savedText);
   assert.equal(result.transport, 'in-process-local-jev-engine');
   assert.equal(result.metadata.http_route_executed, false);
   assert.equal(result.summary.criterion_met, true);
-  assert.equal(result.summary.matched, 19);
-  assert.deepEqual(result.summary.normal, { matched: 12, total: 12 });
+  assert.equal(result.summary.matched, 23);
+  assert.deepEqual(result.summary.normal, { matched: 16, total: 16 });
   assert.deepEqual(result.summary.abnormal, { matched: 7, total: 7 });
   assert.deepEqual(result.summary.people, { matched: 4, total: 4 });
   assert.ok(result.results.every((row) => row.truncated === false));
@@ -91,18 +91,18 @@ test('有効な契約でも誤分類やtruncatedのtrue・不明を合格にし�
     records[1].rawResponse.answers.intent = structuredClone(task.rawResponse.answers.intent);
   }));
   assert.equal(wrong.summary.criterion_met, false);
-  assert.equal(wrong.summary.matched, 18);
+  assert.equal(wrong.summary.matched, 22);
   assert.equal(wrong.results[0].actual, 'task_board');
   assert.equal(wrong.results[0].intent_matched, false);
   for (const truncated of [true, null]) {
     const result = replay(changedReplay((records) => { records[1].truncated = truncated; }));
     assert.equal(result.summary.criterion_met, false);
-    assert.equal(result.summary.matched, 18);
+    assert.equal(result.summary.matched, 22);
     assert.equal(result.results[0].error, 'truncated_or_unknown');
   }
 });
 
-test('HTTP成功の注入では同一OriginのIntent受付へ19回だけPOSTし、業務保存を呼ばない', async () => {
+test('HTTP成功の注入では同一OriginのIntent受付へ23回だけPOSTし、業務保存を呼ばない', async () => {
   let calls = 0;
   const result = await probeHttp({ port: 8766, fetchImpl: async (url, init) => {
     const sample = POC_CASES[calls++];
@@ -118,7 +118,7 @@ test('HTTP成功の注入では同一OriginのIntent受付へ19回だけPOSTし�
         ...(sample.expectedPeople ? { people: sample.expectedPeople } : {}) };
     return Response.json(body);
   } });
-  assert.equal(calls, 19);
+  assert.equal(calls, 23);
   assert.equal(result.summary.criterion_met, true);
   assert.equal(result.transport, 'http-local-poc-api');
   assert.equal(result.metadata.server_configuration_observed, false);
@@ -126,7 +126,7 @@ test('HTTP成功の注入では同一OriginのIntent受付へ19回だけPOSTし�
   assert.equal(result.metadata.runtime, null);
 });
 
-test('HTTP503を19件とstderrへ記録し、上流本文や例外の詳細を出力しない', async () => {
+test('HTTP503を23件とstderrへ記録し、上流本文や例外の詳細を出力しない', async () => {
   const output = capture();
   let calls = 0;
   let bodyReads = 0;
@@ -140,15 +140,15 @@ test('HTTP503を19件とstderrへ記録し、上流本文や例外の詳細を�
     } };
   } });
   assert.equal(rc, 1);
-  assert.equal(calls, 19);
+  assert.equal(calls, 23);
   assert.equal(bodyReads, 0);
   assert.equal(output.lines.length, 1);
   const result = JSON.parse(output.lines[0]);
   assert.equal(result.summary.matched, 0);
-  assert.equal(result.summary.total, 19);
+  assert.equal(result.summary.total, 23);
   assert.ok(result.results.every((row) => row.error === 'http_error' && row.http_status === 503));
-  assert.equal(output.status.length, 20);
-  assert.match(output.status[0], /0\/19/);
+  assert.equal(output.status.length, 24);
+  assert.match(output.status[0], /0\/23/);
   assert.ok(output.status.slice(1).every((line) => line.endsWith('HTTP 503')));
   assert.equal(JSON.stringify(output).includes(PRIVATE_DETAIL), false);
 });
@@ -244,7 +244,7 @@ test('18766をHTTPの送信先・Origin・診断・Web配信確認で共有し�
     assert.equal(init.headers.Origin, origin);
     return new Response(null, { status: 503 });
   } });
-  assert.equal(intentCalls, 19);
+  assert.equal(intentCalls, 23);
   // callback内のassert失敗はrequest_failedとして記録されるため、全件がHTTP 503であることも確認する。
   assert.ok(report.results.every((row) => row.error === 'http_error' && row.http_status === 503));
   assert.equal(report.metadata.endpoint, `${origin}/api/intent`);
@@ -308,7 +308,7 @@ test('HTTPエラーで本文を読まない応答も、通信を中止して解�
     signals.push(init.signal);
     return new Response(null, { status: 503 });
   } });
-  assert.equal(report.results.length, 19);
-  assert.equal(signals.length, 19);
+  assert.equal(report.results.length, 23);
+  assert.equal(signals.length, 23);
   assert.ok(signals.every((signal) => signal.aborted));
 });

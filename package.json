@@ -13,6 +13,7 @@
     "@inui/feature-markdown": "workspace:*",
     "@inui/feature-schedule": "workspace:*",
     "@inui/feature-tasks": "workspace:*",
+    "@inui/feature-whiteboard": "workspace:*",
     "hono": "4.13.17",
     "react": "19.3.1",
     "react-dom": "19.3.1"

@@ -9,7 +9,7 @@ import {
 } from '../src/index.ts';
 
 const wireIntents = [
-  'markdown_view', 'task_board', 'schedule_compare',
+  'markdown_view', 'task_board', 'whiteboard', 'schedule_compare',
   'unsupported_feature', 'unsupported_operation', 'unspecified_request',
 ] as const;
 type WireIntent = typeof wireIntents[number];
@@ -22,8 +22,8 @@ function responseBody(choice: WireIntent = 'task_board') {
       intent: {
         type: 'choice',
         choice: choice as string,
-        confidence: 0.75,
-        probabilities: Object.fromEntries(wireIntents.map((intent) => [intent, intent === choice ? 0.75 : 0.05])),
+        confidence: 0.7,
+        probabilities: Object.fromEntries(wireIntents.map((intent) => [intent, intent === choice ? 0.7 : 0.05])),
       },
     },
     usage: { input_tokens: 12, output_tokens: 1 },
@@ -47,7 +47,7 @@ function fakeFetch(implementation: (input: string | URL | Request, init?: Reques
   return implementation;
 }
 
-test('リクエストは入力の前後空白を除き、固定モデル・6候補だけを送る', () => {
+test('リクエストは入力の前後空白を除き、固定モデル・7候補だけを送る', () => {
   const request = buildLocalRequest(' \n 自分のタスクを確認したい \t ');
   assert.equal(request.model, LOCAL_MODEL);
   assert.equal(request.state, '自分のタスクを確認したい');
@@ -94,7 +94,7 @@ for (const input of ['', ' \n\t ', 'あ'.repeat(2001), null, 123, {}, []]) {
   });
 }
 
-for (const intent of wireIntents.slice(0, 3)) {
+for (const intent of wireIntents.slice(0, 4)) {
   test(`許可した画面に対応付ける: ${intent}`, () => {
     assert.deepEqual(parseLocalResponse(responseBody(intent)), { kind: 'screen', intent, ui: intent });
   });
@@ -117,10 +117,10 @@ for (const [wire, canonical] of [
   });
 }
 
-test('6候補の小数4桁への丸めと最大値の同率を許す', () => {
+test('7候補の小数4桁への丸めと最大値の同率を許す', () => {
   const rounded = responseBody();
-  rounded.answers.intent.confidence = 0.1667;
-  rounded.answers.intent.probabilities = Object.fromEntries(wireIntents.map((intent) => [intent, 0.1667]));
+  rounded.answers.intent.confidence = 0.1429;
+  rounded.answers.intent.probabilities = Object.fromEntries(wireIntents.map((intent) => [intent, 0.1429]));
   assert.equal(parseLocalResponse(rounded).intent, 'task_board');
   const outsideTolerance = structuredClone(rounded);
   outsideTolerance.answers.intent.probabilities.task_board = 0.1675;

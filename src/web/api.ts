@@ -13,13 +13,13 @@ export function errorMessage(error: unknown, action: string): string {
   return kitErrorMessage(error, action);
 }
 
-export type Screen = 'markdown_view' | 'task_board' | 'schedule_compare';
+export type Screen = 'markdown_view' | 'task_board' | 'whiteboard' | 'schedule_compare';
 export type Notice = 'unsupported_feature' | 'unsupported_operation' | 'clarify';
 export type Decision =
   | { kind: 'screen'; intent: Screen; ui: Screen; people?: PeopleSelection }
   | { kind: 'notice'; intent: Notice; message: string };
 
-export const SCREENS: readonly Screen[] = ['markdown_view', 'task_board', 'schedule_compare'];
+export const SCREENS: readonly Screen[] = ['markdown_view', 'task_board', 'whiteboard', 'schedule_compare'];
 const NOTICES: readonly Notice[] = ['unsupported_feature', 'unsupported_operation', 'clarify'];
 
 /** 許可した画面だけを開き、人名の選択情報は予定比較のときだけ構造を確認して受け取る。 */

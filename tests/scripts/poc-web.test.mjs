@@ -62,8 +62,12 @@ test('app.jsとチャンクが参照するチャンクは、すべてassets/に�
     }
   }
   assert.ok(references > 0);
+  // ホワイトボードのCSSとフォントは、外部のCDNではなくアプリから配信する。
+  const excalidrawCss = await readFile(new URL('excalidraw/index.css', publicDirectory), 'utf8');
+  assert.match(excalidrawCss, /url\(".\/fonts\/Assistant\/Assistant-Regular\.woff2"\)/);
+  await readFile(new URL('excalidraw/fonts/Assistant/Assistant-Regular.woff2', publicDirectory));
   // 業務画面は遅延読み込みのチャンクとして分かれている。
-  for (const screen of ['MarkdownViewer', 'TaskBoard', 'Schedules']) {
+  for (const screen of ['MarkdownViewer', 'TaskBoard', 'Whiteboard', 'Canvas', 'Schedules']) {
     assert.ok([...names].some((name) => name.startsWith(screen + '-')), screen + 'のチャンクがありません。');
   }
 });

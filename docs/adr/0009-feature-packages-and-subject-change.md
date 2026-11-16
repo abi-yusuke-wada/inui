@@ -48,6 +48,25 @@ ADR-0008で実装した休暇申請・交通費精算・申請状況の確認は
 - 依存の取得は従来どおりNixのdevShellのpnpmで行い、lockfileで版を固定する。依存定義の変更をネットワーク経由でlockへ反映する`make app-lock-update`を追加した。`pnpm-workspace.yaml`の`minimumReleaseAge`で、公開から14日未満の版を解決しない。PR #25で導入済みの8件（hono 4.13.17等）は、その版に限り除外する。
 - worktreeでも本体のチェックアウトと同じpnpmストア・メタデータキャッシュ（`<本体>/.local-poc/`）と、実NLIのモデル（`<本体>/.local-jev/`、`make app-model-check`）を使う。ストアからはハードリンクで配置されるため、パッケージの実体は重複しない。
 
+## ホワイトボードの追加（2026-11-17）
+
+- 状態: 決定（利用者の回答による）。Issue #10の本文には追加機能を個別のIssueにするとあるが、利用者の判断でこのPRに含める。
+- 背景: 実ブラウザでの確認中に、利用者からホワイトボードの画面で絵を描けるようにしたいという依頼があった。
+
+| 案 | 費用・作業負担 | 判断 |
+| --- | --- | --- |
+| Excalidraw（MIT）を使う | 手書き・図形・矢印・文字・取り消し・PNG/SVG書き出しがそろう。依存は大きく（`dist/prod`で約18MB、うち中国語・日本語用のフォントXiaolaiが13MB）、lockfileは約1,400行増える | 採用（利用者の選択） |
+| 依存なしでcanvasを自作する | 軽いが、ペン・消しゴム・色・取り消し・PNG書き出し程度に限られる | 不採用 |
+| tldrawを使う | 高機能だが独自ライセンスで、本番利用にはライセンスキーが必要 | 不採用 |
+
+- 決定:
+  - `packages/features/whiteboard`に、ボードの業務API（作成・一覧・読み込み・保存・削除）と画面を置く。ボードは名前と描画内容（Excalidrawの要素・画像・背景色）をSQLiteの`whiteboards`テーブルへ保存する。保存は利用者が「保存」を押したときだけ行い、1回の本文は8MBまでとする。要素の中身はExcalidrawの形式のまま保存し、表示時にExcalidrawのrestoreで検証させる。
+  - Excalidrawは、画面を開いたときだけ遅延読み込みする。CSS（144KB）は入口の`app.css`に入れず、ビルド時にフォントとあわせて`dist/public/excalidraw/`へコピーし、画面を開いたときに読み込む。`window.EXCALIDRAW_ASSET_PATH`を`/excalidraw/`に向け、フォントを外部のCDN（esm.sh）から読まないようにする。Excalidrawは配信に失敗したときだけ既定の配信元を試すため、外部への通信を完全には禁止していない。
+  - ボードを開いた直後はペン（freedraw）を選び、ドラッグでそのまま線を描けるようにする。Excalidrawのファイルを開く・上書き保存するメニューは無効にする。
+  - コアに`whiteboard`を加えて7候補とする。音声入力ではMarkdownがカタカナになるため、Markdownの表示の候補説明に「マークダウン」を加えた。
+  - 画面のテストでは、JSDOMでcanvasを描画できないため、Excalidrawを保存・読み込みのAPIだけを再現するスタブに置き換える（esbuildのalias）。実際の描画は実ブラウザで確認する。
+- 影響: Excalidraw 0.18.1が依存する古いRadixの部品は、peerとしてReact 19を許可していない（`pnpm peers check`で警告）。Excalidraw自体はReact 19に対応しており、動作は実ブラウザで確認する。
+
 ## 影響と未決事項
 
 - 追加した依存はmarkdown-it 15.0.3・dompurify 3.4.17・mermaid 12.2.0（それぞれ公開から2週間以上）。間接依存を含めてlockfileが約1,000行増えた。ライセンス費用はなく、取得時の通信・ディスクは必要。

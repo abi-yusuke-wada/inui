@@ -3,6 +3,7 @@ import test from 'node:test';
 import type { TestContext } from 'node:test';
 import { DecisionError } from '@inui/core';
 import { TaskStore } from '@inui/feature-tasks/server';
+import { BoardStore } from '@inui/feature-whiteboard/server';
 import { createApp } from '../src/api.ts';
 import { createLogger } from '../src/logger.ts';
 
@@ -23,11 +24,16 @@ function memoryStore(t: TestContext) {
   t.after(() => store.close());
   return store;
 }
+function memoryBoards(t: TestContext) {
+  const boards = new BoardStore(':memory:');
+  t.after(() => boards.close());
+  return boards;
+}
 function harness(t: TestContext, routeIntent: (text: string) => Promise<unknown> = async () => (
   { kind: 'screen', intent: 'task_board', ui: 'task_board' }
 )) {
   const store = memoryStore(t);
-  const app = createApp({ taskStore: store, routeIntent });
+  const app = createApp({ taskStore: store, boardStore: memoryBoards(t), routeIntent });
   const send = (method: string, path: string, body?: unknown) => app.request(ORIGIN + path, {
     method, headers: JSON_HEADERS, ...(body === undefined ? {} : { body: JSON.stringify(body) }),
   });
@@ -121,7 +127,7 @@ test('初回失敗と再試行成功を要求ID・状態・時間で追跡し、
   const { logger, records } = captureLogger();
   const requestIds: string[] = [];
   let calls = 0;
-  const app = createApp({ taskStore: store, logger, routeIntent: async () => {
+  const app = createApp({ taskStore: store, boardStore: memoryBoards(t), logger, routeIntent: async () => {
     calls++;
     if (calls === 1) throw new DecisionError('timeout');
     if (calls === 2) throw new Error('test-only-private-exception');
@@ -164,7 +170,7 @@ test('初回失敗と再試行成功を要求ID・状態・時間で追跡し、
 });
 
 test('ログ出力の失敗でIntentの成功応答を失敗に変更しない', async (t) => {
-  const app = createApp({ taskStore: memoryStore(t),
+  const app = createApp({ taskStore: memoryStore(t), boardStore: memoryBoards(t),
     routeIntent: async () => ({ kind: 'screen', intent: 'markdown_view', ui: 'markdown_view' }),
     logger: createLogger({ write: () => { throw new Error('test-only-diagnostic-failure'); } }),
   });
@@ -179,7 +185,7 @@ test('ログ出力の失敗でIntentの成功応答を失敗に変更しない',
 test('APIと静的配信の完了を区別し、URL・ヘッダー・タスクの内容をログへ出さない', async (t) => {
   const store = memoryStore(t);
   const { logger, records } = captureLogger();
-  const app = createApp({ taskStore: store, logger });
+  const app = createApp({ taskStore: store, boardStore: memoryBoards(t), logger });
   app.get('/', (c) => c.text('テスト用画面'));
   const privateDetail = 'test-only-private-request-data';
   const requests = [
@@ -261,7 +267,7 @@ test('loopback Host・同一Origin・JSON・本文上限を強制し、CORSを�
 
 test('ポートを変更しても選択したloopback Hostと同一Originだけを許可する', async (t) => {
   const store = memoryStore(t);
-  const app = createApp({ taskStore: store, port: 18766,
+  const app = createApp({ taskStore: store, boardStore: memoryBoards(t), port: 18766,
     routeIntent: async () => ({ kind: 'screen', intent: 'task_board', ui: 'task_board' }) });
   const origin = 'http://127.0.0.1:18766';
   for (const base of [origin, 'http://localhost:18766']) {
@@ -315,7 +321,7 @@ test('予定比較の人名は選択・曖昧・未知に分け、日付や対�
 test('DBの例外本文をHTTP応答へ含めない', async () => {
   const store = new TaskStore(':memory:');
   const { logger, records } = captureLogger();
-  const app = createApp({ taskStore: store, logger, routeIntent: async () => null });
+  const app = createApp({ taskStore: store, boardStore: new BoardStore(':memory:'), logger, routeIntent: async () => null });
   store.close();
   const response = await app.request(ORIGIN + '/api/tasks/local');
   assert.equal(response.status, 500);

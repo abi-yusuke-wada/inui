@@ -51,16 +51,22 @@ app-build: ## 独立コアとローカルPoCをビルドする
 	rm -rf dist/public/assets
 	node_modules/.bin/esbuild src/web/main.tsx --bundle --format=esm --target=es2022 --jsx=automatic --minify --define:process.env.NODE_ENV='"production"' --splitting --outdir=dist/public --entry-names=app --chunk-names='assets/[name]-[hash]' --asset-names='assets/[name]-[hash]'
 	cp src/web/index.html dist/public/index.html
+	@# ホワイトボード（Excalidraw）のCSSとフォントは、画面を開いたときに /excalidraw/ から読む。外部のCDNを使わないよう同梱する。
+	rm -rf dist/public/excalidraw
+	mkdir -p dist/public/excalidraw
+	cp -R packages/features/whiteboard/node_modules/@excalidraw/excalidraw/dist/prod/fonts dist/public/excalidraw/fonts
+	cp packages/features/whiteboard/node_modules/@excalidraw/excalidraw/dist/prod/index.css dist/public/excalidraw/index.css
 
 app-ui-check: app-build ## DOM上でタスク保存・Markdown表示・人名選択・従来UIの操作を検証する
 	@# 機能パッケージと、その中だけで使う依存は同梱する。Mermaidは図の描画時だけ読むため外部のままにする。
-	node_modules/.bin/esbuild tests/web/App.test.tsx --bundle --external:react --external:react-dom --external:jsdom --external:mermaid --platform=node --format=esm --target=node24 --jsx=automatic --outfile=dist/ui-tests/App.test.js
+	@# JSDOMではcanvasを描画できないため、Excalidrawは保存・読み込みのAPIだけを再現するスタブに置き換える。
+	node_modules/.bin/esbuild tests/web/App.test.tsx --bundle --external:react --external:react-dom --external:jsdom --external:mermaid --alias:@excalidraw/excalidraw=./tests/web/excalidraw-stub.tsx --platform=node --format=esm --target=node24 --jsx=automatic --outfile=dist/ui-tests/App.test.js
 	node --test --test-isolation=none dist/ui-tests/App.test.js
 	node --test --test-isolation=none tests/scripts/poc-web.test.mjs
 
 app-replay-check: ## 保存した19件の実NLI応答と現コアを再照合する（推論・通信なし）
 	@mkdir -p -m 700 .local-poc
-	@node scripts/poc-probe.mjs --replay docs/poc-nli-responses-2026-11-16.jsonl > .local-poc/replay-verification.json
+	@node scripts/poc-probe.mjs --replay docs/poc-nli-responses-2026-11-17.jsonl > .local-poc/replay-verification.json
 	@node -p 'JSON.stringify(JSON.parse(require("node:fs").readFileSync(".local-poc/replay-verification.json", "utf8")).summary)'
 
 app-check: app-ui-check app-replay-check ## コア・API・永続化・UIのテストと型・差分を検証する

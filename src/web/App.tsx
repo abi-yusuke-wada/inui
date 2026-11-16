@@ -8,6 +8,7 @@ import type { Notice, Screen } from './api.ts';
 // 業務画面は機能パッケージから必要になったときだけ読み込み、入口の画面へ依存を持ち込まない。
 const MarkdownViewer = lazy(() => import('@inui/feature-markdown/web'));
 const TaskBoard = lazy(() => import('@inui/feature-tasks/web'));
+const Whiteboard = lazy(() => import('@inui/feature-whiteboard/web'));
 const Schedules = lazy(() => import('@inui/feature-schedule/web'));
 
 const NOTICE_TITLES: Record<Notice, string> = {
@@ -16,14 +17,14 @@ const NOTICE_TITLES: Record<Notice, string> = {
   clarify: 'もう少し詳しく教えてください',
 };
 const NOTICE_MESSAGES: Record<Notice, string> = {
-  unsupported_feature: 'Markdownの表示・タスクの確認・予定比較をご利用いただけます。',
+  unsupported_feature: 'Markdownの表示・タスクの確認・ホワイトボード・予定比較をご利用いただけます。',
   unsupported_operation: 'PRのマージ、Issue・PRの作成やクローズ、予定の登録・削除は、この画面では行えません。',
-  clarify: '文書・タスク・予定のどれを扱いたいか、用件を添えて入力してください。',
+  clarify: '文書・タスク・ホワイトボード・予定のどれを扱いたいか、用件を添えて入力してください。',
 };
-const EXAMPLES = ['Markdownを見やすく表示したい', '自分のタスクを確認したい', 'レビュー待ちのプルリクを確認したい', '山田太郎さんと佐藤花子さんの予定を比較したい'];
+const EXAMPLES = ['Markdownを見やすく表示したい', '自分のタスクを確認したい', 'ホワイトボードに絵を描きたい', '山田太郎さんと佐藤花子さんの予定を比較したい'];
 type MenuItem = readonly [Screen | 'unsupported_feature', string];
 const MENU: Record<'documents' | 'work', { label: string; items: readonly MenuItem[] }> = {
-  documents: { label: '文書', items: [['markdown_view', 'Markdown表示'], ['unsupported_feature', '文書検索']] },
+  documents: { label: '文書', items: [['markdown_view', 'Markdown表示'], ['whiteboard', 'ホワイトボード'], ['unsupported_feature', '文書検索']] },
   work: { label: '仕事', items: [['task_board', 'タスク'], ['schedule_compare', '予定比較'], ['unsupported_feature', '会議室予約']] },
 };
 /** 画面の読み込みに失敗しても、入力欄やメニューは残して案内する。 */
@@ -175,6 +176,7 @@ export function App() {
           <Suspense fallback={<Loading message="画面を読み込んでいます…" />}>
             {view.screen === 'markdown_view' && <MarkdownViewer />}
             {view.screen === 'task_board' && <TaskBoard />}
+            {view.screen === 'whiteboard' && <Whiteboard />}
             {view.screen === 'schedule_compare' && <Schedules people={view.people} />}
           </Suspense>
         </ScreenBoundary>}

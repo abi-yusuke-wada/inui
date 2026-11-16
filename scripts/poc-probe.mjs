@@ -8,21 +8,26 @@ import { appPort, appOrigin } from '../src/local-config.ts';
 
 const REVISION = 'cf44676c28ba7312e5c5f8f8d2c22b3e0c9cdae2';
 const ENGINE_TRANSPORT = 'in-process-local-jev-engine';
-const SCREENS = ['markdown_view', 'task_board', 'schedule_compare'];
+const SCREENS = ['markdown_view', 'task_board', 'whiteboard', 'schedule_compare'];
 const NOTICES = ['unsupported_feature', 'unsupported_operation', 'clarify'];
 const noAmbiguity = (selectedIds) => ({ selectedIds, ambiguous: [], unknownNames: [] });
 
-// Issue #10で題材を入れ替えた19入力（MVP.md）。申請を題材にした13入力はjev-probe.mjsに履歴として残す。
+// Issue #10で題材を入れ替えた23入力（MVP.md）。申請を題材にした13入力はjev-probe.mjsに履歴として残す。
 // 予定比較の4件と、予定の削除・登録の2件は申請題材の19入力から引き継ぐ。
 export const POC_CASES = [
   { id: 'markdown-view', text: 'Markdownを見やすく表示したい', expected: 'markdown_view', expectedPeople: null },
   { id: 'markdown-readme', text: 'READMEを読みたい', expected: 'markdown_view', expectedPeople: null },
   { id: 'markdown-adr', text: 'ADRの文書を開きたい', expected: 'markdown_view', expectedPeople: null },
+  // 音声入力では「Markdown」がカタカナで入力される。
+  { id: 'markdown-katakana', text: 'マークダウンを見やすくしたい', expected: 'markdown_view', expectedPeople: null },
   { id: 'task-mine', text: '自分のタスクを確認したい', expected: 'task_board', expectedPeople: null },
   { id: 'task-github-issues', text: 'GitHubのIssueを一覧で見たい', expected: 'task_board', expectedPeople: null },
   { id: 'task-review', text: 'レビュー待ちのプルリクを確認したい', expected: 'task_board', expectedPeople: null },
   { id: 'task-backlog', text: 'Backlogの課題を見たい', expected: 'task_board', expectedPeople: null },
   { id: 'task-memo', text: 'やることをメモしておきたい', expected: 'task_board', expectedPeople: null },
+  { id: 'whiteboard-open', text: 'ホワイトボードを開きたい', expected: 'whiteboard', expectedPeople: null },
+  { id: 'whiteboard-draw', text: '絵を描きたい', expected: 'whiteboard', expectedPeople: null },
+  { id: 'whiteboard-sketch', text: '設計の図を手書きでラフに描きたい', expected: 'whiteboard', expectedPeople: null },
   {
     id: 'schedule-fullnames', text: '山田太郎さんと佐藤花子さんのスケジュールを確認したい', expected: 'schedule_compare',
     expectedPeople: noAmbiguity(['person-yamada-taro', 'person-sato-hanako']),
@@ -116,7 +121,7 @@ function report(transport, metadata, results) {
     summary: {
       ...count(results), normal: count(normal), abnormal: count(abnormal),
       people: { matched: people.filter((row) => row.people_matched === true).length, total: people.length },
-      criterion_met: results.length === 19 && results.every((row) => row.matched),
+      criterion_met: results.length === POC_CASES.length && results.every((row) => row.matched),
       elapsed_ms: times.length ? {
         mean: times.reduce((sum, value) => sum + value, 0) / times.length,
         median: times.length % 2 ? times[Math.floor(times.length / 2)] : (times[times.length / 2 - 1] + times[times.length / 2]) / 2,
@@ -138,7 +143,7 @@ function checkMetadata(metadata) {
       || metadata.response_conversion !== 'SystemOneResponse.model_validate(raw).model_dump()'
       || metadata.http_route_executed !== false || metadata.torch_threads !== 4 || metadata.torch_interop_threads !== 1
       || metadata.warmup !== false || metadata.device !== 'cpu' || metadata.dtype !== 'torch.float32'
-      || metadata.hf_revision !== REVISION || metadata.requests_sha256 !== requestsDigest() || metadata.case_count !== 19
+      || metadata.hf_revision !== REVISION || metadata.requests_sha256 !== requestsDigest() || metadata.case_count !== POC_CASES.length
       || typeof metadata.hf_model !== 'string' || !elapsedValid(metadata.model_load_ms)
       || !exactKeys(metadata.runtime, ['local-jev', 'torch', 'transformers'])
       || !Object.values(metadata.runtime).every((value) => typeof value === 'string' && value.length > 0)
@@ -147,17 +152,17 @@ function checkMetadata(metadata) {
       || !exactKeys(metadata.peak_rss, ['value', 'unit', 'platform', 'scope'])
       || !elapsedValid(metadata.peak_rss.value) || !['KiB', 'bytes', 'platform-native'].includes(metadata.peak_rss.unit)
       || typeof metadata.peak_rss.platform !== 'string'
-      || metadata.peak_rss.scope !== 'Python process through 19 Engine calls; not a deployed Lambda measurement') {
+      || metadata.peak_rss.scope !== `Python process through ${POC_CASES.length} Engine calls; not a deployed Lambda measurement`) {
     throw new ProbeError('invalid_metadata');
   }
 }
 
-/** 完全な19件のJSONLだけを受け付け、coreと人名処理で独立に再検証する。 */
+/** 入力の件数どおりの完全なJSONLだけを受け付け、coreと人名処理で独立に再検証する。 */
 export function replay(jsonl) {
   let records;
   try { records = jsonl.trim().split('\n').map((line) => JSON.parse(line)); }
   catch { throw new ProbeError('invalid_replay'); }
-  if (records.length !== 20 || !exactKeys(records[0], ['type', 'metadata']) || records[0].type !== 'metadata') {
+  if (records.length !== POC_CASES.length + 1 || !exactKeys(records[0], ['type', 'metadata']) || records[0].type !== 'metadata') {
     throw new ProbeError('invalid_replay');
   }
   const metadata = records[0].metadata;

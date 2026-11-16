@@ -6,19 +6,22 @@ import { invalidInput, isRecord, keysAre, readJson, RequestError } from '@inui/f
 import { createScheduleRoutes, selectPeople } from '@inui/feature-schedule/server';
 import { createTaskRoutes } from '@inui/feature-tasks/server';
 import type { TaskSources, TaskStore } from '@inui/feature-tasks/server';
+import { createWhiteboardRoutes } from '@inui/feature-whiteboard/server';
+import type { BoardStore } from '@inui/feature-whiteboard/server';
 import { appOrigin, DEFAULT_APP_PORT } from './local-config.ts';
 import { logRoute } from './logger.ts';
 import type { Logger } from './logger.ts';
 
-const SCREEN_INTENTS = ['markdown_view', 'task_board', 'schedule_compare'];
+const SCREEN_INTENTS = ['markdown_view', 'task_board', 'whiteboard', 'schedule_compare'];
 const NOTICES = {
   unsupported_feature: 'この機能は今回の対象に含まれていません。',
   unsupported_operation: 'この操作は今回の対象に含まれていません。',
-  clarify: '目的を特定できませんでした。文書・タスク・予定のどれを扱いたいか入力してください。',
+  clarify: '目的を特定できませんでした。文書・タスク・ホワイトボード・予定のどれを扱いたいか入力してください。',
 };
 const SAFE_METHODS = ['GET', 'HEAD'];
 interface AppOptions {
   taskStore: Pick<TaskStore, 'list' | 'add' | 'setDone' | 'remove'>;
+  boardStore: Pick<BoardStore, 'list' | 'get' | 'create' | 'update' | 'remove'>;
   taskSources?: TaskSources;
   upstreamFetch?: typeof fetch;
   routeIntent?: (text: string) => Promise<unknown>;
@@ -45,7 +48,7 @@ function checkedDecision(value: unknown): RoutingDecision {
 
 /** 同一オリジンのローカルAPIを、推論と保存を差し替え可能な形で作る。 */
 export function createApp({
-  taskStore, taskSources = { invalid: [] }, upstreamFetch, routeIntent = createIntentRouter(), port = DEFAULT_APP_PORT, logger,
+  taskStore, boardStore, taskSources = { invalid: [] }, upstreamFetch, routeIntent = createIntentRouter(), port = DEFAULT_APP_PORT, logger,
 }: AppOptions) {
   const allowedHosts = [new URL(appOrigin(port)).host, `localhost:${port}`];
   const app = new Hono();
@@ -105,6 +108,7 @@ export function createApp({
   app.route('/api', createTaskRoutes({
     store: taskStore, sources: taskSources, upstream: upstreamFetch ? { fetchImpl: upstreamFetch } : {},
   }));
+  app.route('/api', createWhiteboardRoutes({ store: boardStore }));
 
   app.notFound((c) => c.json({ error: { code: 'not_found', message: '指定された操作はありません。' } }, 404));
   app.onError((error, c) => {

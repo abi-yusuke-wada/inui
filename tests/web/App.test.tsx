@@ -271,6 +271,59 @@ test('PoCの利用経路をJSDOMで操作する（実ブラウザではない）
       });
     });
 
+    await suite.test('旧形式のメニューからホワイトボードを開き、作成・描画・保存を1件ずつ行う（Excalidrawはスタブ）', async () => {
+      const boards: { id: string; name: string; updatedAt: string }[] = [];
+      const saved: unknown[] = [];
+      const fetchImpl: typeof fetch = async (input, options) => {
+        const url = new URL(String(input), 'http://localhost');
+        if (url.pathname === '/api/whiteboards' && options?.method === 'POST') {
+          const { name } = JSON.parse(String(options.body)) as { name: string };
+          const board = { id: '00000000-0000-4000-8000-0000000000b1', name, updatedAt: '2026-11-17T00:00:00.000Z' };
+          boards.push(board);
+          return response({ board }, 201);
+        }
+        if (url.pathname === '/api/whiteboards') return response({ boards });
+        if (url.pathname === '/api/whiteboards/00000000-0000-4000-8000-0000000000b1') {
+          const board = boards[0];
+          assert.ok(board);
+          if (options?.method === 'PATCH') {
+            saved.push(JSON.parse(String(options.body)));
+            return response({ board });
+          }
+          return response({ board: { ...board, scene: { elements: [], files: {}, appState: {} } } });
+        }
+        throw new Error('想定外のAPI: ' + url.pathname);
+      };
+      await withApp('/legacy', fetchImpl, async () => {
+        await click('文書');
+        await click('ホワイトボード');
+        await waitFor(() => heading('ホワイトボード') && document.body.textContent?.includes('ボードはまだありません') === true,
+          'ホワイトボードが開きませんでした。');
+        // JSDOMはCSSを読み込まないため、ExcalidrawのCSSの読み込み完了を再現する。
+        const link = document.querySelector<HTMLLinkElement>('link[href="/excalidraw/index.css"]');
+        assert.ok(link);
+        assert.equal(window.EXCALIDRAW_ASSET_PATH, '/excalidraw/');
+        await react.act(async () => { link.dispatchEvent(new dom.window.Event('load')); });
+        await change('新しいボードの名前', '設計のラフ');
+        await click('作成');
+        await waitFor(() => document.querySelector('[data-testid="excalidraw-stub"]') !== null, 'ボードが開きませんでした。');
+        assert.match(document.body.textContent ?? '', /保存済み/);
+        // 開いた直後からドラッグで描けるよう、ペンが選ばれている。
+        assert.equal(window.inuiTestActiveTool, 'freedraw');
+        await react.act(async () => { window.dispatchEvent(new dom.window.Event('inui-test-draw')); });
+        await waitFor(() => document.body.textContent?.includes('未保存の変更があります') === true, '未保存の変更を表示しませんでした。');
+        assert.deepEqual(saved, []);
+        await click('保存');
+        await waitFor(() => document.body.textContent?.includes('保存しました') === true, '保存できませんでした。');
+        assert.equal(saved.length, 1);
+        const body = saved[0] as unknown as { name: string; scene: { elements: { type: string }[]; appState: unknown } };
+        assert.equal(body.name, '設計のラフ');
+        assert.deepEqual(body.scene.elements.map((element) => element.type), ['freedraw']);
+        assert.deepEqual(body.scene.appState, { viewBackgroundColor: '#ffffff' });
+        assert.match(document.body.textContent ?? '', /保存済み/);
+      });
+    });
+
     await suite.test('旧形式のメニューで対象外の機能を選ぶと、NLIを呼ばずに案内する', async () => {
       let calls = 0;
       await withApp('/legacy', async () => { calls++; throw new Error('呼びません'); }, async () => {
