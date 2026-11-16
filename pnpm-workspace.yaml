@@ -1,2 +1,16 @@
 packages:
   - packages/core
+  - packages/features/*
+
+# 公開から14日未満の版は解決しない。間接依存の範囲指定にも適用する（ADR-0009）。
+minimumReleaseAge: 20160
+# PR #25で導入済みの版に限り除外する。版を上げるときは、この一覧から外して14日の条件を満たす版を選ぶ。
+minimumReleaseAgeExclude:
+  - '@hono/node-server@2.1.6'
+  - hono@4.13.17
+  - jsdom@31.0.0
+  - parse5-parser-stream@8.1.1
+  - parse5@8.1.1
+  - tough-cookie@6.1.0
+  - undici-types@8.12.4
+  - undici@8.12.4

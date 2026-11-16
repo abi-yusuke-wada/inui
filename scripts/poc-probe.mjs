@@ -2,20 +2,27 @@ import { createHash } from 'node:crypto';
 import { readFile } from 'node:fs/promises';
 import { isDeepStrictEqual } from 'node:util';
 import { pathToFileURL } from 'node:url';
-import { CASES } from './jev-probe.mjs';
 import { LOCAL_MODEL, buildLocalRequest, parseLocalResponse } from '../packages/core/src/index.ts';
-import { listEmployees, selectPeople } from '../src/people.ts';
+import { listEmployees, selectPeople } from '../packages/features/schedule/src/people.ts';
 import { appPort, appOrigin } from '../src/local-config.ts';
 
 const REVISION = 'cf44676c28ba7312e5c5f8f8d2c22b3e0c9cdae2';
 const ENGINE_TRANSPORT = 'in-process-local-jev-engine';
-const SCREENS = ['leave_request', 'expense_request', 'application_status', 'schedule_compare'];
+const SCREENS = ['markdown_view', 'task_board', 'schedule_compare'];
 const NOTICES = ['unsupported_feature', 'unsupported_operation', 'clarify'];
 const noAmbiguity = (selectedIds) => ({ selectedIds, ambiguous: [], unknownNames: [] });
 
-// 既存13件の期待値は参照し、予定比較の4件と対象外操作の2件だけを加える。
+// Issue #10で題材を入れ替えた19入力（MVP.md）。申請を題材にした13入力はjev-probe.mjsに履歴として残す。
+// 予定比較の4件と、予定の削除・登録の2件は申請題材の19入力から引き継ぐ。
 export const POC_CASES = [
-  ...CASES.map((sample) => ({ ...sample, expectedPeople: null })),
+  { id: 'markdown-view', text: 'Markdownを見やすく表示したい', expected: 'markdown_view', expectedPeople: null },
+  { id: 'markdown-readme', text: 'READMEを読みたい', expected: 'markdown_view', expectedPeople: null },
+  { id: 'markdown-adr', text: 'ADRの文書を開きたい', expected: 'markdown_view', expectedPeople: null },
+  { id: 'task-mine', text: '自分のタスクを確認したい', expected: 'task_board', expectedPeople: null },
+  { id: 'task-github-issues', text: 'GitHubのIssueを一覧で見たい', expected: 'task_board', expectedPeople: null },
+  { id: 'task-review', text: 'レビュー待ちのプルリクを確認したい', expected: 'task_board', expectedPeople: null },
+  { id: 'task-backlog', text: 'Backlogの課題を見たい', expected: 'task_board', expectedPeople: null },
+  { id: 'task-memo', text: 'やることをメモしておきたい', expected: 'task_board', expectedPeople: null },
   {
     id: 'schedule-fullnames', text: '山田太郎さんと佐藤花子さんのスケジュールを確認したい', expected: 'schedule_compare',
     expectedPeople: noAmbiguity(['person-yamada-taro', 'person-sato-hanako']),
@@ -35,8 +42,13 @@ export const POC_CASES = [
     id: 'schedule-unknown-person', text: '田村さんと佐藤花子さんの予定を確認したい', expected: 'schedule_compare',
     expectedPeople: { selectedIds: ['person-sato-hanako'], ambiguous: [], unknownNames: ['田村'] },
   },
+  { id: 'unsupported-room', text: '会議室を予約したい', expected: 'unsupported_feature', expectedPeople: null },
+  { id: 'unsupported-expense', text: '交通費を精算したい', expected: 'unsupported_feature', expectedPeople: null },
+  { id: 'unsupported-merge', text: 'プルリクエストをマージしたい', expected: 'unsupported_operation', expectedPeople: null },
   { id: 'unsupported-schedule-delete', text: '山田太郎さんの予定を削除したい', expected: 'unsupported_operation', expectedPeople: null },
   { id: 'unsupported-schedule-create', text: '佐藤さんと鈴木さんの会議を登録したい', expected: 'unsupported_operation', expectedPeople: null },
+  { id: 'clarify-check', text: '確認したい', expected: 'clarify', expectedPeople: null },
+  { id: 'clarify-open', text: '開いて', expected: 'clarify', expectedPeople: null },
 ];
 
 /** 現コアの質問を入力と結び付け、Python側へそのまま渡す。 */

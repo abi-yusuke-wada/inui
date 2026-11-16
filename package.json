@@ -9,6 +9,10 @@
   "dependencies": {
     "@hono/node-server": "2.1.6",
     "@inui/core": "workspace:*",
+    "@inui/feature-kit": "workspace:*",
+    "@inui/feature-markdown": "workspace:*",
+    "@inui/feature-schedule": "workspace:*",
+    "@inui/feature-tasks": "workspace:*",
     "hono": "4.13.17",
     "react": "19.3.1",
     "react-dom": "19.3.1"

@@ -4,9 +4,9 @@ import { fileURLToPath } from 'node:url';
 import test from 'node:test';
 import { CASES } from '../../scripts/jev-probe.mjs';
 import { POC_CASES, requests, requestsDigest, replay, probeHttp, diagnose, diagnoseWeb, runCli } from '../../scripts/poc-probe.mjs';
-import { listEmployees } from '../../src/people.ts';
+import { listEmployees } from '../../packages/features/schedule/src/people.ts';
 
-const SAVED_FILE = new URL('../../docs/poc-nli-responses-2026-11-10.jsonl', import.meta.url);
+const SAVED_FILE = new URL('../../docs/poc-nli-responses-2026-11-16.jsonl', import.meta.url);
 const savedText = await readFile(SAVED_FILE, 'utf8');
 const savedRecords = savedText.trim().split('\n').map((line) => JSON.parse(line));
 const ORIGIN = 'http://127.0.0.1:8766';
@@ -26,14 +26,19 @@ function capture() {
   return { lines, status, port: 8766, write: (line) => lines.push(line), writeStatus: (line) => status.push(line) };
 }
 
-test('旧13入力の期待値を維持し、予定比較を含む19入力と人名4期待を通信せず取得する', async () => {
+test('文書・タスク・予定の19入力と人名4期待を通信せず取得し、申請の13入力は履歴に残す', async () => {
   const current = requests();
   assert.equal(current.length, 19);
   assert.equal(new Set(current.map((sample) => sample.id)).size, 19);
-  assert.deepEqual(current.slice(0, 13).map(({ id, text, expected }) => ({ id, text, expected })), CASES);
+  const count = (expected) => current.filter((sample) => sample.expected === expected).length;
+  assert.deepEqual([count('markdown_view'), count('task_board'), count('schedule_compare'),
+    count('unsupported_feature'), count('unsupported_operation'), count('clarify')], [3, 5, 4, 2, 3, 2]);
   assert.equal(current.filter((sample) => sample.expectedPeople !== null).length, 4);
   assert.ok(current.every((sample) => sample.request.model === 'nli-deberta-large'
-    && sample.request.state === sample.text && Object.keys(sample.request.questions.intent.criteria).length === 7));
+    && sample.request.state === sample.text && Object.keys(sample.request.questions.intent.criteria).length === 6));
+  // 申請を題材にした13入力（Issue #16の記録）は変更せず、現行の検証には使わない。
+  assert.equal(CASES.length, 13);
+  assert.ok(current.every((row) => !['leave_request', 'expense_request', 'application_status'].includes(row.expected)));
   const output = capture();
   const rc = await runCli(['--requests'], { ...output, fetchImpl: async () => assert.fail('入力の取得で通信しない') });
   assert.equal(rc, 0);
@@ -49,8 +54,8 @@ test('保存した実NLI応答19件を現コアで再生し、正常・異常・
   assert.equal(result.metadata.http_route_executed, false);
   assert.equal(result.summary.criterion_met, true);
   assert.equal(result.summary.matched, 19);
-  assert.deepEqual(result.summary.normal, { matched: 13, total: 13 });
-  assert.deepEqual(result.summary.abnormal, { matched: 6, total: 6 });
+  assert.deepEqual(result.summary.normal, { matched: 12, total: 12 });
+  assert.deepEqual(result.summary.abnormal, { matched: 7, total: 7 });
   assert.deepEqual(result.summary.people, { matched: 4, total: 4 });
   assert.ok(result.results.every((row) => row.truncated === false));
   const output = capture();
@@ -82,12 +87,12 @@ test('欠落・重複・質問のdigest差・Tool混入を含む保存結果を�
 
 test('有効な契約でも誤分類やtruncatedのtrue・不明を合格にしない', () => {
   const wrong = replay(changedReplay((records) => {
-    const expense = records.find((record) => record.sampleID === 'expense-no-values');
-    records[1].rawResponse.answers.intent = structuredClone(expense.rawResponse.answers.intent);
+    const task = records.find((record) => record.sampleID === 'task-mine');
+    records[1].rawResponse.answers.intent = structuredClone(task.rawResponse.answers.intent);
   }));
   assert.equal(wrong.summary.criterion_met, false);
   assert.equal(wrong.summary.matched, 18);
-  assert.equal(wrong.results[0].actual, 'expense_request');
+  assert.equal(wrong.results[0].actual, 'task_board');
   assert.equal(wrong.results[0].intent_matched, false);
   for (const truncated of [true, null]) {
     const result = replay(changedReplay((records) => { records[1].truncated = truncated; }));

@@ -1,0 +1,19 @@
+{
+  "name": "@inui/feature-schedule",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    "./server": "./src/server.ts",
+    "./client": "./src/client.ts",
+    "./web": "./src/Schedules.tsx",
+    "./styles.css": "./src/styles.css"
+  },
+  "dependencies": {
+    "@inui/feature-kit": "workspace:*"
+  },
+  "peerDependencies": {
+    "hono": "4.13.17",
+    "react": "19.3.1"
+  }
+}

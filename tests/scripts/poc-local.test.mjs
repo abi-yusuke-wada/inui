@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import { fileURLToPath } from 'node:url';
 import { runLocal, serviceEnv, checkService } from '../../scripts/poc-local.mjs';
-import { listEmployees } from '../../src/people.ts';
+import { listEmployees } from '../../packages/features/schedule/src/people.ts';
 
 const PRIVATE_DETAIL = 'test-only-private-failure';
 
@@ -163,6 +163,22 @@ test('子の環境は実行用allowlistと固定設定だけで、偽トーク�
   assert.equal(env.LOCAL_JEV_MODELS, fileURLToPath(new URL('../../.local-jev/models', import.meta.url)));
   assert.equal(Object.hasOwn(env, 'LOCAL_JEV_MODEL'), false);
   assert.deepEqual(fake, original);
+});
+
+test('連携先の3変数はアプリにだけ渡し、推論サーバーや他の認証情報には広げない', () => {
+  const parent = {
+    PATH: '/test-only/bin', INUI_GITHUB_TOKEN: 'fake-inui-github', INUI_BACKLOG_SPACE: 'example.backlog.jp',
+    INUI_BACKLOG_API_KEY: 'fake-backlog', GH_TOKEN: 'fake-gh', GITHUB_TOKEN: 'fake-github', INUI_GITHUB_MCP_TOKEN: 'fake-mcp',
+  };
+  const app = serviceEnv(parent, undefined, 'app');
+  assert.equal(app.INUI_GITHUB_TOKEN, 'fake-inui-github');
+  assert.equal(app.INUI_BACKLOG_SPACE, 'example.backlog.jp');
+  assert.equal(app.INUI_BACKLOG_API_KEY, 'fake-backlog');
+  for (const key of ['GH_TOKEN', 'GITHUB_TOKEN', 'INUI_GITHUB_MCP_TOKEN']) assert.equal(Object.hasOwn(app, key), false);
+  for (const env of [serviceEnv(parent, undefined, 'local-jev'), serviceEnv(parent)]) {
+    for (const key of Object.keys(parent).filter((name) => name !== 'PATH')) assert.equal(Object.hasOwn(env, key), false);
+  }
+  assert.equal(Object.hasOwn(serviceEnv({ INUI_GITHUB_TOKEN: '' }, undefined, 'app'), 'INUI_GITHUB_TOKEN'), false);
 });
 
 test('子へ渡すログレベルは許可値だけにし、不正な環境値を転送しない', () => {

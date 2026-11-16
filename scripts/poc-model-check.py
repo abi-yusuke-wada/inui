@@ -28,15 +28,15 @@ def source_requests():
         cwd=ROOT, check=True, capture_output=True, text=True, timeout=30,
     )
     samples = json.loads(source.stdout)
-    screens = {"leave_request", "expense_request", "application_status", "schedule_compare"}
+    screens = {"markdown_view", "task_board", "schedule_compare"}
     if (not isinstance(samples, list) or len(samples) != 19
             or len({sample["id"] for sample in samples}) != 19
-            or sum(sample["expected"] in screens for sample in samples) != 13
+            or sum(sample["expected"] in screens for sample in samples) != 12
             or sum(sample["expectedPeople"] is not None for sample in samples) != 4
             or any(sample["request"]["model"] != MODEL
                    or sample["request"]["state"] != sample["text"]
                    or set(sample["request"]["questions"]) != {"intent"}
-                   or len(sample["request"]["questions"]["intent"]["criteria"]) != 7
+                   or len(sample["request"]["questions"]["intent"]["criteria"]) != 6
                    for sample in samples)):
         raise ValueError("fixed_cases")
     return samples, hashlib.sha256(source.stdout.strip().encode("utf-8")).hexdigest()

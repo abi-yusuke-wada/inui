@@ -2,7 +2,8 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { JSDOM } from 'jsdom';
 import type { Root } from 'react-dom/client';
-import type { Application, Employee } from '../../src/types.ts';
+import type { Employee } from '@inui/feature-schedule/client';
+import type { LocalTask } from '@inui/feature-tasks/client';
 
 const employees: Employee[] = [
   { id: 'yamada-taro', name: '山田太郎' },
@@ -10,13 +11,9 @@ const employees: Employee[] = [
   { id: 'suzuki-ichiro', name: '鈴木一郎' },
   { id: 'yamada-hanako', name: '山田花子' },
 ];
-const initialApplications: Application[] = [
-  { id: 'leave-1', type: 'leave', submittedOn: '2026-10-27', date: '2026-10-30', period: 'full_day', status: 'approved' },
-  { id: 'expense-1', type: 'expense', submittedOn: '2026-10-29', date: '2026-10-28', amount: 880, description: '交通費', status: 'pending' },
-];
 
 /** APIだけをモックするDOM操作テスト。実ブラウザやNLIの精度測定ではない。 */
-test('PoCの4つの利用経路をJSDOMで操作する（実ブラウザではない）', { concurrency: false }, async (suite) => {
+test('PoCの利用経路をJSDOMで操作する（実ブラウザではない）', { concurrency: false }, async (suite) => {
   const dom = new JSDOM('<!doctype html><html lang="ja"><body></body></html>', {
     url: 'http://localhost/', pretendToBeVisual: true,
   });
@@ -28,6 +25,15 @@ test('PoCの4つの利用経路をJSDOMで操作する（実ブラウザでは�
     HTMLInputElement: dom.window.HTMLInputElement,
     HTMLTextAreaElement: dom.window.HTMLTextAreaElement,
     HTMLSelectElement: dom.window.HTMLSelectElement,
+    Node: dom.window.Node,
+    Element: dom.window.Element,
+    DocumentFragment: dom.window.DocumentFragment,
+    HTMLTemplateElement: dom.window.HTMLTemplateElement,
+    NodeFilter: dom.window.NodeFilter,
+    NamedNodeMap: dom.window.NamedNodeMap,
+    HTMLFormElement: dom.window.HTMLFormElement,
+    DOMParser: dom.window.DOMParser,
+    File: dom.window.File,
     Event: dom.window.Event,
     MouseEvent: dom.window.MouseEvent,
     KeyboardEvent: dom.window.KeyboardEvent,
@@ -111,52 +117,63 @@ test('PoCの4つの利用経路をJSDOMで操作する（実ブラウザでは�
       }
     };
 
-    await suite.test('自然文から交通費フォームを開き、空欄へ入力して1回だけ保存し一覧で確認する', async () => {
-      let saveCalls = 0;
-      let resolveSave: ((value: Response) => void) | undefined;
-      let savedBody: unknown;
-      const saved: Application = { id: 'expense-2', type: 'expense', submittedOn: '2026-11-02', date: '2026-11-01', amount: 1200, description: '電車代', status: 'pending' };
+    await suite.test('自然文からタスク画面を開き、追加を1回だけ送って一覧を読み直し、連携先の状態を表示する', async () => {
+      const tasks: LocalTask[] = [];
+      let addCalls = 0;
+      let resolveAdd: ((value: Response) => void) | undefined;
       const fetchImpl: typeof fetch = async (input, options) => {
         const url = new URL(String(input), 'http://localhost');
         if (url.pathname === '/api/intent') {
           assert.equal(options?.method, 'POST');
-          return response({ kind: 'screen', intent: 'expense_request', ui: 'expense_request' });
+          return response({ kind: 'screen', intent: 'task_board', ui: 'task_board' });
         }
-        if (url.pathname === '/api/applications/expense') {
-          saveCalls++;
-          savedBody = JSON.parse(String(options?.body));
-          return await new Promise<Response>((resolve, reject) => {
-            resolveSave = resolve;
-            options?.signal?.addEventListener('abort', () => reject(new Error('mock abort')), { once: true });
-          });
+        if (url.pathname === '/api/tasks/local' && options?.method === 'POST') {
+          addCalls++;
+          const { title } = JSON.parse(String(options.body)) as { title: string };
+          const task = { id: '00000000-0000-4000-8000-00000000000' + addCalls, title, done: false, createdAt: '2026-11-16T00:00:00.000Z' };
+          return await new Promise<Response>((resolve) => {
+            resolveAdd = (value) => { tasks.push(task); resolve(value); };
+          }).then(() => response({ task }, 201));
         }
-        if (url.pathname === '/api/applications') return response({ applications: [...initialApplications, saved] });
+        if (url.pathname === '/api/tasks/local') return response({ tasks });
+        if (url.pathname.startsWith('/api/tasks/local/') && options?.method === 'PATCH') {
+          const task = tasks.find((item) => url.pathname.endsWith(item.id));
+          assert.ok(task);
+          task.done = (JSON.parse(String(options.body)) as { done: boolean }).done;
+          return response({ task });
+        }
+        if (url.pathname === '/api/tasks/github') return response({ configured: false });
+        if (url.pathname === '/api/tasks/backlog') {
+          return response({ configured: true, tasks: [{ id: 'backlog-1', source: 'backlog', kind: 'backlog_issue', key: 'PROJ-1',
+            title: '顧客向け資料の修正', url: 'https://example.backlog.jp/view/PROJ-1', updatedAt: '2026-11-15T00:00:00Z', status: '処理中' }] });
+        }
         throw new Error('想定外のAPI: ' + url.pathname);
       };
       await withApp('/', fetchImpl, async () => {
         assert.equal(document.querySelector('nav[aria-label="業務メニュー"]'), null);
-        await change('したいこと', '昨日の交通費1,200円を精算したい');
+        await change('したいこと', 'やることをメモしておきたい');
         await click('画面を開く');
-        await waitFor(() => heading('交通費精算'), '交通費精算フォームが開きませんでした。');
-        assert.equal(field('利用日').value, '');
-        assert.equal(field('金額').value, '');
-        await change('利用日', '2026-11-01');
-        await change('金額', '1200');
-        await change('内容', '電車代');
-        const form = field('利用日').closest('form');
+        await waitFor(() => heading('自分のタスク') && document.body.textContent?.includes('タスクはまだありません') === true,
+          'タスク画面が開きませんでした。');
+        await waitFor(() => document.body.textContent?.includes('GitHubとは連携していません') === true, 'GitHubの未設定を案内しませんでした。');
+        await waitFor(() => document.body.textContent?.includes('PROJ-1') === true, 'Backlogの課題が表示されませんでした。');
+        const link = [...document.querySelectorAll('a')].find((node) => node.textContent?.includes('PROJ-1'));
+        assert.equal(link?.getAttribute('rel'), 'noopener noreferrer');
+        await change('追加するタスク', 'ADRの下書きを書く');
+        const form = field('追加するタスク').closest('form');
         assert.ok(form);
         await react.act(async () => {
           form.dispatchEvent(new dom.window.Event('submit', { bubbles: true, cancelable: true }));
           form.dispatchEvent(new dom.window.Event('submit', { bubbles: true, cancelable: true }));
         });
-        assert.equal(saveCalls, 1);
-        assert.equal(button('保存しています…').disabled, true);
-        assert.deepEqual(savedBody, { date: '2026-11-01', amount: 1200, description: '電車代' });
-        assert.ok(resolveSave);
-        await react.act(async () => resolveSave?.(response({ application: saved }, 201)));
-        await waitFor(() => heading('申請一覧') && document.body.textContent?.includes('1,200円') === true, '保存結果が一覧に表示されませんでした。');
-        assert.match(document.body.textContent ?? '', /受け付けました/);
-        assert.equal(saveCalls, 1);
+        assert.equal(addCalls, 1);
+        assert.ok(resolveAdd);
+        await react.act(async () => resolveAdd?.(new Response()));
+        await waitFor(() => document.body.textContent?.includes('ADRの下書きを書く') === true && field('追加するタスク').value === '',
+          '追加したタスクが表示されませんでした。');
+        await react.act(async () => (field('ADRの下書きを書く') as HTMLInputElement).click());
+        await waitFor(() => (field('ADRの下書きを書く') as HTMLInputElement).checked, '完了の状態が保存されませんでした。');
+        assert.equal(addCalls, 1);
       });
     });
 
@@ -222,34 +239,47 @@ test('PoCの4つの利用経路をJSDOMで操作する（実ブラウザでは�
       });
     });
 
-    await suite.test('旧形式も同じフォームを使い、通信失敗後は値を保持して未確認の再POSTを止める', async () => {
-      let intentCalls = 0;
-      let saveCalls = 0;
+    await suite.test('旧形式のメニューからMarkdown表示を開き、選んだファイルを送信せずに無害化して表示する', async () => {
+      const requests: string[] = [];
       const fetchImpl: typeof fetch = async (input) => {
-        const url = new URL(String(input), 'http://localhost');
-        if (url.pathname === '/api/intent') { intentCalls++; throw new Error('旧形式でNLIは呼びません'); }
-        if (url.pathname === '/api/applications/expense') { saveCalls++; throw new Error('mock connection lost'); }
-        if (url.pathname === '/api/applications') return response({ applications: initialApplications });
-        throw new Error('想定外のAPI: ' + url.pathname);
+        requests.push(String(input));
+        throw new Error('Markdown表示ではAPIを呼びません');
       };
       await withApp('/legacy', fetchImpl, async () => {
-        await click('申請する');
-        await click('交通費精算');
-        assert.equal(field('利用日').value, '');
-        assert.equal(field('金額').value, '');
-        await change('利用日', '2026-11-01');
-        await change('金額', '1200');
-        await click('この内容で申請する');
-        await waitFor(() => document.body.textContent?.includes('保存結果を確認できませんでした') === true, '保存結果が不明であることを案内しませんでした。');
-        assert.equal(field('利用日').value, '2026-11-01');
-        assert.equal(field('金額').value, '1200');
-        assert.equal(field('金額').matches(':disabled'), true);
-        assert.equal(saveCalls, 1);
-        assert.equal(intentCalls, 0);
-        await click('申請一覧で確認する');
-        await waitFor(() => heading('申請一覧') && document.querySelectorAll('tbody tr').length === 2, '申請一覧で確認できませんでした。');
-        assert.equal(saveCalls, 1);
-        assert.equal(intentCalls, 0);
+        await click('文書');
+        await click('Markdown表示');
+        await waitFor(() => heading('Markdownを読む'), 'Markdown表示が開きませんでした。');
+        const input = document.querySelector<HTMLInputElement>('input[type="file"]');
+        assert.ok(input);
+        const select = async (file: File) => {
+          Object.defineProperty(input, 'files', { configurable: true, value: [file] });
+          await react.act(async () => { input.dispatchEvent(new dom.window.Event('change', { bubbles: true })); });
+        };
+        await select(new dom.window.File(['plain'], 'memo.txt', { type: 'text/plain' }));
+        await waitFor(() => document.body.textContent?.includes('Markdownファイル（.md・.markdown）を選んでください') === true,
+          '拡張子の誤りを案内しませんでした。');
+        const source = '# 設計の記録\n\n## 背景\n\n<script>window.injected = true</script>\n\n| 案 | 費用 |\n| --- | --- |\n| A | なし |\n';
+        await select(new dom.window.File([source], 'adr.md', { type: 'text/markdown' }));
+        await waitFor(() => document.querySelector('article h1')?.textContent === '設計の記録', 'Markdownが表示されませんでした。');
+        const toc = document.querySelector('nav[aria-label="目次"]');
+        assert.deepEqual([...(toc?.querySelectorAll('a') ?? [])].map((link) => [link.textContent, link.getAttribute('href')]),
+          [['設計の記録', '#md-h-1'], ['背景', '#md-h-2']]);
+        assert.equal(document.querySelector('article script'), null);
+        assert.equal(document.querySelectorAll('article td').length, 2);
+        assert.match(document.body.textContent ?? '', /表示中: adr\.md/);
+        assert.deepEqual(requests, []);
+      });
+    });
+
+    await suite.test('旧形式のメニューで対象外の機能を選ぶと、NLIを呼ばずに案内する', async () => {
+      let calls = 0;
+      await withApp('/legacy', async () => { calls++; throw new Error('呼びません'); }, async () => {
+        await click('仕事');
+        await click('会議室予約');
+        await waitFor(() => heading('この機能はまだ利用できません'), '対象外の機能を案内しませんでした。');
+        await click('メニューへ戻る');
+        assert.ok(button('文書'));
+        assert.equal(calls, 0);
       });
     });
   } finally {

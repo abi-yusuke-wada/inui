@@ -2,15 +2,22 @@
 # devShell（direnvまたは `nix develop`）に入った状態で実行する。
 
 .DEFAULT_GOAL := help
-.PHONY: app-setup app-setup-offline app-lock app-build app-check app-ui-check app-replay-check app-model-check app-probe app-diagnose app-web-diagnose app-dev app-smoke core-check app-run app-reset lint lint-workflows ci
+.PHONY: app-setup app-setup-offline app-lock app-lock-update app-build app-check app-ui-check app-replay-check app-model-check app-probe app-diagnose app-web-diagnose app-dev app-smoke core-check app-run app-reset lint lint-workflows ci
 
+# worktreeでも本体のチェックアウトと同じpnpmストア・メタデータキャッシュを使う。
+# node_modulesへはストアからハードリンクで配置されるため、パッケージの実体は1つで済む。
+INUI_SHARED_ROOT := $(patsubst %/.git,%,$(shell git rev-parse --path-format=absolute --git-common-dir 2>/dev/null))
+ifeq ($(INUI_SHARED_ROOT),)
+INUI_SHARED_ROOT := $(CURDIR)
+endif
+INUI_SHARED_POC := $(INUI_SHARED_ROOT)/.local-poc
 # 公開npmパッケージだけを取得し、利用者の認証設定は参照しない。
-INUI_PNPM := env -i PATH="$(PATH)" XDG_CONFIG_HOME="$(CURDIR)/.local-poc/config" XDG_CACHE_HOME="$(CURDIR)/.local-poc/cache" XDG_STATE_HOME="$(CURDIR)/.local-poc/state" pnpm --config.userconfig=/dev/null --config.globalconfig=/dev/null --config.store-dir="$(CURDIR)/.local-poc/pnpm-store" --config.verify-deps-before-run=error
+INUI_PNPM := env -i PATH="$(PATH)" XDG_CONFIG_HOME="$(CURDIR)/.local-poc/config" XDG_CACHE_HOME="$(INUI_SHARED_POC)/cache" XDG_STATE_HOME="$(CURDIR)/.local-poc/state" pnpm --config.userconfig=/dev/null --config.globalconfig=/dev/null --config.store-dir="$(INUI_SHARED_POC)/pnpm-store" --config.verify-deps-before-run=error
 BIOME_FLAGS ?= --error-on-warnings
 
 app-setup: ## ローカルPoCの公開npm依存を取得する（ネットワーク使用・インストールscript無効）
-	@mkdir -p .local-poc/config .local-poc/cache .local-poc/state .local-poc/pnpm-store
-	@chmod 700 .local-poc
+	@mkdir -p .local-poc/config .local-poc/state "$(INUI_SHARED_POC)/cache" "$(INUI_SHARED_POC)/pnpm-store"
+	@chmod 700 .local-poc "$(INUI_SHARED_POC)"
 	@$(INUI_PNPM) install --frozen-lockfile --ignore-scripts --fetch-retries=0 --fetch-timeout=10000
 
 app-setup-offline: ## 取得済み依存だけでworkspaceのリンクを更新する（通信なし）
@@ -19,9 +26,14 @@ app-setup-offline: ## 取得済み依存だけでworkspaceのリンクを更新�
 app-lock: ## 変更した依存定義を取得済みキャッシュからlockへ反映する（通信なし）
 	@$(INUI_PNPM) install --offline --lockfile-only --ignore-scripts
 
+app-lock-update: ## 変更した依存定義をnpmレジストリで解決しlockへ反映する（ネットワーク使用・インストールscript無効）
+	@mkdir -p .local-poc/config .local-poc/state "$(INUI_SHARED_POC)/cache" "$(INUI_SHARED_POC)/pnpm-store"
+	@chmod 700 .local-poc "$(INUI_SHARED_POC)"
+	@$(INUI_PNPM) install --lockfile-only --ignore-scripts --fetch-retries=0 --fetch-timeout=10000
+
 lint: lint-workflows ## TypeScript・React・CSSとGitHub Actionsの定義を検査する
 	biome --version
-	biome lint $(BIOME_FLAGS) src tests packages/core/src packages/core/tests scripts
+	biome lint $(BIOME_FLAGS) src tests packages/core/src packages/core/tests packages/features scripts
 
 lint-workflows: ## GitHub Actionsの定義を検査する
 	actionlint .github/workflows/ci.yml
@@ -33,29 +45,33 @@ core-check: ## 独立コアを外部通信なしで検証する
 
 app-build: ## 独立コアとローカルPoCをビルドする
 	node_modules/.bin/tsc -p packages/core/tsconfig.build.json
-	node_modules/.bin/esbuild src/server.ts --bundle --platform=node --packages=external --format=esm --target=node24 --outfile=dist/server.js
-	node_modules/.bin/esbuild src/web/main.tsx --bundle --format=esm --target=es2022 --jsx=automatic --minify --define:process.env.NODE_ENV='"production"' --outfile=dist/public/app.js
+	@# 機能パッケージ（packages/features）はサーバーへ同梱し、公開npm依存とコアは実行時に読み込む。
+	node_modules/.bin/esbuild src/server.ts --bundle --platform=node --external:hono --external:@hono/node-server --external:@inui/core --format=esm --target=node24 --outfile=dist/server.js
+	@# 業務画面は遅延読み込みのチャンクとして assets/ へ分ける。古いチャンクは残さない。
+	rm -rf dist/public/assets
+	node_modules/.bin/esbuild src/web/main.tsx --bundle --format=esm --target=es2022 --jsx=automatic --minify --define:process.env.NODE_ENV='"production"' --splitting --outdir=dist/public --entry-names=app --chunk-names='assets/[name]-[hash]' --asset-names='assets/[name]-[hash]'
 	cp src/web/index.html dist/public/index.html
 
-app-ui-check: app-build ## DOM上でフォーム保存・人名選択・従来UIの操作を検証する
-	node_modules/.bin/esbuild tests/web/App.test.tsx --bundle --packages=external --platform=node --format=esm --target=node24 --jsx=automatic --outfile=dist/ui-tests/App.test.js
+app-ui-check: app-build ## DOM上でタスク保存・Markdown表示・人名選択・従来UIの操作を検証する
+	@# 機能パッケージと、その中だけで使う依存は同梱する。Mermaidは図の描画時だけ読むため外部のままにする。
+	node_modules/.bin/esbuild tests/web/App.test.tsx --bundle --external:react --external:react-dom --external:jsdom --external:mermaid --platform=node --format=esm --target=node24 --jsx=automatic --outfile=dist/ui-tests/App.test.js
 	node --test --test-isolation=none dist/ui-tests/App.test.js
 	node --test --test-isolation=none tests/scripts/poc-web.test.mjs
 
 app-replay-check: ## 保存した19件の実NLI応答と現コアを再照合する（推論・通信なし）
 	@mkdir -p -m 700 .local-poc
-	@node scripts/poc-probe.mjs --replay docs/poc-nli-responses-2026-11-10.jsonl > .local-poc/replay-verification.json
+	@node scripts/poc-probe.mjs --replay docs/poc-nli-responses-2026-11-16.jsonl > .local-poc/replay-verification.json
 	@node -p 'JSON.stringify(JSON.parse(require("node:fs").readFileSync(".local-poc/replay-verification.json", "utf8")).summary)'
 
 app-check: app-ui-check app-replay-check ## コア・API・永続化・UIのテストと型・差分を検証する
 	node_modules/.bin/tsc -p packages/core/tsconfig.json
 	node_modules/.bin/tsc -p tsconfig.json
-	node --test --test-isolation=none packages/core/tests/*.test.ts tests/*.test.ts tests/web/*.test.ts tests/scripts/poc-probe.test.mjs tests/scripts/poc-local.test.mjs tests/scripts/push-guard.test.mjs
+	node --test --test-isolation=none packages/core/tests/*.test.ts packages/features/*/tests/*.test.ts tests/*.test.ts tests/web/*.test.ts tests/scripts/poc-probe.test.mjs tests/scripts/poc-local.test.mjs tests/scripts/push-guard.test.mjs
 	git diff --check
 
-app-model-check: ## キャッシュ済み実NLIの7候補を19入力で検証する（外部通信なし）
+app-model-check: ## キャッシュ済み実NLIの6候補を19入力で検証する（外部通信なし。worktreeでも本体の.local-jevを使う）
 	@mkdir -p -m 700 .local-poc
-	@env -u TYPESAFE_API_KEY -u HF_TOKEN HF_HOME="$$(pwd)/.local-jev/cache" LOCAL_JEV_MODELS="$$(pwd)/.local-jev/models" HF_HUB_DISABLE_IMPLICIT_TOKEN=1 HF_HUB_OFFLINE=1 TRANSFORMERS_OFFLINE=1 PYTHONDONTWRITEBYTECODE=1 OMP_NUM_THREADS=4 MKL_NUM_THREADS=4 OPENBLAS_NUM_THREADS=4 .local-jev/venv/bin/python -u scripts/poc-model-check.py > .local-poc/model-responses.jsonl
+	@env -u TYPESAFE_API_KEY -u HF_TOKEN HF_HOME="$(INUI_SHARED_ROOT)/.local-jev/cache" LOCAL_JEV_MODELS="$(INUI_SHARED_ROOT)/.local-jev/models" HF_HUB_DISABLE_IMPLICIT_TOKEN=1 HF_HUB_OFFLINE=1 TRANSFORMERS_OFFLINE=1 PYTHONDONTWRITEBYTECODE=1 OMP_NUM_THREADS=4 MKL_NUM_THREADS=4 OPENBLAS_NUM_THREADS=4 "$(INUI_SHARED_ROOT)/.local-jev/venv/bin/python" -u scripts/poc-model-check.py > .local-poc/model-responses.jsonl
 	@node scripts/poc-probe.mjs --replay .local-poc/model-responses.jsonl > .local-poc/model-verification.json
 	@node -p 'JSON.stringify(JSON.parse(require("node:fs").readFileSync(".local-poc/model-verification.json", "utf8")).summary)'
 
@@ -81,7 +97,7 @@ app-smoke: app-build ## アプリと実NLIを起動して19入力を検証する
 app-run: app-build ## アプリだけを127.0.0.1:8766で起動する（実NLIは別途起動）
 	node dist/server.js
 
-app-reset: ## ローカルPoCの検証データだけを初期2件へ戻す
+app-reset: ## ローカルPoCの検証データ（自分のタスク）を空に戻す
 	node src/reset.ts
 .PHONY: help check sandbox-check jev-check jev-probe jev-probe-dry-run jev-probe-live jev-probe-local jev-prompt-study jev-local-setup jev-local-versions jev-local-pin-model jev-local-serve
 

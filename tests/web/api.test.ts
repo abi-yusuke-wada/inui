@@ -1,6 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { ApiError, LatestRequest, errorMessage, fetchJson, parseDecision, parseEmployees, parseSchedules, validDate } from '../../src/web/api.ts';
+import { parseEmployees, parseSchedules } from '@inui/feature-schedule/client';
+import { ApiError, LatestRequest, errorMessage, fetchJson, parseDecision, validDate } from '../../src/web/api.ts';
 
 test('新しい要求と画面の破棄は、以前の応答の反映を無効にする', () => {
   const gate = new LatestRequest();
@@ -23,6 +24,14 @@ test('予定比較の人名選択を保持し、未許可画面や不正な社�
   assert.throws(() => parseDecision({ kind: 'screen', intent: 'schedule_compare', ui: 'admin' }), ApiError);
   assert.throws(() => parseDecision({ kind: 'screen', intent: 'schedule_compare', ui: 'schedule_compare', people: { ...people, selectedIds: ['a', 'a'] } }), ApiError);
   assert.throws(() => parseEmployees({ employees: [{ id: 'a', name: '山田太郎' }, { id: 'a', name: '別人' }] }), ApiError);
+  // 人名の選択は予定比較の画面にだけ付けられる。
+  assert.throws(() => parseDecision({ kind: 'screen', intent: 'task_board', ui: 'task_board', people }), ApiError);
+  for (const removed of ['leave_request', 'expense_request', 'application_status']) {
+    assert.throws(() => parseDecision({ kind: 'screen', intent: removed, ui: removed }), ApiError);
+  }
+  for (const screen of ['markdown_view', 'task_board'] as const) {
+    assert.deepEqual(parseDecision({ kind: 'screen', intent: screen, ui: screen }), { kind: 'screen', intent: screen, ui: screen });
+  }
 });
 
 test('予定の応答が異なる日付や社員、逆転した時間を含む場合は表示しない', () => {
@@ -54,17 +63,22 @@ test('HTTPエラー本文を取得・表示用エラーへ含めず、保存POST
     assert.equal(options?.credentials, 'same-origin');
     assert.equal(options?.redirect, 'error');
     return {
-      ok: false, status: 500,
+      ok: false, status: 502, headers: new Headers({ 'X-Error-Code': 'upstream_auth' }),
       json: async () => { readBody = true; return { error: '秘密を含む外部本文' }; },
     } as Response;
   };
-  await assert.rejects(fetchJson('/api/applications/leave', { method: 'POST', body: { date: '2026-11-03' }, fetchImpl: fake }), (error: unknown) => {
+  await assert.rejects(fetchJson('/api/tasks/local', { method: 'POST', body: { title: '件名' }, fetchImpl: fake }), (error: unknown) => {
     assert.ok(error instanceof ApiError);
     assert.equal(error.kind, 'http');
-    assert.equal(error.status, 500);
+    assert.equal(error.status, 502);
+    assert.equal(error.code, 'upstream_auth');
     assert.equal(error.message.includes('秘密'), false);
     return true;
   });
+  // 固定形式でないコードは採用しない。
+  await assert.rejects(fetchJson('/api/tasks/github', { fetchImpl: async () => ({
+    ok: false, status: 502, headers: new Headers({ 'X-Error-Code': '秘密 <b>' }), json: async () => ({}),
+  } as Response) }), (error: unknown) => error instanceof ApiError && error.code === undefined);
   assert.equal(calls, 1);
   assert.equal(readBody, false);
 });
@@ -99,8 +113,8 @@ test('時間超過の案内を入力・権限・接続・応答形式の失敗�
   const timeoutMessage = '画面の表示に時間がかかっています。時間をおいてお試しください。';
   const connectionMessage = '画面の表示ができませんでした。接続を確認して、もう一度お試しください。';
   assert.equal(errorMessage(new ApiError('timeout'), action), timeoutMessage);
-  // 判定以外（申請等）の入力エラーは、入力内容の確認を案内する。
-  assert.equal(errorMessage(new ApiError('http', 400), '申請'), '入力内容を確認して、もう一度お試しください。');
+  // 判定以外（タスクの追加等）の入力エラーは、入力内容の確認を案内する。
+  assert.equal(errorMessage(new ApiError('http', 400), 'タスクの追加'), '入力内容を確認して、もう一度お試しください。');
   // 判定（画面の表示）の入力エラーでは、入力を短くしての再試行を案内する。
   assert.equal(errorMessage(new ApiError('http', 400), '画面の表示'),
     '入力が長すぎるか、内容を判定できませんでした。入力を短くして、もう一度お試しください。');

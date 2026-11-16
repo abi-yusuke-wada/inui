@@ -3,7 +3,7 @@ import { spawn } from 'node:child_process';
 import { mkdir, rename, writeFile } from 'node:fs/promises';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { isDeepStrictEqual } from 'node:util';
-import { listEmployees } from '../src/people.ts';
+import { listEmployees } from '../packages/features/schedule/src/people.ts';
 import { appPort, appOrigin } from '../src/local-config.ts';
 import { logLevel } from '../src/logger.ts';
 import { LOCAL_MODEL } from '../packages/core/src/index.ts';
@@ -15,12 +15,21 @@ const LABELS = { 'local-jev': '推論サーバー', app: 'アプリ' };
 class LocalError extends Error {}
 class Stopped extends Error {}
 
-/** 子プロセスには実行環境だけを渡し、認証用の変数は引き継がない。 */
-export function serviceEnv(parent = process.env, port) {
+// タスク画面の連携先（GitHub・Backlog）の認証情報。アプリの子プロセスにだけ渡す（ADR-0009）。
+export const APP_INTEGRATION_KEYS = ['INUI_GITHUB_TOKEN', 'INUI_BACKLOG_SPACE', 'INUI_BACKLOG_API_KEY'];
+
+/**
+ * 子プロセスには実行環境だけを渡し、認証用の変数は引き継がない。
+ * 例外はアプリへ渡す連携先の3変数だけで、推論サーバーには渡さない。
+ */
+export function serviceEnv(parent = process.env, port, service) {
   const selectedPort = appPort(port === undefined ? parent : { INUI_POC_PORT: String(port) });
   const env = {};
   for (const key of ['PATH', 'LD_LIBRARY_PATH', 'TMPDIR', 'TMP', 'TEMP', 'LANG', 'LC_ALL']) {
     if (typeof parent[key] === 'string') env[key] = parent[key];
+  }
+  if (service === 'app') {
+    for (const key of APP_INTEGRATION_KEYS) if (typeof parent[key] === 'string' && parent[key] !== '') env[key] = parent[key];
   }
   return {
     ...env, NODE_ENV: 'production', INUI_POC_PORT: String(selectedPort), LOG_LEVEL: logLevel(parent.LOG_LEVEL),
@@ -56,7 +65,7 @@ export function launchService(service, port) {
   const args = service === 'app' ? [`${ROOT}dist/server.js`]
     : ['serve', '--model', LOCAL_MODEL, '--host', '127.0.0.1', '--port', '8765'];
   const grouped = process.platform !== 'win32';
-  const child = spawn(command, args, { cwd: ROOT, env: serviceEnv(process.env, port), stdio: 'inherit', detached: grouped });
+  const child = spawn(command, args, { cwd: ROOT, env: serviceEnv(process.env, port, service), stdio: 'inherit', detached: grouped });
   let stopping = false;
   let closed = false;
   let onClose;

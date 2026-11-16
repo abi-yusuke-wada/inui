@@ -1,3 +1,7 @@
+import { fileURLToPath } from 'node:url';
+
+/** ローカルPoCのデータ（タスク）を保存するSQLiteファイル。Gitの管理対象外。 */
+export const DEFAULT_DB_PATH = fileURLToPath(new URL('../.local-poc/app.sqlite', import.meta.url));
 export const DEFAULT_APP_PORT = 8766;
 /** 内部推論サーバー（local-jev）が使うため、アプリには割り当てない。 */
 export const RESERVED_NLI_PORT = 8765;
