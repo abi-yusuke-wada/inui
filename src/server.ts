@@ -2,7 +2,7 @@ import { readFile } from 'node:fs/promises';
 import { serve } from '@hono/node-server';
 import { readTaskSources, TaskStore } from '@inui/feature-tasks/server';
 import { createApp } from './api.ts';
-import { appPort, DEFAULT_DB_PATH } from './local-config.ts';
+import { APP_NAME, appPort, buildId, DEFAULT_DB_PATH } from './local-config.ts';
 import { createLogger, logLevel } from './logger.ts';
 import type { Logger } from './logger.ts';
 
@@ -16,7 +16,7 @@ const assets = {
 const CHUNK = /^[A-Za-z0-9_-]{1,100}\.(?:js|css)$/;
 
 /** 起動失敗も生の例外を表示せず、IPv4 loopbackで開始する。 */
-function start(logger: Logger): void {
+function start(logger: Logger, build: string): void {
   const port = appPort();
   const store = new TaskStore(DEFAULT_DB_PATH);
   // 連携先の認証情報は環境変数からだけ読み、値はログへ出さない。
@@ -27,6 +27,7 @@ function start(logger: Logger): void {
       return c.body(content, 200, { 'Content-Type': contentType });
     });
   }
+  app.get('/api/health', (c) => c.json({ app: APP_NAME, build }));
   app.get('/assets/:file', async (c) => {
     const file = c.req.param('file');
     if (!CHUNK.test(file)) return c.notFound();
@@ -66,7 +67,7 @@ function start(logger: Logger): void {
   });
 }
 const logger = createLogger({ level: logLevel(process.env.LOG_LEVEL) });
-try { start(logger); } catch {
+try { start(logger, await buildId(new URL('./', import.meta.url))); } catch {
   logger.error('server_failed', { error_code: 'startup_failed' });
   process.exitCode = 1;
 }

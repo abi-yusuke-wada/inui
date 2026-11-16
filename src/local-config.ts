@@ -1,4 +1,19 @@
+import { createHash } from 'node:crypto';
+import { readFile } from 'node:fs/promises';
 import { fileURLToPath } from 'node:url';
+
+/** `/api/health`で返すアプリの名前。同じポートの別サービスと区別する。 */
+export const APP_NAME = 'inui-local-poc';
+
+/**
+ * 配信するビルド（サーバーと画面の入口）の識別子。
+ * 起動スクリプトが、別のブランチやworktreeでビルドしたアプリを再利用しないように照合する。
+ */
+export async function buildId(distDirectory: URL): Promise<string> {
+  const hash = createHash('sha256');
+  for (const name of ['server.js', 'public/app.js']) hash.update(await readFile(new URL(name, distDirectory)));
+  return hash.digest('hex');
+}
 
 /** ローカルPoCのデータ（タスク）を保存するSQLiteファイル。Gitの管理対象外。 */
 export const DEFAULT_DB_PATH = fileURLToPath(new URL('../.local-poc/app.sqlite', import.meta.url));

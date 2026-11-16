@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import { fileURLToPath } from 'node:url';
 import { runLocal, serviceEnv, checkService } from '../../scripts/poc-local.mjs';
-import { listEmployees } from '../../packages/features/schedule/src/people.ts';
+const BUILD = 'a'.repeat(64);
 
 const PRIVATE_DETAIL = 'test-only-private-failure';
 
@@ -198,12 +198,12 @@ test('health確認はappと固定NLIを識別し、接続拒否だけを未起�
     urls.push(url);
     assert.equal(init.redirect, 'error');
     assert.ok(init.signal instanceof AbortSignal);
-    return Response.json(url.includes(':8766/') ? { employees: listEmployees() }
+    return Response.json(url.includes(':8766/') ? { app: 'inui-local-poc', build: BUILD }
       : { ok: true, default_model: 'nli-deberta-large' });
   };
-  assert.equal(await checkService('app', healthy, 8766), true);
+  assert.equal(await checkService('app', healthy, 8766, BUILD), true);
   assert.equal(await checkService('local-jev', healthy, 8766), true);
-  assert.deepEqual(urls, ['http://127.0.0.1:8766/api/employees', 'http://127.0.0.1:8765/healthz']);
+  assert.deepEqual(urls, ['http://127.0.0.1:8766/api/health', 'http://127.0.0.1:8765/healthz']);
   for (const service of ['app', 'local-jev']) {
     assert.equal(await checkService(service, async () => {
       throw new Error(PRIVATE_DETAIL, { cause: { code: 'ECONNREFUSED' } });
@@ -214,12 +214,27 @@ test('health確認はappと固定NLIを識別し、接続拒否だけを未起�
       async () => { throw new Error(PRIVATE_DETAIL, { cause: { code: 'EPERM' } }); },
       async () => ({ ok: true, status: 200, json: async () => { throw new Error(PRIVATE_DETAIL); } }),
     ]) {
-      await assert.rejects(checkService(service, fetchImpl, 8766), (error) => {
+      await assert.rejects(checkService(service, fetchImpl, 8766, BUILD), (error) => {
         assert.equal(error.message.includes(PRIVATE_DETAIL), false);
         return true;
       });
     }
   }
+});
+
+test('別のブランチやworktreeでビルドしたアプリは再利用せず、停止を案内する', async () => {
+  for (const fetchImpl of [
+    // 以前のビルド（/api/healthがない）は404を返す。
+    async () => Response.json({ error: { code: 'not_found' } }, { status: 404 }),
+    async () => Response.json({ app: 'inui-local-poc', build: 'b'.repeat(64) }),
+  ]) {
+    await assert.rejects(checkService('app', fetchImpl, 8766, BUILD), (error) => {
+      assert.match(error.message, /別のビルド/);
+      return true;
+    });
+  }
+  // 同じポートの別サービスは、別の設定・サービスとして案内する。
+  await assert.rejects(checkService('app', async () => Response.json({ employees: [] }), 8766, BUILD), /別の設定・サービス/);
 });
 
 test('選択した18766を起動確認・子への設定・smoke・案内URLで共有し、NLIは8765に保つ', async () => {
@@ -246,11 +261,11 @@ test('選択した18766を起動確認・子への設定・smoke・案内URLで�
   const urls = [];
   const fetchImpl = async (url) => {
     urls.push(url);
-    return Response.json(url.includes(':18766/') ? { employees: listEmployees() } : { ok: true, default_model: 'nli-deberta-large' });
+    return Response.json(url.includes(':18766/') ? { app: 'inui-local-poc', build: BUILD } : { ok: true, default_model: 'nli-deberta-large' });
   };
-  assert.equal(await checkService('app', fetchImpl, 18766), true);
+  assert.equal(await checkService('app', fetchImpl, 18766, BUILD), true);
   assert.equal(await checkService('local-jev', fetchImpl, 18766), true);
-  assert.deepEqual(urls, ['http://127.0.0.1:18766/api/employees', 'http://127.0.0.1:8765/healthz']);
+  assert.deepEqual(urls, ['http://127.0.0.1:18766/api/health', 'http://127.0.0.1:8765/healthz']);
 });
 
 test('不正なポートはサービス確認や起動の前に安全なエラーにし、子へ渡さない', async () => {

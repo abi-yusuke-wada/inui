@@ -2,9 +2,7 @@ import { randomUUID } from 'node:crypto';
 import { spawn } from 'node:child_process';
 import { mkdir, rename, writeFile } from 'node:fs/promises';
 import { fileURLToPath, pathToFileURL } from 'node:url';
-import { isDeepStrictEqual } from 'node:util';
-import { listEmployees } from '../packages/features/schedule/src/people.ts';
-import { appPort, appOrigin } from '../src/local-config.ts';
+import { APP_NAME, appPort, appOrigin, buildId } from '../src/local-config.ts';
 import { logLevel } from '../src/logger.ts';
 import { LOCAL_MODEL } from '../packages/core/src/index.ts';
 import { probeHttp } from './poc-probe.mjs';
@@ -39,9 +37,14 @@ export function serviceEnv(parent = process.env, port, service) {
   };
 }
 
-/** 接続拒否だけを未起動とし、別のサービスや権限エラーを上書きしない。 */
-export async function checkService(service, fetchImpl = globalThis.fetch, port) {
-  const url = service === 'app' ? `${appOrigin(appPort(port === undefined ? undefined : { INUI_POC_PORT: String(port) }))}/api/employees`
+const OTHER_BUILD = 'アプリのポートでは、別のビルド（別のブランチやworktree）のアプリが起動しています。そのアプリを停止してから起動し直してください。';
+
+/**
+ * 接続拒否だけを未起動とし、別のサービスや権限エラーを上書きしない。
+ * アプリは手元のビルドと同じ場合だけ再利用し、別のworktreeで起動したアプリを黙って使わない。
+ */
+export async function checkService(service, fetchImpl = globalThis.fetch, port, expectedBuild) {
+  const url = service === 'app' ? `${appOrigin(appPort(port === undefined ? undefined : { INUI_POC_PORT: String(port) }))}/api/health`
     : 'http://127.0.0.1:8765/healthz';
   let response;
   try { response = await fetchImpl(url, { redirect: 'error', signal: AbortSignal.timeout(1500) }); }
@@ -49,13 +52,21 @@ export async function checkService(service, fetchImpl = globalThis.fetch, port) 
     if (error?.cause?.code === 'ECONNREFUSED') return false;
     throw new LocalError(`${LABELS[service]}への接続を確認できません。ポートと実行権限を確認してください。`);
   }
+  // 以前のビルドには/api/healthがないため、404は別のビルドとして案内する。
+  if (service === 'app' && response.status === 404) throw new LocalError(OTHER_BUILD);
   if (!response.ok) throw new LocalError(`${LABELS[service]}の応答はHTTP ${response.status}です。既存の起動プロセスを確認してください。`);
   let body;
   try { body = await response.json(); }
   catch { throw new LocalError(`${LABELS[service]}の応答を確認できません。`); }
-  const valid = service === 'app' ? isDeepStrictEqual(body, { employees: listEmployees() })
+  const valid = service === 'app' ? body?.app === APP_NAME && typeof body?.build === 'string'
     : body?.ok === true && body?.default_model === LOCAL_MODEL;
   if (!valid) throw new LocalError(`${LABELS[service]}のポートには別の設定・サービスが起動しています。`);
+  if (service === 'app') {
+    let local;
+    try { local = expectedBuild ?? await buildId(new URL('../dist/', import.meta.url)); }
+    catch { throw new LocalError('手元のビルドを確認できません。make app-build を実行してください。'); }
+    if (body.build !== local) throw new LocalError(OTHER_BUILD);
+  }
   return true;
 }
 
