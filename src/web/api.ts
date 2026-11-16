@@ -176,6 +176,10 @@ export function parseSchedules(value: unknown, date: string, selectedIds: string
 }
 
 export function errorMessage(error: unknown, action: string): string {
+  // 判定の入力エラーには、推論サーバーでの切り詰めも含まれるため、短くしての再試行を案内する。
+  if (error instanceof ApiError && error.status === 400 && action === '画面の表示') {
+    return '入力が長すぎるか、内容を判定できませんでした。入力を短くして、もう一度お試しください。';
+  }
   if (error instanceof ApiError && error.status === 400) return '入力内容を確認して、もう一度お試しください。';
   if (error instanceof ApiError && (error.status === 401 || error.status === 403)) {
     return 'この操作を利用できません。ページを再読み込みしてお試しください。';

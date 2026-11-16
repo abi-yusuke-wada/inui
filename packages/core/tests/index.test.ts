@@ -213,11 +213,14 @@ for (const timeoutMs of [0, -1, 1.5, Infinity, NaN, 2_147_483_648]) {
 }
 
 test('既定接続先を使い、上流例外の詳細を漏らさない', async () => {
+  let requested: unknown;
   const router = createIntentRouter({ fetchImpl: fakeFetch(async (input) => {
-    assert.equal(input, 'http://127.0.0.1:8765/v1/systemone');
+    requested = input;
     throw new Error('upstream-private-detail');
   }) });
   await assert.rejects(router('有給を取りたい'), isDecisionError('unavailable'));
+  // fetch内のassertは例外がunavailableへ変換されて見逃されるため、完了後に接続先を検査する。
+  assert.equal(requested, 'http://127.0.0.1:8765/v1/systemone');
 });
 
 test('HTTPエラーは本文を読まず、通信を中止して固定エラーへ変換する', async () => {

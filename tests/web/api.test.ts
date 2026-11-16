@@ -99,7 +99,11 @@ test('時間超過の案内を入力・権限・接続・応答形式の失敗�
   const timeoutMessage = '画面の表示に時間がかかっています。時間をおいてお試しください。';
   const connectionMessage = '画面の表示ができませんでした。接続を確認して、もう一度お試しください。';
   assert.equal(errorMessage(new ApiError('timeout'), action), timeoutMessage);
-  assert.equal(errorMessage(new ApiError('http', 400), action), '入力内容を確認して、もう一度お試しください。');
+  // 判定以外（申請等）の入力エラーは、入力内容の確認を案内する。
+  assert.equal(errorMessage(new ApiError('http', 400), '申請'), '入力内容を確認して、もう一度お試しください。');
+  // 判定（画面の表示）の入力エラーでは、入力を短くしての再試行を案内する。
+  assert.equal(errorMessage(new ApiError('http', 400), '画面の表示'),
+    '入力が長すぎるか、内容を判定できませんでした。入力を短くして、もう一度お試しください。');
   for (const status of [401, 403]) {
     assert.equal(errorMessage(new ApiError('http', status), action), 'この操作を利用できません。ページを再読み込みしてお試しください。');
   }
