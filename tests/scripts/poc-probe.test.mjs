@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
+import { fileURLToPath } from 'node:url';
 import test from 'node:test';
 import { CASES } from '../../scripts/jev-probe.mjs';
 import { POC_CASES, requests, requestsDigest, replay, probeHttp, diagnose, diagnoseWeb, runCli } from '../../scripts/poc-probe.mjs';
@@ -53,7 +54,7 @@ test('保存した実NLI応答19件を現コアで再生し、正常・異常・
   assert.deepEqual(result.summary.people, { matched: 4, total: 4 });
   assert.ok(result.results.every((row) => row.truncated === false));
   const output = capture();
-  assert.equal(await runCli(['--replay', SAVED_FILE.pathname], {
+  assert.equal(await runCli(['--replay', fileURLToPath(SAVED_FILE)], {
     ...output, fetchImpl: async () => assert.fail('保存結果の再生で通信しない'),
   }), 0);
   assert.equal(output.lines.length, 1);

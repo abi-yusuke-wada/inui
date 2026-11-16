@@ -105,6 +105,11 @@ export function App() {
     showScreen('application_status');
   }
 
+  // 保存中はリンクによる画面移動も止め、保存結果の通知や確認案内を失わないようにする。
+  function guardNavigation(event: { preventDefault(): void }) {
+    if (saveBusyRef.current) event.preventDefault();
+  }
+
   function resetMenu() {
     if (saveBusyRef.current) return;
     routeRequest.cancel();
@@ -116,10 +121,10 @@ export function App() {
   return <div className="app-shell">
     <a className="skip-link" href="#main-content">本文へ移動</a>
     <header className="site-header">
-      <a className="wordmark" href="/" aria-label="inui ホーム">inui<span className="wordmark-dot">.</span></a>
+      <a className="wordmark" href="/" aria-label="inui ホーム" aria-disabled={saveBusy || undefined} onClick={guardNavigation}>inui<span className="wordmark-dot">.</span></a>
       <span className="header-caption">{legacy ? 'メニューから探す' : 'したいことから、画面へ'}</span>
       {legacy
-        ? <a className="header-link" href="/">自然言語入力へ</a>
+        ? <a className="header-link" href="/" aria-disabled={saveBusy || undefined} onClick={guardNavigation}>自然言語入力へ</a>
         : <button className="header-link" type="button" aria-expanded={helpOpen} aria-controls="help" onClick={() => setHelpOpen(!helpOpen)}>使い方</button>}
     </header>
 
@@ -153,7 +158,7 @@ export function App() {
                 routeRequest.cancel(); setRouting(false); setRoutingError(''); setText(example); input.current?.focus();
               }}>{example}<span aria-hidden="true">↗</span></button>)}
           </div>
-          <a href="/legacy">比較用のメニューから探す</a>
+          <a href="/legacy" aria-disabled={saveBusy || undefined} onClick={guardNavigation}>比較用のメニューから探す</a>
         </div>}
         {routing && <p className="loading-line" role="status"><span className="loading-dot" />入力を確認しています…</p>}
         {routingError && <Feedback message={routingError} onRetry={() => { void route(); }} />}
