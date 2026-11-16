@@ -73,6 +73,7 @@ test('push先やURLを書き換えるGitの設定があれば承認を求める'
   for (const [key, value] of [
     ['remote.origin.push', 'refs/heads/feat/sample:refs/heads/main'],
     ['remote.origin.pushurl', 'https://example.invalid/other.git'],
+    ['remote.origin.mirror', 'true'],
     ['url.https://example.invalid/.insteadOf', 'https://github.com/'],
     ['url.https://example.invalid/.pushInsteadOf', 'https://github.com/'],
   ]) {
