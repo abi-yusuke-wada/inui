@@ -76,9 +76,12 @@ export function selectPeople(text: string): PeopleSelection {
   }
   // 「山田太郎と佐藤花子と田中を比較」のように敬称なしで並べた中の未知名も、確認の対象に残す。
   // 既知の名前を1つ以上含む列挙だけを対象にし、「複数人の予定」等の一般語は未知名にしない。
-  const enumeration = /(?:[\p{Script=Han}\p{Script=Katakana}A-Za-z々ー]+[とや])+[\p{Script=Han}\p{Script=Katakana}A-Za-z々ー]+(?=を(?:比較|比べ|見比べ)|の(?:予定|スケジュール|空き|都合)|$)/gu;
+  // 語の途中から切り出さないよう、直前が漢字・カタカナ・英字でない位置からだけ始める。
+  const enumeration = /(?<![\p{Script=Han}\p{Script=Katakana}A-Za-z々ー])(?:[\p{Script=Han}\p{Script=Katakana}A-Za-z々ー]+[とや])+[\p{Script=Han}\p{Script=Katakana}A-Za-z々ー]+(?=を(?:比較|比べ|見比べ)|の(?:予定|スケジュール|空き|都合)|$)/gu;
+  // 「山田太郎の予定と佐藤花子の予定」の「予定」のような説明語は、名前の候補にしない。
+  const descriptions = new Set(['予定', 'スケジュール', '空き', '都合']);
   for (const [match] of normalized.matchAll(enumeration)) {
-    const parts = match.split(/[とや]/u).filter(Boolean);
+    const parts = match.split(/[とや]/u).filter((part) => part && !descriptions.has(part));
     if (!parts.some(knownName)) continue;
     for (const part of parts) if (!knownName(part)) unknown.add(part);
   }
