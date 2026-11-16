@@ -50,6 +50,7 @@
       "Bash(git push * --delete*)",
       "Bash(git push * main*)",
       "Bash(git push * :*)",
+      "Bash(git push *:*)",
       "Bash(gh *.env*)",
       "Bash(gh *@.*)",
       "Bash(gh *@~*)",
@@ -71,9 +72,14 @@
       "Bash(gh api *--method PATCH repos/*/inui)",
       "Bash(gh api *--method PATCH repos/*/inui *)"
     ],
+    "allow": [
+      "Bash(git push origin feat/*)",
+      "Bash(git push origin docs/*)",
+      "Bash(git push origin fix/*)",
+      "Bash(git push origin chore/*)"
+    ],
     "ask": [
       "Bash(gh *)",
-      "Bash(git push *)",
       "Bash(git -c * push*)",
       "Bash(git -C * push*)",
       "WebFetch"

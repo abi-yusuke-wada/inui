@@ -23,7 +23,7 @@ inuiでCodex CLIとClaude Codeを使うときの権限設定・起動方法・�
 | --- | --- | --- | --- |
 | A. 調査 | 読み取り専用 | `codex`（既定のプロファイル `inui-readonly`） | `claude --permission-mode plan` |
 | B. 実装・テスト | 作業領域への書き込み | `codex` で起動し、`/permissions` で `inui-dev` に切り替える | `claude`（既定）。編集を自動で許可する場合は `claude --permission-mode acceptEdits` |
-| C. GitHubへの反映 | 制限付きの書き込み | 使わない（通信不可） | `gh`・`git push` を毎回承認して実行する |
+| C. GitHubへの反映 | 制限付きの書き込み | 使わない（通信不可） | `gh` は毎回承認して実行する。作業ブランチへの `git push origin <ブランチ>` は承認なしで実行する |
 
 どちらのCLIも、devShellに入った状態（direnvまたは `nix develop`）で起動する。Codexは起動後と切り替え後に `/status` で権限が `inui-readonly`・`inui-dev` になっていることを確認してから作業する。起動オプション `-c 'default_permissions="…"'` での指定は、ワークスペースの要件設定の読み込みに失敗して起動できない（2026-11-02確認）。`codex` だけで起動すると `inui-readonly` が適用され、`/permissions` で `inui-dev` を選択できることを確認した。`-s/--sandbox`・`--full-auto` 等の起動オプションやエイリアスがあると、プロジェクトの権限プロファイルより優先される場合がある（2026-11-02、権限プロファイルが適用されず `workspace-write` で起動したセッションでは、GitHubのトークン等を読み取れることを確認した）。調査で整理した作業スコープをユーザーと合意してから、段階Bで起動し直す。
 
@@ -44,11 +44,11 @@ inuiでCodex CLIとClaude Codeを使うときの権限設定・起動方法・�
 
 設定: [.claude/settings.json](../.claude/settings.json)（共有）、`.claude/settings.local.json`（個人、Git管理外）
 
-- `permissions.defaultMode = "default"`。ファイル編集は承認を求める。自動編集は段階Bで明示的に指定したときだけ使う。Bashは、`sandbox.autoAllowBashIfSandboxed` の既定値（`true`）により、サンドボックス内で実行できるコマンドは承認なしで実行される。承認を求めるのは、`ask` に一致するコマンド（`gh`・`git push` 等）、サンドボックス外での実行が必要なコマンド、拒否されていないサンドボックス外の通信先への接続である。
+- `permissions.defaultMode = "default"`。ファイル編集は承認を求める。自動編集は段階Bで明示的に指定したときだけ使う。Bashは、`sandbox.autoAllowBashIfSandboxed` の既定値（`true`）により、サンドボックス内で実行できるコマンドは承認なしで実行される。承認を求めるのは、`ask` に一致するコマンド（`gh`、`git -c`・`git -C` を付けたpush等）、サンドボックス外での実行が必要なコマンド、拒否されていないサンドボックス外の通信先への接続である。
 - `sandbox.enabled`・`failIfUnavailable`・`allowUnsandboxedCommands: false`。Bashはサンドボックス内で実行し、サンドボックスが使えなければ起動しない。サンドボックスを外した再実行はできない。例外は `excludedCommands` に指定した `gh`・`git push` で、承認後にホスト上（サンドボックス外）で実行される。
 - `permissions.blockWritesOutsideWorkingDirectories`。ファイル操作ツール（Write・Edit等）による作業領域外への書き込みと、CLIの設定ファイルへの書き込みを拒否する。
 - `Read`・`Edit` の拒否ルールで、Codexと同じ機密ファイル・認証情報を対象にする。拒否ルールはサンドボックスの読み取り拒否にも反映される。
-- `gh` と `git push` はGitHubのトークンを使うため、サンドボックスの対象外（`excludedCommands`）とし、`ask` で毎回承認を求める。パイプ等で他のコマンドと組み合わせた場合はサンドボックス内で実行され、トークンを読めないため失敗する。`git -C <dir> push` のように `git push` で始まらない書き方や、引数にバッククォート・リダイレクト記号を含む `gh` もサンドボックス内で実行されるため、コマンドは単独で書き、本文は `-F body=@<ファイル>` で渡す。
+- `gh` と `git push` はGitHubのトークンを使うため、サンドボックスの対象外（`excludedCommands`）とする。`gh` は `ask` で毎回承認を求める。`git push` は、利用者の指示（2026-11-16）により、作業ブランチ（`feat/`・`docs/`・`fix/`・`chore/`）への `git push origin <ブランチ>` だけを `allow` で承認なしにした。`main` へのpush（`git push * main*`）、force push、削除、`:` で行き先を指定するpush（`git push *:*`、例: `feat/x:main`）は `deny` で拒否し、`deny` は `allow` より優先される。パイプ等で他のコマンドと組み合わせた場合はサンドボックス内で実行され、トークンを読めないため失敗する。`git -C <dir> push` のように `git push` で始まらない書き方や、引数にバッククォート・リダイレクト記号を含む `gh` もサンドボックス内で実行されるため、コマンドは単独で書き、本文は `-F body=@<ファイル>` で渡す。
 - マージ・Auto-mergeの有効化・承認（`gh pr review --approve`）・`gh auth`・リポジトリ設定・Secrets・Variables・Rulesetの変更、force push、`main` へのpush、ブランチの削除を `deny` で拒否する。`gh api` 経由のRuleset・ブランチ保護・Secrets・Variables・Actionsの権限の操作、`DELETE`、リポジトリ設定の `PATCH` も拒否する（Rulesetの確認・登録は人間が行う）。コマンドの書き方を変えれば回避できるパターン照合のため、マージ禁止の主な手段はGitHub側の保護設定とする。
 - サンドボックス外で動く `gh` がローカルの機密ファイルを読んで送信しないよう、`.env` を含む引数、`@` で始まる作業領域外・ドットファイルへのファイル参照、`--body-file`・`--input` を拒否する。本文はスクラッチパッド（`/tmp` 配下）のファイルを `-F body=@<ファイル>` で渡す。これもパターン照合のため、承認時にコマンド全体を確認する。
 - `git -C <dir> push` 等の別の書き方も承認の対象にする。これらはサンドボックス内で実行されトークンを読めないため、現状でも認証付きのpushはできない（2026-11-02、`git -C` 形式のpushがサンドボックスの通信制限で失敗することを確認）。
