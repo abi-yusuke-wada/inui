@@ -88,15 +88,18 @@ Linux・WSLの再帰globは `glob_scan_max_depth = 8` とし、各サンドボ�
 | --- | --- | --- |
 | A. 従来どおり毎回承認する | 指摘修正のたびに承認が必要 | 最小 |
 | B. `git push *` を許可する | 承認なし | `main` への誤ったpushや強制更新も承認なしで通る |
-| C. 作業ブランチへの `git push origin <ブランチ>` だけを許可し、それ以外を拒否する（採用） | 承認なし | 許可規則は文字列一致のため、書き方の変更やGitの設定による送信先の書き換えを完全には防げない |
+| C. `allow` の文字列一致で作業ブランチへのpushだけを許可する | 承認なし | 文字列一致では `feat/x:release` のようなrefspec、2つ目のrefspec、Gitの設定による送信先の書き換えを見分けられず、CodeRabbitのレビューで抜け道が続けて見つかった |
+| D. PreToolUseフックでコマンドとGitの設定を検査し、条件を満たすpushだけを承認なしにする（採用） | 承認なし。検査スクリプトの保守が必要 | 検査スクリプトの誤りが抜け道になる。テストで通す場合と止める場合を確認する |
 
-採用した案Cの内容は次のとおり。追加の費用はない。
+採用した案Dの内容は次のとおり。追加の費用はない。
 
-- `allow`: `git push origin feat/*`・`docs/*`・`fix/*`・`chore/*`。
-- `deny`（`allow` より優先）: ブランチ名の後ろに引数が続くpush（`git push origin * *`。2つ目のrefspec・`+` 付きrefspec・`--force` 等）、`main`・`refs/heads/main` への指定、`:` で `main`・`refs/` を行き先にするpush、force push、削除。末尾が `:*` の規則は前方一致として扱われうるため、`:` を含むpushの拒否には使わない。
-- `ask`: `git config`（`remote.origin.push` 等で送信先を書き換える設定を承認なしに入れない）、`git -c`・`git -C` を付けたpush。
+- `.claude/hooks/push-guard.py`（エージェントが書き換えられない場所）が、`git push` の実行直前に次をすべて確認した場合だけ承認なしで実行させる。コマンドが `git push origin <ブランチ>` だけで記号（`:`・`+`・`;` 等）や余分な引数を含まない。ブランチが作業ブランチ（`feat/`・`docs/`・`fix/`・`chore/`）で、現在のブランチと同じ。`origin` の接続先がこのリポジトリで、`remote.origin.push`・`pushurl`・`mirror`・`url.*.insteadOf`・`pushInsteadOf` の設定がない。
+- 条件を満たさないpushは承認を求める。`ask` の `Bash(git push *)` で通常どおり承認を求め、フックが条件を満たした場合だけ承認なしにする。
+- `deny`（`main` への指定、force push、削除、ブランチ名の後ろに引数が続くpush、`:` で `main`・`refs/` を指定するpush）は防御を重ねるために残す。末尾が `:*` の規則は前方一致として扱われうるため使わない。`:` 形式の削除（`git push origin :feat/x`）はフックが承認を求める。
+- `ask`: `git config`、`git -c`・`git -C` を付けたpush。
+- フックの判定は `tests/scripts/push-guard.test.mjs` で、一時リポジトリを使って確認し、`make ci` に含める。
 - pushは従来どおりサンドボックス外で実行され、gitは利用者のGitHubの認証情報を使う。
-- 影響: 文字列一致の規則だけでは、既存のGit設定による送信先の書き換えや別の書き方を完全には防げない。`main` の最終的な保護は、GitHub側のRuleset（[docs/agent-security.md](../agent-security.md) の人間による操作）で行う。
+- 影響: フックはこのリポジトリ内の判定であり、`main` の最終的な保護は、GitHub側のRuleset（[docs/agent-security.md](../agent-security.md) の人間による操作）で行う。
 
 ## AI開発エージェントの権限・責務分離（2026-11-02追加）
 

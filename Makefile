@@ -50,7 +50,7 @@ app-replay-check: ## 保存した19件の実NLI応答と現コアを再照合す
 app-check: app-ui-check app-replay-check ## コア・API・永続化・UIのテストと型・差分を検証する
 	node_modules/.bin/tsc -p packages/core/tsconfig.json
 	node_modules/.bin/tsc -p tsconfig.json
-	node --test --test-isolation=none packages/core/tests/*.test.ts tests/*.test.ts tests/web/*.test.ts tests/scripts/poc-probe.test.mjs tests/scripts/poc-local.test.mjs
+	node --test --test-isolation=none packages/core/tests/*.test.ts tests/*.test.ts tests/web/*.test.ts tests/scripts/poc-probe.test.mjs tests/scripts/poc-local.test.mjs tests/scripts/push-guard.test.mjs
 	git diff --check
 
 app-model-check: ## キャッシュ済み実NLIの7候補を19入力で検証する（外部通信なし）
