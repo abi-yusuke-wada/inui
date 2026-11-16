@@ -240,6 +240,8 @@ test('18766をHTTPの送信先・Origin・診断・Web配信確認で共有し�
     return new Response(null, { status: 503 });
   } });
   assert.equal(intentCalls, 19);
+  // callback内のassert失敗はrequest_failedとして記録されるため、全件がHTTP 503であることも確認する。
+  assert.ok(report.results.every((row) => row.error === 'http_error' && row.http_status === 503));
   assert.equal(report.metadata.endpoint, `${origin}/api/intent`);
   const diagnosed = [];
   const output = capture();

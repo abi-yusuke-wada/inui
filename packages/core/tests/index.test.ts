@@ -307,3 +307,17 @@ test('既定の期限は25秒で、本文読取も残り時間に含める', asy
   t.mock.timers.tick(1);
   await rejection;
 });
+
+test('推論サーバーが入力を切り詰めた応答は、判定として使わず入力エラーにする', async () => {
+  let signal: AbortSignal | undefined;
+  const router = createIntentRouter({ fetchImpl: fakeFetch(async (_input, init) => {
+    signal = init?.signal ?? undefined;
+    return Response.json(responseBody(), { headers: { 'x-local-jev-truncated': 'true' } });
+  }) });
+  await assert.rejects(router('有給を取りたい'), isDecisionError('invalid_input'));
+  assert.equal(signal?.aborted, true);
+  // ヘッダーがfalseなら通常どおり判定を返す。
+  const normal = createIntentRouter({ fetchImpl: fakeFetch(async () =>
+    Response.json(responseBody(), { headers: { 'x-local-jev-truncated': 'false' } })) });
+  await normal('有給を取りたい');
+});

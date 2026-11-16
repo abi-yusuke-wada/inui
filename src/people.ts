@@ -13,6 +13,9 @@ export function listEmployees(): Employee[] {
   return PEOPLE.map(({ id, name }) => ({ id, name }));
 }
 
+/** 「今日の予定と」等の説明に使う語。人名の候補にしない。 */
+const NOT_NAMES = new Set(['今日', '明日', '昨日', '明後日', '本日', '今週', '来週', '先週', '今月', '来月', '午前', '午後', '全員', '複数人', 'チーム', '部署', '自分']);
+
 /** 全名を優先し、同姓や辞書にない名前は選択済みにしない。 */
 export function selectPeople(text: string): PeopleSelection {
   let remaining = text.normalize('NFKC').replace(/\s/gu, '');
@@ -45,6 +48,8 @@ export function selectPeople(text: string): PeopleSelection {
       if (leading?.[1] && leading[2]) {
         const head = leading[1].replace(/^.*(?:の|は|が|も|で|に|を)(?=[\p{Script=Han}\p{Script=Katakana}A-Za-z])/u, '');
         if (knownName(head)) selectName(head);
+        // 「田中の予定と」の田中のように辞書にない名前は、確認の対象として残す。
+        else if (/^[\p{Script=Han}\p{Script=Katakana}A-Za-z]/u.test(head) && !NOT_NAMES.has(head)) unknown.add(head);
         name = leading[2];
       }
       // 「今日は山田太郎さん」の「今日は」のような前置きを、助詞までまとめて名前から外す。

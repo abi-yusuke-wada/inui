@@ -96,6 +96,10 @@ test('敬称なしの未知名を既知姓・全名の部分一致から選択�
       selectedIds: ['person-yamada-taro', 'person-sato-hanako'], ambiguous: [], unknownNames: [],
     }, text);
   }
+  // 先行する未知名は、確認の対象として残す。
+  assert.deepEqual(selectPeople('田中の予定と山田太郎さんと佐藤花子さんの予定'), {
+    selectedIds: ['person-yamada-taro', 'person-sato-hanako'], ambiguous: [], unknownNames: ['田中'],
+  });
   // 先の説明が名前でなければ、名前として選ばない。
   assert.deepEqual(selectPeople('今日の予定と佐藤花子さんの予定'), {
     selectedIds: ['person-sato-hanako'], ambiguous: [], unknownNames: [],

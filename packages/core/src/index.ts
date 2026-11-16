@@ -212,6 +212,11 @@ export function createIntentRouter({
         controller.abort();
         throw new DecisionError('unavailable');
       }
+      // 推論サーバーが入力を切り詰めた場合は、短縮前と異なる判定になりうるため結果を使わない。
+      if (response.headers?.get('x-local-jev-truncated') === 'true') {
+        controller.abort();
+        throw new DecisionError('invalid_input');
+      }
       let body: unknown;
       try {
         body = await response.json();
