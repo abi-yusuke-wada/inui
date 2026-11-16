@@ -1,7 +1,8 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
+import { execFileSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
-import { runLocal, serviceEnv, checkService } from '../../scripts/poc-local.mjs';
+import { runLocal, serviceEnv, checkService, localJevDir } from '../../scripts/poc-local.mjs';
 const BUILD = 'a'.repeat(64);
 
 const PRIVATE_DETAIL = 'test-only-private-failure';
@@ -159,10 +160,18 @@ test('子の環境は実行用allowlistと固定設定だけで、偽トーク�
   assert.equal(env.OMP_NUM_THREADS, '4');
   assert.equal(env.MKL_NUM_THREADS, '4');
   assert.equal(env.OPENBLAS_NUM_THREADS, '4');
-  assert.equal(env.HF_HOME, fileURLToPath(new URL('../../.local-jev/cache', import.meta.url)));
-  assert.equal(env.LOCAL_JEV_MODELS, fileURLToPath(new URL('../../.local-jev/models', import.meta.url)));
+  assert.equal(env.HF_HOME, `${localJevDir()}/cache`);
+  assert.equal(env.LOCAL_JEV_MODELS, `${localJevDir()}/models`);
   assert.equal(Object.hasOwn(env, 'LOCAL_JEV_MODEL'), false);
   assert.deepEqual(fake, original);
+});
+
+test('実NLIのvenv・モデルは、worktreeでも本体のチェックアウトの.local-jevを使う', () => {
+  const common = execFileSync('git', ['rev-parse', '--path-format=absolute', '--git-common-dir'], { encoding: 'utf8' }).trim();
+  assert.equal(localJevDir(), common.replace(/\/\.git$/, '/.local-jev'));
+  // gitで本体を特定できない場所では、指定したチェックアウトの.local-jevを使う。
+  const outside = fileURLToPath(new URL('file:///'));
+  assert.equal(localJevDir(outside), `${outside}.local-jev`);
 });
 
 test('連携先の3変数はアプリにだけ渡し、推論サーバーや他の認証情報には広げない', () => {

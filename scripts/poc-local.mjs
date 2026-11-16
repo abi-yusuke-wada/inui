@@ -1,5 +1,5 @@
 import { randomUUID } from 'node:crypto';
-import { spawn } from 'node:child_process';
+import { execFileSync, spawn } from 'node:child_process';
 import { mkdir, rename, writeFile } from 'node:fs/promises';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { APP_NAME, appPort, appOrigin, buildId } from '../src/local-config.ts';
@@ -8,6 +8,21 @@ import { LOCAL_MODEL } from '../packages/core/src/index.ts';
 import { probeHttp } from './poc-probe.mjs';
 
 const ROOT = fileURLToPath(new URL('../', import.meta.url));
+
+/**
+ * 実NLIのvenv・モデルは本体のチェックアウトの.local-jevを使う（worktreeでも共有する。ADR-0009）。
+ * gitで本体を特定できない場合は、このチェックアウトの.local-jevを使う。
+ */
+export function localJevDir(root = ROOT) {
+  try {
+    const common = execFileSync('git', ['rev-parse', '--path-format=absolute', '--git-common-dir'], {
+      cwd: root, encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'], timeout: 5000,
+    }).trim();
+    if (common.startsWith('/') && common.endsWith('/.git')) return `${common.slice(0, -'.git'.length)}.local-jev`;
+  } catch { /* gitを使えない環境では、このチェックアウトを使う。 */ }
+  return `${root}.local-jev`;
+}
+const LOCAL_JEV_DIR = localJevDir();
 const SERVICES = ['local-jev', 'app'];
 const LABELS = { 'local-jev': '推論サーバー', app: 'アプリ' };
 class LocalError extends Error {}
@@ -31,7 +46,7 @@ export function serviceEnv(parent = process.env, port, service) {
   }
   return {
     ...env, NODE_ENV: 'production', INUI_POC_PORT: String(selectedPort), LOG_LEVEL: logLevel(parent.LOG_LEVEL),
-    HF_HOME: `${ROOT}.local-jev/cache`, LOCAL_JEV_MODELS: `${ROOT}.local-jev/models`,
+    HF_HOME: `${LOCAL_JEV_DIR}/cache`, LOCAL_JEV_MODELS: `${LOCAL_JEV_DIR}/models`,
     HF_HUB_OFFLINE: '1', TRANSFORMERS_OFFLINE: '1', HF_HUB_DISABLE_IMPLICIT_TOKEN: '1',
     OMP_NUM_THREADS: '4', MKL_NUM_THREADS: '4', OPENBLAS_NUM_THREADS: '4',
   };
@@ -72,7 +87,7 @@ export async function checkService(service, fetchImpl = globalThis.fetch, port, 
 
 /** PIDは自分が生成した子だけ保持し、そのプロセス群だけを終了する。 */
 export function launchService(service, port) {
-  const command = service === 'app' ? process.execPath : `${ROOT}.local-jev/venv/bin/local-jev`;
+  const command = service === 'app' ? process.execPath : `${LOCAL_JEV_DIR}/venv/bin/local-jev`;
   const args = service === 'app' ? [`${ROOT}dist/server.js`]
     : ['serve', '--model', LOCAL_MODEL, '--host', '127.0.0.1', '--port', '8765'];
   const grouped = process.platform !== 'win32';
