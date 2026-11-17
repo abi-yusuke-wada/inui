@@ -20,7 +20,7 @@ const NOTICES = {
 };
 const SAFE_METHODS = ['GET', 'HEAD'];
 interface AppOptions {
-  taskStore: Pick<TaskStore, 'list' | 'add' | 'setDone' | 'remove'>;
+  taskStore: Pick<TaskStore, 'list' | 'add' | 'setDone' | 'setStatus' | 'remove'>;
   boardStore: Pick<BoardStore, 'list' | 'get' | 'create' | 'update' | 'remove'>;
   taskSources?: TaskSources;
   upstreamFetch?: typeof fetch;

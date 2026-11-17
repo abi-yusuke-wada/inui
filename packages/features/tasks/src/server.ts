@@ -4,8 +4,8 @@ import { fetchBacklogTasks } from './backlog.ts';
 import { fetchGitHubTasks } from './github.ts';
 import type { TaskStore } from './store.ts';
 import type { TaskSources } from './config.ts';
-import { MAX_TITLE_LENGTH } from './types.ts';
-import type { ExternalResult, ExternalTask } from './types.ts';
+import { MAX_TITLE_LENGTH, TASK_STATUSES } from './types.ts';
+import type { ExternalResult, ExternalTask, LocalTask } from './types.ts';
 import { UpstreamError } from './upstream.ts';
 import type { UpstreamOptions } from './upstream.ts';
 
@@ -22,7 +22,7 @@ const UPSTREAM_ERRORS = {
 } as const;
 
 interface TaskRoutesOptions {
-  store: Pick<TaskStore, 'list' | 'add' | 'setDone' | 'remove'>;
+  store: Pick<TaskStore, 'list' | 'add' | 'setDone' | 'setStatus' | 'remove'>;
   sources: TaskSources;
   upstream?: UpstreamOptions;
 }
@@ -71,8 +71,13 @@ export function createTaskRoutes({ store, sources, upstream = {} }: TaskRoutesOp
   routes.patch('/tasks/local/:id', async (c) => {
     const id = taskId(c.req.param('id'));
     const body = await readJson(c);
-    if (!isRecord(body) || !keysAre(body, ['done']) || typeof body.done !== 'boolean') invalidInput();
-    const task = store.setDone(id, body.done);
+    // Todo表示は完了のチェック（done）、看板は列（status）を、どちらか1つだけ送る。
+    if (!isRecord(body) || Object.keys(body).length !== 1) invalidInput();
+    let task: LocalTask | undefined;
+    if (typeof body.done === 'boolean') task = store.setDone(id, body.done);
+    else if (typeof body.status === 'string' && (TASK_STATUSES as readonly string[]).includes(body.status)) {
+      task = store.setStatus(id, body.status as typeof TASK_STATUSES[number]);
+    } else invalidInput();
     if (!task) notFound();
     return c.json({ task });
   });

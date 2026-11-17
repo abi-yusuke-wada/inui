@@ -130,7 +130,7 @@ test('PoCの利用経路をJSDOMで操作する（実ブラウザではない）
         if (url.pathname === '/api/tasks/local' && options?.method === 'POST') {
           addCalls++;
           const { title } = JSON.parse(String(options.body)) as { title: string };
-          const task = { id: '00000000-0000-4000-8000-00000000000' + addCalls, title, done: false, createdAt: '2026-11-16T00:00:00.000Z' };
+          const task: LocalTask = { id: '00000000-0000-4000-8000-00000000000' + addCalls, title, status: 'todo', done: false, createdAt: '2026-11-16T00:00:00.000Z' };
           return await new Promise<Response>((resolve) => {
             resolveAdd = (value) => { tasks.push(task); resolve(value); };
           }).then(() => response({ task }, 201));
@@ -140,6 +140,7 @@ test('PoCの利用経路をJSDOMで操作する（実ブラウザではない）
           const task = tasks.find((item) => url.pathname.endsWith(item.id));
           assert.ok(task);
           task.done = (JSON.parse(String(options.body)) as { done: boolean }).done;
+          task.status = task.done ? 'done' : 'todo';
           return response({ task });
         }
         if (url.pathname === '/api/tasks/github') return response({ configured: false });
@@ -175,6 +176,73 @@ test('PoCの利用経路をJSDOMで操作する（実ブラウザではない）
         await waitFor(() => (field('ADRの下書きを書く') as HTMLInputElement).checked, '完了の状態が保存されませんでした。');
         assert.equal(addCalls, 1);
       });
+    });
+
+    await suite.test('タスクをTodoと看板で切り替え、看板では移動ボタンとドラッグで列を移し、連携先は参照のみにする', async () => {
+      const tasks: LocalTask[] = [
+        { id: '00000000-0000-4000-8000-0000000000a1', title: '設計を書く', status: 'todo', done: false, createdAt: '2026-11-16T00:00:00.000Z' },
+        { id: '00000000-0000-4000-8000-0000000000a2', title: 'レビューする', status: 'doing', done: false, createdAt: '2026-11-16T00:00:01.000Z' },
+      ];
+      const patches: unknown[] = [];
+      const fetchImpl: typeof fetch = async (input, options) => {
+        const url = new URL(String(input), 'http://localhost');
+        if (url.pathname === '/api/tasks/local') return response({ tasks });
+        if (url.pathname.startsWith('/api/tasks/local/') && options?.method === 'PATCH') {
+          const body = JSON.parse(String(options.body)) as { status: LocalTask['status'] };
+          patches.push(body);
+          const task = tasks.find((item) => url.pathname.endsWith(item.id));
+          assert.ok(task);
+          task.status = body.status;
+          task.done = body.status === 'done';
+          return response({ task });
+        }
+        if (url.pathname === '/api/tasks/github' || url.pathname === '/api/tasks/backlog') return response({ configured: false });
+        throw new Error('想定外のAPI: ' + url.pathname);
+      };
+      dom.window.localStorage.removeItem('inui.tasks.view');
+      const column = (label: string) => document.querySelector(`section[aria-label^="${label}（"]`);
+      await withApp('/legacy', fetchImpl, async () => {
+        await click('仕事');
+        await click('タスク');
+        await waitFor(() => document.body.textContent?.includes('設計を書く') === true, 'タスクを表示しませんでした。');
+        assert.equal(button('Todo').getAttribute('aria-pressed'), 'true');
+        assert.equal(column('To do'), null);
+        // GitHub・Backlogの欄は参照のみで、看板には載せない。
+        assert.equal(document.querySelectorAll('.task-readonly').length, 2);
+        await click('看板');
+        assert.equal(dom.window.localStorage.getItem('inui.tasks.view'), 'kanban');
+        assert.match(column('To do')?.textContent ?? '', /設計を書く/);
+        assert.match(column('Doing')?.textContent ?? '', /レビューする/);
+        assert.equal(document.body.textContent?.includes('Backlog（'), false);
+        const move = [...document.querySelectorAll('button')].find((node) => node.getAttribute('aria-label') === '「設計を書く」をDoingへ移動');
+        assert.ok(move);
+        await react.act(async () => move.click());
+        await waitFor(() => /設計を書く/.test(column('Doing')?.textContent ?? ''), '移動ボタンで列を移せませんでした。');
+        // ドラッグ＆ドロップは、JSDOMにDataTransferがないため、データを持つdropイベントで再現する。
+        const card = [...(column('Doing')?.querySelectorAll('li') ?? [])].find((node) => node.textContent?.includes('レビューする'));
+        const done = column('Done');
+        assert.ok(card && done);
+        assert.equal(card.getAttribute('draggable'), 'true');
+        const dataTransfer = { data: '', setData(_type: string, value: string) { this.data = value; }, getData() { return this.data; } };
+        await react.act(async () => {
+          const start = new dom.window.Event('dragstart', { bubbles: true });
+          Object.defineProperty(start, 'dataTransfer', { value: dataTransfer });
+          card.dispatchEvent(start);
+          const drop = new dom.window.Event('drop', { bubbles: true, cancelable: true });
+          Object.defineProperty(drop, 'dataTransfer', { value: dataTransfer });
+          done.dispatchEvent(drop);
+        });
+        await waitFor(() => /レビューする/.test(column('Done')?.textContent ?? ''), 'ドラッグで列を移せませんでした。');
+        assert.deepEqual(patches, [{ status: 'doing' }, { status: 'done' }]);
+      });
+      // 次に開いたときは、最後に選んだ看板の表示から始める。
+      await withApp('/legacy', fetchImpl, async () => {
+        await click('仕事');
+        await click('タスク');
+        await waitFor(() => column('Done') !== null, '前回の表示を覚えていませんでした。');
+        assert.equal(button('看板').getAttribute('aria-pressed'), 'true');
+      });
+      dom.window.localStorage.removeItem('inui.tasks.view');
     });
 
     await suite.test('社員名付きの予定比較は2人だけ事前選択し、固定日を自動取得して並列表示する', async () => {

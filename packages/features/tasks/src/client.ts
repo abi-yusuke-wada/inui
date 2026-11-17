@@ -1,14 +1,15 @@
 import { ApiError, isRecord } from '@inui/feature-kit/web';
-import { MAX_TITLE_LENGTH } from './types.ts';
+import { MAX_TITLE_LENGTH, TASK_STATUSES } from './types.ts';
 import type { ExternalResult, ExternalTask, LocalTask } from './types.ts';
 
-export type { ExternalResult, ExternalTask, LocalTask } from './types.ts';
-export { MAX_TITLE_LENGTH } from './types.ts';
+export type { ExternalResult, ExternalTask, LocalTask, TaskStatus } from './types.ts';
+export { MAX_TITLE_LENGTH, TASK_STATUSES } from './types.ts';
 
 const isLocalTask = (value: unknown): value is LocalTask => isRecord(value)
   && typeof value.id === 'string' && value.id.length > 0
   && typeof value.title === 'string' && value.title.length >= 1 && value.title.length <= MAX_TITLE_LENGTH
-  && typeof value.done === 'boolean' && typeof value.createdAt === 'string';
+  && (TASK_STATUSES as readonly unknown[]).includes(value.status)
+  && value.done === (value.status === 'done') && typeof value.createdAt === 'string';
 
 export function parseLocalTasks(value: unknown): LocalTask[] {
   if (!isRecord(value) || !Array.isArray(value.tasks) || !value.tasks.every(isLocalTask)) throw new ApiError('invalid');

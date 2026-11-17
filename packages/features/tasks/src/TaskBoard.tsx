@@ -3,7 +3,7 @@ import type { FormEvent } from 'react';
 import { ApiError, errorMessage, fetchJson } from '@inui/feature-kit/web';
 import { Feedback, Loading, useLatestRequest } from '@inui/feature-kit/react';
 import { MAX_TITLE_LENGTH, parseExternal, parseLocalTask, parseLocalTasks } from './client.ts';
-import type { ExternalResult, ExternalTask, LocalTask } from './client.ts';
+import type { ExternalResult, ExternalTask, LocalTask, TaskStatus } from './client.ts';
 
 const REASON_NAMES = { assigned: '担当', authored: '自分のPR', review_requested: 'レビュー依頼' } as const;
 const SOURCES = {
@@ -18,19 +18,40 @@ function externalError(error: unknown, name: string): string {
   return errorMessage(error, `${name}からの取得`);
 }
 
+const VIEW_KEY = 'inui.tasks.view';
+type View = 'todo' | 'kanban';
+const COLUMNS: { status: TaskStatus; label: string }[] = [
+  { status: 'todo', label: 'To do' }, { status: 'doing', label: 'Doing' }, { status: 'done', label: 'Done' },
+];
+
+/** 最後に選んだ表示をブラウザに覚えさせる。保存できない環境ではTodo表示から始める。 */
+function savedView(): View {
+  try { return window.localStorage.getItem(VIEW_KEY) === 'kanban' ? 'kanban' : 'todo'; } catch { return 'todo'; }
+}
+function saveView(view: View) {
+  try { window.localStorage.setItem(VIEW_KEY, view); } catch { /* 保存できなくても表示は切り替える。 */ }
+}
+
 export default function TaskBoard() {
+  const [view, setView] = useState<View>(savedView);
   return <div className="panel task-panel">
     <div className="panel-heading"><p className="eyebrow">TASKS</p><h2>タスク</h2>
       <p>自分のタスクと、GitHub・Backlogのチケットを並べて確認できます。連携先のチケットは読み取りだけです。</p></div>
-    <div className="task-columns">
-      <LocalTasks />
+    <fieldset className="task-view-switch">
+      <legend className="visually-hidden">自分のタスクの表示</legend>
+      {([['todo', 'Todo'], ['kanban', '看板']] as const).map(([value, label]) =>
+        <button key={value} type="button" className={'button ' + (view === value ? 'button-primary' : 'button-subtle')}
+          aria-pressed={view === value} onClick={() => { setView(value); saveView(value); }}>{label}</button>)}
+    </fieldset>
+    <div className={'task-columns' + (view === 'kanban' ? ' task-columns-kanban' : '')}>
+      <LocalTasks view={view} />
       <ExternalTasks source="github" />
       <ExternalTasks source="backlog" />
     </div>
   </div>;
 }
 
-function LocalTasks() {
+function LocalTasks({ view }: { view: View }) {
   const [tasks, setTasks] = useState<LocalTask[]>();
   const [title, setTitle] = useState('');
   const [loading, setLoading] = useState(false);
@@ -85,9 +106,15 @@ function LocalTasks() {
     }, 'タスクの追加');
   }
 
-  const open = tasks?.filter((task) => !task.done) ?? [];
-  const done = tasks?.filter((task) => task.done) ?? [];
-  return <section className="task-column" aria-labelledby="local-tasks-title">
+  const move = (task: LocalTask, status: TaskStatus) => {
+    if (task.status === status) return;
+    void change(() => fetchJson('/api/tasks/local/' + task.id, { method: 'PATCH', body: { status } }), 'タスクの移動');
+  };
+  const remove = (task: LocalTask) => {
+    void change(() => fetchJson('/api/tasks/local/' + task.id, { method: 'DELETE' }), 'タスクの削除');
+  };
+
+  return <section className="task-column task-column-local" aria-labelledby="local-tasks-title">
     <p className="eyebrow">MY TASKS</p>
     <h3 id="local-tasks-title">自分のタスク</h3>
     <form className="task-add" onSubmit={add}>
@@ -99,20 +126,78 @@ function LocalTasks() {
     {loading && !tasks && <Loading message="タスクを読み込んでいます…" />}
     {error && <Feedback message={error} onRetry={() => { void load(); }} />}
     {tasks && tasks.length === 0 && <div className="empty-state" role="status"><p>タスクはまだありません。</p><span>やることを入力して「追加」を押してください。</span></div>}
-    {tasks && tasks.length > 0 && <ul className="task-list">
-      {[...open, ...done].map((task) => <li key={task.id} className={'task-item' + (task.done ? ' task-done' : '')}>
-        <label>
-          <input type="checkbox" checked={task.done} disabled={busy} onChange={(event) => {
-            const checked = event.target.checked;
-            void change(() => fetchJson('/api/tasks/local/' + task.id, { method: 'PATCH', body: { done: checked } }), 'タスクの更新');
-          }} />
-          <span>{task.title}</span>
-        </label>
-        <button className="text-button" type="button" disabled={busy} aria-label={`「${task.title}」を削除`}
-          onClick={() => { void change(() => fetchJson('/api/tasks/local/' + task.id, { method: 'DELETE' }), 'タスクの削除'); }}>削除</button>
-      </li>)}
-    </ul>}
+    {tasks && tasks.length > 0 && (view === 'kanban'
+      ? <Kanban tasks={tasks} busy={busy} onMove={move} onRemove={remove} />
+      : <ul className="task-list">
+        {tasks.map((task) => <li key={task.id} className={'task-item' + (task.done ? ' task-done' : '')}>
+          <label>
+            <input type="checkbox" checked={task.done} disabled={busy} onChange={(event) => {
+              const checked = event.target.checked;
+              void change(() => fetchJson('/api/tasks/local/' + task.id, { method: 'PATCH', body: { done: checked } }), 'タスクの更新');
+            }} />
+            <span>{task.title}</span>
+            {task.status === 'doing' && <span className="status-pill">Doing</span>}
+          </label>
+          <button className="text-button" type="button" disabled={busy} aria-label={`「${task.title}」を削除`}
+            onClick={() => remove(task)}>削除</button>
+        </li>)}
+      </ul>)}
   </section>;
+}
+
+/**
+ * 自分のタスクを To do・Doing・Done の列に並べる。カードはドラッグで別の列へ移せる。
+ * 連携先（GitHub・Backlog）のチケットは看板に載せず、別の欄で参照だけにする（inuiで閉じると管理が二重になるため）。
+ * キーボードでも操作できるよう、カードに「←」「→」の移動ボタンを付ける。
+ */
+function Kanban({ tasks, busy, onMove, onRemove }: {
+  tasks: LocalTask[];
+  busy: boolean;
+  onMove: (task: LocalTask, status: TaskStatus) => void;
+  onRemove: (task: LocalTask) => void;
+}) {
+  const [over, setOver] = useState<TaskStatus>();
+  const dragged = useRef<string | undefined>(undefined);
+  function drop(status: TaskStatus, id: string | undefined) {
+    setOver(undefined);
+    const task = tasks.find((item) => item.id === id);
+    if (task && !busy) onMove(task, status);
+  }
+  return <div className="kanban">
+    {COLUMNS.map(({ status, label }, index) => {
+      const cards = tasks.filter((task) => task.status === status);
+      return <section key={status} className={'kanban-column' + (over === status ? ' kanban-column-over' : '')}
+        aria-label={`${label}（${cards.length}件）`}
+        onDragOver={(event) => { event.preventDefault(); setOver(status); }}
+        onDragLeave={() => setOver(undefined)}
+        onDrop={(event) => {
+          event.preventDefault();
+          drop(status, event.dataTransfer?.getData('text/plain') || dragged.current);
+        }}>
+        <h4>{label}<span className="kanban-count">{cards.length}</span></h4>
+        {cards.length === 0 ? <p className="no-events">カードはありません。</p> : <ul className="task-list">
+          {cards.map((task) => {
+            const previous = COLUMNS[index - 1];
+            const next = COLUMNS[index + 1];
+            return <li key={task.id} className={'task-item kanban-card' + (task.done ? ' task-done' : '')}
+              draggable={!busy}
+              onDragStart={(event) => { dragged.current = task.id; event.dataTransfer?.setData('text/plain', task.id); }}
+              onDragEnd={() => { dragged.current = undefined; setOver(undefined); }}>
+              <span className="kanban-title">{task.title}</span>
+              <span className="kanban-actions">
+                {previous && <button className="text-button" type="button" disabled={busy}
+                  aria-label={`「${task.title}」を${previous.label}へ移動`} onClick={() => onMove(task, previous.status)}>←</button>}
+                {next && <button className="text-button" type="button" disabled={busy}
+                  aria-label={`「${task.title}」を${next.label}へ移動`} onClick={() => onMove(task, next.status)}>→</button>}
+                <button className="text-button kanban-remove" type="button" disabled={busy}
+                  aria-label={`「${task.title}」を削除`} onClick={() => onRemove(task)}>削除</button>
+              </span>
+            </li>;
+          })}
+        </ul>}
+      </section>;
+    })}
+  </div>;
 }
 
 function ExternalTasks({ source }: { source: ExternalTask['source'] }) {
@@ -139,7 +224,7 @@ function ExternalTasks({ source }: { source: ExternalTask['source'] }) {
 
   return <section className="task-column" aria-labelledby={source + '-tasks-title'}>
     <p className="eyebrow">{meta.eyebrow}</p>
-    <h3 id={source + '-tasks-title'}>{meta.name}</h3>
+    <h3 id={source + '-tasks-title'}>{meta.name}<span className="status-pill task-readonly">参照のみ</span></h3>
     <p className="task-source-note">{meta.description}</p>
     {result?.configured && <button className="text-button" type="button" disabled={loading} onClick={() => { void load(); }}>再読み込み</button>}
     {loading && <Loading message={meta.name + 'から読み込んでいます…'} />}

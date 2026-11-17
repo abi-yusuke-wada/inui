@@ -60,9 +60,12 @@ test('Intentでタスク画面を開くだけでは保存せず、明示した�
   assert.equal(task.title, 'ADRの下書きを書く');
   assert.equal(task.done, false);
   assert.deepEqual((await (await h.get('/api/tasks/local')).json()).tasks, [task]);
+  const doing = await h.patch('/api/tasks/local/' + task.id, { status: 'doing' });
+  assert.equal(doing.status, 200);
+  assert.deepEqual([(await doing.json()).task.status, h.store.list()[0]?.done], ['doing', false]);
   const completed = await h.patch('/api/tasks/local/' + task.id, { done: true });
   assert.equal(completed.status, 200);
-  assert.equal((await completed.json()).task.done, true);
+  assert.deepEqual([(await completed.json()).task.status, h.store.list()[0]?.status], ['done', 'done']);
   assert.equal((await h.remove('/api/tasks/local/' + task.id)).status, 200);
   assert.equal(h.store.list().length, 0);
   assert.equal((await h.remove('/api/tasks/local/' + task.id)).status, 404);
@@ -76,7 +79,8 @@ test('タスクの件名・完了状態・ID・余分キーを検証し、不正
   }
   assert.equal(h.store.list().length, 0);
   const { task } = await (await h.post('/api/tasks/local', { title: 'a'.repeat(200) })).json();
-  for (const body of [{ done: 'true' }, { done: 1 }, { done: true, title: '変更' }, {}]) {
+  for (const body of [{ done: 'true' }, { done: 1 }, { done: true, title: '変更' }, {}, { status: 'backlog' },
+    { status: 'closed' }, { status: 'done', done: true }, { status: ['done'] }]) {
     assert.equal((await h.patch('/api/tasks/local/' + task.id, body)).status, 400);
   }
   assert.equal((await h.patch('/api/tasks/local/not-a-uuid', { done: true })).status, 400);

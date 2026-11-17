@@ -1,7 +1,15 @@
-/** inuiの中で自由に作るタスク。 */
+/**
+ * 自分のタスクの看板の列。Todo表示のチェックは、完了（done）と未着手（todo）の切り替えになる。
+ * 連携先（GitHub・Backlog）のチケットは看板に載せず、参照だけにする。
+ */
+export const TASK_STATUSES = ['todo', 'doing', 'done'] as const;
+export type TaskStatus = typeof TASK_STATUSES[number];
+
+/** inuiの中で自由に作るタスク。doneはstatusがdoneかどうかを表す（Todo表示用）。 */
 export interface LocalTask {
   id: string;
   title: string;
+  status: TaskStatus;
   done: boolean;
   createdAt: string;
 }

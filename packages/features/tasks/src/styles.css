@@ -19,6 +19,25 @@
 .task-meta { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; margin: 8px 0 0; color: var(--muted); font-size: .72rem; }
 .task-meta .status-pill { background: #eef3eb; color: #3d5a44; padding: 2px 8px; }
 .task-column .empty-state { padding: 22px 14px; }
+/* 看板表示では自分のタスクを横幅いっぱいに広げ、連携先の欄は下に並べる。 */
+.task-view-switch { display: flex; gap: 8px; margin-bottom: 16px; }
+.task-view-switch .button { min-height: 38px; padding: 6px 16px; }
+.task-columns-kanban { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+.task-columns-kanban .task-column-local { grid-column: 1 / -1; }
+.kanban { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 14px; margin-top: 6px; }
+.kanban-column { background: #fff; border: 1px solid #e2e8db; border-radius: 10px; padding: 12px; min-height: 160px; }
+.kanban-column-over { border-color: var(--green); background: #f0f6ec; }
+.kanban-column h4 { display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px; font-size: .9rem; }
+.kanban-count { color: var(--muted); font-size: .75rem; font-weight: 500; }
+.kanban-card { display: flex; flex-direction: column; gap: 6px; cursor: grab; background: #fafbf8; }
+.kanban-card:active { cursor: grabbing; }
+.kanban-title { overflow-wrap: anywhere; }
+.kanban-actions { display: flex; gap: 10px; justify-content: flex-end; }
+.kanban-actions .text-button { padding: 2px 4px; font-size: .8rem; }
+.task-item .kanban-remove { padding-left: 4px; color: #8b5a4a; }
+.task-readonly { margin-left: 8px; background: #eef3eb; color: #3d5a44; padding: 2px 8px; font-weight: 500; vertical-align: middle; }
+.task-item > label .status-pill { margin-left: auto; background: #eef3eb; color: #3d5a44; padding: 2px 8px; }
 @media (max-width: 960px) {
-  .task-columns { grid-template-columns: 1fr; }
+  .task-columns, .task-columns-kanban { grid-template-columns: 1fr; }
+  .kanban { grid-template-columns: 1fr; }
 }
