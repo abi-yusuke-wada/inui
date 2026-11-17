@@ -76,7 +76,6 @@
     ],
     "ask": [
       "Bash(gh *)",
-      "Bash(git push *)",
       "Bash(git config *)",
       "Bash(git -c * push*)",
       "Bash(git -C * push*)",

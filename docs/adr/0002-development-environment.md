@@ -93,8 +93,8 @@ Linux・WSLの再帰globは `glob_scan_max_depth = 8` とし、各サンドボ�
 
 採用した案Dの内容は次のとおり。追加の費用はない。
 
-- `.claude/hooks/push-guard.py`（エージェントが書き換えられない場所）が、`git push` の実行直前に次をすべて確認した場合だけ承認なしで実行させる。コマンドが `git push origin <ブランチ>` だけで記号（`:`・`+`・`;` 等）や余分な引数を含まない。ブランチが作業ブランチ（`feat/`・`docs/`・`fix/`・`chore/`）で、現在のブランチと同じ。`origin` の接続先がこのリポジトリで、`remote.origin.push`・`pushurl`・`mirror`・`url.*.insteadOf`・`pushInsteadOf` の設定がなく、タグも送る `push.followTags` が有効でなく、`git config` だけに効く環境変数 `GIT_CONFIG` が設定されていない。
-- 条件を満たさないpushは承認を求める。`ask` の `Bash(git push *)` で通常どおり承認を求め、フックが条件を満たした場合だけ承認なしにする。
+- `.claude/hooks/push-guard.py`（エージェントが書き換えられない場所）が、`git push` の実行直前に次をすべて確認した場合だけ承認なしで実行させる。コマンドが `git push origin <ブランチ>` だけで記号（`:`・`+`・`;` 等）や余分な引数を含まない。ブランチが作業ブランチ（`feat/`・`docs/`・`fix/`・`chore/`）で、現在のブランチと同じ。`origin` の接続先（`remote.origin.url`）がこのリポジトリの1件だけで、`remote.origin.push`・`pushurl`・`mirror`・`url.*.insteadOf`・`pushInsteadOf` の設定がなく、タグも送る `push.followTags` が有効でなく、`git config` だけに効く環境変数 `GIT_CONFIG` が設定されていない。
+- 条件を満たさないpushは、フックが承認を求める（`ask`）。設定の `ask` ルールはフックの `allow` より優先されるため、`git push` を `ask` ルールには入れない。フックが動かなかった場合も、pushはサンドボックス外で実行されるコマンドとして通常どおり承認を求められる。
 - `deny`（`main` への指定、force push、削除、ブランチ名の後ろに引数が続くpush、`:` で `main`・`refs/` を指定するpush）は防御を重ねるために残す。末尾が `:*` の規則は前方一致として扱われうるため使わない。`:` 形式の削除（`git push origin :feat/x`）はフックが承認を求める。
 - `ask`: `git config`、`git -c`・`git -C` を付けたpush。
 - フックの判定は `tests/scripts/push-guard.test.mjs` で、一時リポジトリを使って確認し、`make ci` に含める。

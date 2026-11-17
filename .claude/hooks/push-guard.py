@@ -11,7 +11,8 @@ Gitの設定を確認し、次の条件をすべて満たす場合だけ承認�
 - ブランチ以外の参照（タグ）も送る設定（push.followTags）が有効でない
 - 環境変数 GIT_CONFIG が設定されていない（git configだけに効き、実際のpushとは別の設定を検査してしまうため）
 
-条件を満たさないgit pushは承認を求める（拒否はsettings.jsonのdenyで行う）。
+条件を満たさないgit pushは、このフックが承認を求める（ask）。settings.jsonのaskルールは
+フックのallowより優先されるため、git pushをaskルールには入れない。拒否はdenyで行う。
 git push以外のコマンドや、判定できない入力では何も出力せず、通常の権限確認に任せる。
 このファイルはエージェントが書き換えられない .claude/hooks/ に置く。
 """
@@ -55,9 +56,10 @@ def problem(command, cwd):
     code, head = git(cwd, 'rev-parse', '--abbrev-ref', 'HEAD')
     if code != 0 or head != branch:
         return '現在のブランチと異なるブランチへのpushです。'
-    code, url = git(cwd, 'config', '--get', 'remote.origin.url')
-    if code != 0 or url != ORIGIN_URL:
-        return 'originの接続先が想定のリポジトリと異なります。'
+    # urlが複数あるとgitはすべてへpushするため、許可した1件だけのときに限る。
+    code, urls = git(cwd, 'config', '--get-all', 'remote.origin.url')
+    if code != 0 or urls.splitlines() != [ORIGIN_URL]:
+        return 'originの接続先が想定のリポジトリ1件だけではありません。'
     _, rewrite = git(cwd, 'config', '--get-regexp', r'^remote\.origin\.(push|pushurl|mirror)$')
     if rewrite:
         return 'originのpush先を変更する設定（remote.origin.push等）があります。'

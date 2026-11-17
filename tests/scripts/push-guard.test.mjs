@@ -92,6 +92,13 @@ test('push先やURLを書き換えるGitの設定があれば承認を求める'
     repo.git('remote', 'set-url', 'origin', 'https://example.invalid/other.git');
     assert.equal(decide('git push origin feat/sample', repo.dir), 'ask');
   } finally { repo.cleanup(); }
+  // urlが複数あるとgitはすべてへpushするため、許可URLが最後でも承認を求める。
+  const multi = repository();
+  try {
+    multi.git('config', '--replace-all', 'remote.origin.url', 'https://example.invalid/other.git');
+    multi.git('config', '--add', 'remote.origin.url', ORIGIN);
+    assert.equal(decide('git push origin feat/sample', multi.dir), 'ask');
+  } finally { multi.cleanup(); }
 });
 
 test('GIT_CONFIGでgit configの参照先だけが切り替わる場合は承認を求める', () => {
