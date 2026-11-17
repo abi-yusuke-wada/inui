@@ -8,6 +8,7 @@ Gitの設定を確認し、次の条件をすべて満たす場合だけ承認�
 - コマンドが `git push origin <ブランチ>` だけで、記号や余分な引数を含まない
 - ブランチが作業ブランチ（feat/・docs/・fix/・chore/）で、現在のブランチと同じ
 - originの接続先がこのリポジトリで、push先やURLを書き換える設定がない
+- ブランチ以外の参照（タグ）も送る設定（push.followTags）が有効でない
 
 条件を満たさないgit pushは承認を求める（拒否はsettings.jsonのdenyで行う）。
 git push以外のコマンドや、判定できない入力では何も出力せず、通常の権限確認に任せる。
@@ -59,6 +60,9 @@ def problem(command, cwd):
     _, rewrite = git(cwd, 'config', '--get-regexp', r'^url\..*\.(insteadof|pushinsteadof)$')
     if rewrite:
         return 'URLを書き換える設定（insteadOf等）があります。'
+    _, follow_tags = git(cwd, 'config', '--type=bool', '--get', 'push.followTags')
+    if follow_tags == 'true':
+        return 'ブランチと一緒にタグも送る設定（push.followTags）が有効です。'
     return None
 
 

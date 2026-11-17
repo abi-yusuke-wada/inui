@@ -11,6 +11,9 @@ const HOOK = process.env.INUI_PUSH_GUARD ?? fileURLToPath(new URL('../../.claude
 const ORIGIN = 'https://github.com/abi-yusuke-wada/inui.git';
 // 利用者のGit設定（insteadOf等）の影響を受けないよう、グローバル・システム設定を読まない。
 const GIT_ENV = { ...process.env, GIT_CONFIG_GLOBAL: '/dev/null', GIT_CONFIG_NOSYSTEM: '1' };
+// 呼出元のリポジトリを操作しないよう、Gitのリポジトリ参照先を変える変数を除く。
+for (const name of ['GIT_DIR', 'GIT_WORK_TREE', 'GIT_INDEX_FILE', 'GIT_OBJECT_DIRECTORY', 'GIT_ALTERNATE_OBJECT_DIRECTORIES',
+  'GIT_COMMON_DIR', 'GIT_NAMESPACE', 'GIT_CONFIG', 'GIT_CONFIG_PARAMETERS', 'GIT_CONFIG_COUNT']) delete GIT_ENV[name];
 
 /** 作業ブランチを1コミットだけ持つ一時リポジトリを作る。 */
 function repository(branch = 'feat/sample') {
@@ -74,6 +77,7 @@ test('push先やURLを書き換えるGitの設定があれば承認を求める'
     ['remote.origin.push', 'refs/heads/feat/sample:refs/heads/main'],
     ['remote.origin.pushurl', 'https://example.invalid/other.git'],
     ['remote.origin.mirror', 'true'],
+    ['push.followTags', 'true'],
     ['url.https://example.invalid/.insteadOf', 'https://github.com/'],
     ['url.https://example.invalid/.pushInsteadOf', 'https://github.com/'],
   ]) {

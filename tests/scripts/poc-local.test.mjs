@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
+import { fileURLToPath } from 'node:url';
 import { runLocal, serviceEnv, checkService } from '../../scripts/poc-local.mjs';
 import { listEmployees } from '../../src/people.ts';
 
@@ -158,8 +159,8 @@ test('子の環境は実行用allowlistと固定設定だけで、偽トーク�
   assert.equal(env.OMP_NUM_THREADS, '4');
   assert.equal(env.MKL_NUM_THREADS, '4');
   assert.equal(env.OPENBLAS_NUM_THREADS, '4');
-  assert.equal(env.HF_HOME, new URL('../../.local-jev/cache', import.meta.url).pathname);
-  assert.equal(env.LOCAL_JEV_MODELS, new URL('../../.local-jev/models', import.meta.url).pathname);
+  assert.equal(env.HF_HOME, fileURLToPath(new URL('../../.local-jev/cache', import.meta.url)));
+  assert.equal(env.LOCAL_JEV_MODELS, fileURLToPath(new URL('../../.local-jev/models', import.meta.url)));
   assert.equal(Object.hasOwn(env, 'LOCAL_JEV_MODEL'), false);
   assert.deepEqual(fake, original);
 });
