@@ -65,7 +65,8 @@ export function selectPeople(text: string): PeopleSelection {
     },
   );
   const beforeName = (index: number): boolean => index === 0
-    || /[\s\p{P}\p{S}とやの]/u.test(remaining.charAt(index - 1));
+    // 「今日は山田太郎と…」のように、助詞の直後も名前の始まりとして扱う。
+    || /[\s\p{P}\p{S}とやのはがもでにを]/u.test(remaining.charAt(index - 1));
   const afterName = (index: number): boolean =>
     /^(?:$|[\s\p{P}\p{S}]|[とや](?=[\s\p{Script=Han}\p{Script=Katakana}A-Za-z])|の(?:予定|スケジュール|空き|都合)|を(?:比較|比べ|見比べ))/u.test(remaining.slice(index));
   for (const person of PEOPLE) {

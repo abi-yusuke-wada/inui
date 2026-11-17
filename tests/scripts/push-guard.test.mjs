@@ -26,9 +26,9 @@ function repository(branch = 'feat/sample') {
 }
 
 /** フックへコマンドを渡し、出力した判定を返す。何も出力しなければnull。 */
-function decide(command, cwd, toolName = 'Bash') {
+function decide(command, cwd, toolName = 'Bash', env = GIT_ENV) {
   const result = spawnSync('python3', ['-I', HOOK], {
-    input: JSON.stringify({ tool_name: toolName, tool_input: { command }, cwd }), env: GIT_ENV, encoding: 'utf8',
+    input: JSON.stringify({ tool_name: toolName, tool_input: { command }, cwd }), env, encoding: 'utf8',
   });
   assert.equal(result.status, 0, result.stderr);
   if (!result.stdout.trim()) return null;
@@ -91,6 +91,17 @@ test('push先やURLを書き換えるGitの設定があれば承認を求める'
   try {
     repo.git('remote', 'set-url', 'origin', 'https://example.invalid/other.git');
     assert.equal(decide('git push origin feat/sample', repo.dir), 'ask');
+  } finally { repo.cleanup(); }
+});
+
+test('GIT_CONFIGでgit configの参照先だけが切り替わる場合は承認を求める', () => {
+  const repo = repository();
+  try {
+    // 実際のoriginは別リポジトリでも、GIT_CONFIGが期待URLだけを書いたファイルを指すと検査が通ってしまう。
+    repo.git('remote', 'set-url', 'origin', 'https://example.invalid/other.git');
+    const fake = join(repo.dir, 'fake-config');
+    execFileSync('git', ['config', '--file', fake, 'remote.origin.url', ORIGIN], { env: GIT_ENV });
+    assert.equal(decide('git push origin feat/sample', repo.dir, 'Bash', { ...GIT_ENV, GIT_CONFIG: fake }), 'ask');
   } finally { repo.cleanup(); }
 });
 

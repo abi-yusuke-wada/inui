@@ -9,12 +9,14 @@ Gitの設定を確認し、次の条件をすべて満たす場合だけ承認�
 - ブランチが作業ブランチ（feat/・docs/・fix/・chore/）で、現在のブランチと同じ
 - originの接続先がこのリポジトリで、push先やURLを書き換える設定がない
 - ブランチ以外の参照（タグ）も送る設定（push.followTags）が有効でない
+- 環境変数 GIT_CONFIG が設定されていない（git configだけに効き、実際のpushとは別の設定を検査してしまうため）
 
 条件を満たさないgit pushは承認を求める（拒否はsettings.jsonのdenyで行う）。
 git push以外のコマンドや、判定できない入力では何も出力せず、通常の権限確認に任せる。
 このファイルはエージェントが書き換えられない .claude/hooks/ に置く。
 """
 import json
+import os
 import re
 import subprocess
 import sys
@@ -40,6 +42,8 @@ def git(cwd, *args):
 
 def problem(command, cwd):
     """承認なしにできない理由を返す。問題がなければNoneを返す。"""
+    if os.environ.get('GIT_CONFIG') is not None:
+        return '環境変数GIT_CONFIGが設定されており、pushと同じ設定を検査できません。'
     if not ALLOWED_CHARS.match(command):
         return 'pushのコマンドに許可していない記号（: + ; 等）が含まれます。'
     tokens = command.split()

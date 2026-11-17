@@ -104,6 +104,10 @@ test('敬称なしの未知名を既知姓・全名の部分一致から選択�
   assert.deepEqual(selectPeople('今日の予定と佐藤花子さんの予定'), {
     selectedIds: ['person-sato-hanako'], ambiguous: [], unknownNames: [],
   });
+  // 助詞の直後の敬称なしの全名も選ぶ。
+  assert.deepEqual(selectPeople('今日は山田太郎と佐藤花子と鈴木一郎の予定を比較したい'), {
+    selectedIds: ['person-yamada-taro', 'person-sato-hanako', 'person-suzuki-ichiro'], ambiguous: [], unknownNames: [],
+  });
   // 「空き」「都合」を未知名として扱わない。
   assert.deepEqual(selectPeople('鈴木一郎さんの空きと佐藤花子さんの予定'), {
     selectedIds: ['person-sato-hanako', 'person-suzuki-ichiro'], ambiguous: [], unknownNames: [],
