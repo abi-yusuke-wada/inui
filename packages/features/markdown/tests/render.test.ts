@@ -84,4 +84,18 @@ test('Mermaidが生成したSVGからスクリプトとイベント属性を取�
   assert.equal(root.querySelector('svg')?.hasAttribute('onload'), false);
   assert.equal(root.querySelector('text')?.textContent, '入力');
   assert.equal(root.innerHTML.includes('onclick'), false);
+  // MermaidのHTMLラベル（foreignObjectの中のHTML）は、無害化した上で残す。
+  assert.equal(root.querySelector('foreignObject div')?.textContent, 'ラベル');
+});
+
+test('外部の画像やURLを参照する図は、Mermaidを読み込む前に描画を断る', async () => {
+  const { renderDiagram } = await import('../src/mermaid.ts');
+  for (const code of [
+    'flowchart LR\n  A@{ img: "https://example.org/pixel.png", label: "画像" }',
+    'flowchart LR\n  A@{ img : "//example.org/pixel.png" }',
+    'flowchart LR\n  A --> B\n  classDef x fill:url(https://example.org/a.svg)',
+    'flowchart LR\n  A["https://example.org"] --> B',
+  ]) {
+    await assert.rejects(renderDiagram(code, 'test-diagram'), /external_reference/);
+  }
 });

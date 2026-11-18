@@ -412,6 +412,69 @@ test('PoCの利用経路をJSDOMで操作する（実ブラウザではない）
       });
     });
 
+    await suite.test('ホワイトボードの作成・保存・削除を待つ間に別のボードへ切り替わっても、表示中のボードの変更を失わない', async () => {
+      const ids = { a: '00000000-0000-4000-8000-0000000000c1', b: '00000000-0000-4000-8000-0000000000c2', c: '00000000-0000-4000-8000-0000000000c3' };
+      let boards = [
+        { id: ids.a, name: 'ボードA', updatedAt: '2026-11-18T00:00:00.000Z' },
+        { id: ids.b, name: 'ボードB', updatedAt: '2026-11-17T00:00:00.000Z' },
+      ];
+      const pending: Record<string, ((value: Response) => void) | undefined> = {};
+      const wait = (key: string, body: () => unknown) =>
+        new Promise<Response>((resolve) => { pending[key] = resolve; }).then(() => response(body()));
+      const fetchImpl: typeof fetch = async (input, options) => {
+        const url = new URL(String(input), 'http://localhost');
+        if (url.pathname === '/api/whiteboards' && options?.method === 'POST') {
+          return wait('create', () => {
+            const board = { id: ids.c, name: 'ボードC', updatedAt: '2026-11-18T01:00:00.000Z' };
+            boards = [board, ...boards];
+            return { board };
+          });
+        }
+        if (url.pathname === '/api/whiteboards') return response({ boards });
+        const id = url.pathname.replace('/api/whiteboards/', '');
+        if (options?.method === 'DELETE') return wait('delete', () => { boards = boards.filter((item) => item.id !== id); return { deleted: true }; });
+        const board = boards.find((item) => item.id === id);
+        if (!board) throw new Error('想定外のAPI: ' + url.pathname);
+        const body = () => ({ board: { ...board, scene: { elements: [], files: {}, appState: {} } } });
+        return id === ids.b ? wait('b', body) : response(body());
+      };
+      const answers: boolean[] = [];
+      const confirms: string[] = [];
+      dom.window.confirm = (message?: string) => { confirms.push(String(message)); return answers.shift() ?? false; };
+      const state = () => document.querySelector('.whiteboard-state')?.textContent;
+      const release = (key: string) => react.act(async () => { pending[key]?.(new Response()); delete pending[key]; });
+      await withApp('/legacy', fetchImpl, async () => {
+        await click('文書');
+        await click('ホワイトボード');
+        await waitFor(() => document.querySelector('link[href="/excalidraw/index.css"]') !== null && button('ボードA') !== undefined,
+          'ボードの一覧が表示されませんでした。');
+        await react.act(async () => { document.querySelector('link[href="/excalidraw/index.css"]')?.dispatchEvent(new dom.window.Event('load')); });
+        await click('ボードA');
+        await waitFor(() => state() === '保存済み', 'ボードAが開きませんでした。');
+        // ボードBの読み込み中は保存できない（完了がBの保存状態を書き換えないように）。
+        await click('ボードB');
+        assert.equal(button('保存').disabled, true);
+        // 読み込み中にボードAを削除しても、先に開いたボードBは閉じない。
+        answers.push(true);
+        await react.act(async () => button('削除').click());
+        await release('b');
+        await waitFor(() => button('ボードB').disabled, 'ボードBへ切り替えませんでした。');
+        await release('delete');
+        await waitFor(() => !document.body.textContent?.includes('ボードA'), 'ボードAが一覧から消えませんでした。');
+        assert.ok(document.querySelector('[data-testid="excalidraw-stub"]'));
+        assert.equal(state(), '保存済み');
+        // 作成を待つ間にボードBへ描いた変更は、新しいボードへ切り替える前に確認し直す。
+        await change('新しいボードの名前', 'ボードC');
+        await click('作成');
+        await react.act(async () => { window.dispatchEvent(new dom.window.Event('inui-test-draw')); });
+        await release('create');
+        await waitFor(() => confirms.length === 2, '作成中の変更を確認しませんでした。');
+        assert.match(confirms[1] ?? '', /読み込みの間に変更がありました/);
+        assert.equal(button('ボードB').disabled, true);
+        assert.equal(state(), '未保存の変更があります');
+      });
+    });
+
     await suite.test('最初は中央で入力し、画面を開いた後は右下のパネルから送り直す（履歴を残し、前の画面は送信時に消す）', async () => {
       const pending: ((value: Response) => void)[] = [];
       let calls = 0;

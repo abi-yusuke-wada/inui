@@ -14,6 +14,7 @@ export function sceneVersion(elements: readonly { version: number }[], backgroun
  * Excalidrawを表示する。ファイルの読み込み・上書き保存のメニューは使わず、保存はinuiの保存ボタンで行う。
  * 画像の書き出し（PNG・SVG）はExcalidrawのメニューから行える。
  * 開いた直後からドラッグで線を描けるよう、ペン（freedraw）を選んだ状態にする。他のツールはツールバーから選べる。
+ * Excalidraw 0.18.1はAPIを渡した後の初期化でinitialDataのツールへ戻すため、APIのsetActiveToolではなくinitialDataで指定する。
  */
 export default function Canvas({ scene, onReady, onVersion }: {
   scene: BoardScene;
@@ -24,18 +25,14 @@ export default function Canvas({ scene, onReady, onVersion }: {
   const initialData = {
     elements: scene.elements,
     files: scene.files,
-    appState: { viewBackgroundColor: scene.appState.viewBackgroundColor ?? '#ffffff' },
+    appState: { viewBackgroundColor: scene.appState.viewBackgroundColor ?? '#ffffff', activeTool: { type: 'freedraw' } },
   } as unknown as ExcalidrawProps['initialData'];
   const handleChange: NonNullable<ExcalidrawProps['onChange']> = (elements, appState) =>
     onVersion(sceneVersion(elements, appState.viewBackgroundColor));
-  const handleReady = (api: ExcalidrawImperativeAPI) => {
-    api.setActiveTool({ type: 'freedraw' });
-    onReady(api);
-  };
   return <Excalidraw
     langCode="ja-JP"
     initialData={initialData}
-    excalidrawAPI={handleReady}
+    excalidrawAPI={onReady}
     onChange={handleChange}
     UIOptions={{ canvasActions: { loadScene: false, saveToActiveFile: false } }}
   />;

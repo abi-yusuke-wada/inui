@@ -58,8 +58,10 @@ export default function Whiteboard({ onUnsavedChange }: { onUnsavedChange?: (uns
   // 名前は描画とは別に、保存した（または開いた）時点の値と比べる。
   const [savedName, setSavedName] = useState('');
   const dirty = board !== undefined && (sceneDirty || name !== savedName);
-  // 描画・名前を変更した回数。ボードの読み込みを待つ間の変更を見つけるために使う。
+  // 描画・名前を変更した回数。ボードの作成・読み込みを待つ間の変更を見つけるために使う。
   const edits = useRef(0);
+  // いま表示しているボードのID。保存・削除の完了時に、待つ間に別のボードへ切り替わっていないかを確かめる。
+  const shownBoard = useRef<string | undefined>(undefined);
   const listRequests = useLatestRequest();
   const boardRequests = useLatestRequest();
 
@@ -95,11 +97,12 @@ export default function Whiteboard({ onUnsavedChange }: { onUnsavedChange?: (uns
     return !dirty || window.confirm('保存していない変更があります。破棄して続けますか？');
   }
 
-  async function open(id: string, { confirmed = false } = {}) {
+  /** editsSinceには、ボードの作成など、開く前の待ち時間が始まった時点の変更回数を渡す。 */
+  async function open(id: string, { confirmed = false, editsSince }: { confirmed?: boolean; editsSince?: number } = {}) {
     // 開いているボードは開き直さない（Canvasが作り直されず、保存に使うAPIの参照が戻らないため）。
     if (busyRef.current || id === board?.id || (!confirmed && !confirmDiscard())) return;
     const request = boardRequests.begin();
-    const editsAtStart = edits.current;
+    const editsAtStart = editsSince ?? edits.current;
     setLoading(true);
     setError('');
     setNotice('');
@@ -112,6 +115,7 @@ export default function Whiteboard({ onUnsavedChange }: { onUnsavedChange?: (uns
       api.current = null;
       savedVersion.current = undefined;
       latestVersion.current = undefined;
+      shownBoard.current = data.id;
       setSceneDirty(false);
       setBoard(data);
       setName(data.name);
@@ -145,12 +149,13 @@ export default function Whiteboard({ onUnsavedChange }: { onUnsavedChange?: (uns
     event.preventDefault();
     const trimmed = newName.trim();
     if (!trimmed || trimmed.length > MAX_NAME_LENGTH || !confirmDiscard()) return;
+    const editsAtCreate = edits.current;
     void write(async () => {
       const created = parseBoardSummary(await fetchJson('/api/whiteboards', { method: 'POST', body: { name: trimmed } }));
       setNewName('');
       await loadList();
       return created.id;
-    }, 'ボードの作成').then((id) => { if (id) void open(id, { confirmed: true }); });
+    }, 'ボードの作成').then((id) => { if (id) void open(id, { confirmed: true, editsSince: editsAtCreate }); });
   }
 
   function save() {
@@ -164,10 +169,12 @@ export default function Whiteboard({ onUnsavedChange }: { onUnsavedChange?: (uns
       parseBoardSummary(await fetchJson('/api/whiteboards/' + current.id, {
         method: 'PATCH', body: { name: trimmed, scene }, timeoutMs: 60_000,
       }));
-      // 保存中に描き足した分や変えた名前は、未保存のまま残す。
-      savedVersion.current = version;
-      setSceneDirty(latestVersion.current !== version);
-      setSavedName(nameAtSave);
+      // 保存中に描き足した分や変えた名前は、未保存のまま残す。待つ間に別のボードを開いていれば、そのボードの状態は変えない。
+      if (shownBoard.current === current.id) {
+        savedVersion.current = version;
+        setSceneDirty(latestVersion.current !== version);
+        setSavedName(nameAtSave);
+      }
       setNotice('保存しました。');
       await loadList();
     }, 'ボードの保存');
@@ -177,7 +184,13 @@ export default function Whiteboard({ onUnsavedChange }: { onUnsavedChange?: (uns
     if (!window.confirm(`「${target.name}」を削除しますか？元に戻せません。`)) return;
     void write(async () => {
       await fetchJson('/api/whiteboards/' + target.id, { method: 'DELETE' });
-      if (board?.id === target.id) { setBoard(undefined); setSceneDirty(false); api.current = null; }
+      // 削除を待つ間に別のボードを開いていれば、そのボードは閉じない。
+      if (shownBoard.current === target.id) {
+        shownBoard.current = undefined;
+        setBoard(undefined);
+        setSceneDirty(false);
+        api.current = null;
+      }
       await loadList();
     }, 'ボードの削除');
   }
@@ -228,7 +241,7 @@ export default function Whiteboard({ onUnsavedChange }: { onUnsavedChange?: (uns
             <label className="visually-hidden" htmlFor="board-name">ボードの名前</label>
             <input id="board-name" type="text" maxLength={MAX_NAME_LENGTH} value={name} disabled={busy}
               onChange={(event) => { setName(event.target.value); edits.current++; }} />
-            <button className="button button-primary" type="button" disabled={busy || !name.trim() || !stylesReady} onClick={save}>
+            <button className="button button-primary" type="button" disabled={busy || loading || !name.trim() || !stylesReady} onClick={save}>
               {busy ? '保存しています…' : '保存'}
             </button>
             <span className="whiteboard-state" role="status">{dirty ? '未保存の変更があります' : '保存済み'}</span>

@@ -48,10 +48,13 @@ test('HTTPエラー本文を取得・表示用エラーへ含めず、保存POST
     assert.equal(error.message.includes('秘密'), false);
     return true;
   });
-  // 固定形式でないコードは採用しない。
-  await assert.rejects(fetchJson('/api/tasks/github', { fetchImpl: async () => ({
-    ok: false, status: 502, headers: new Headers({ 'X-Error-Code': '秘密 <b>' }), json: async () => ({}),
-  } as Response) }), (error: unknown) => error instanceof ApiError && error.code === undefined);
+  // 固定形式（英小文字と_、40文字まで）でないコードは採用しない。ヘッダーに入れられるASCIIの値で、HTTPの失敗として確かめる。
+  for (const code of ['secret <b>', 'Upstream_Auth', 'a'.repeat(41)]) {
+    await assert.rejects(fetchJson('/api/tasks/github', { fetchImpl: async () => ({
+      ok: false, status: 502, headers: new Headers({ 'X-Error-Code': code }), json: async () => ({}),
+    } as Response) }), (error: unknown) => error instanceof ApiError && error.kind === 'http' && error.status === 502
+      && error.code === undefined);
+  }
   assert.equal(calls, 1);
   assert.equal(readBody, false);
 });

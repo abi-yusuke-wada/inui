@@ -94,7 +94,7 @@ test('GitHubは自分に関係する未完了のIssue・PRを3条件で検索し
     assert.equal(call.url.searchParams.get('per_page'), '100');
     assert.equal(call.init?.method, 'GET');
     assert.equal(call.init?.redirect, 'error');
-    assert.equal((call.init?.headers as Record<string, string>).Authorization, `Bearer ${GITHUB_TOKEN}`);
+    assert.equal((call.init?.headers as Record<string, string> | undefined)?.Authorization, `Bearer ${GITHUB_TOKEN}`);
   }
 });
 

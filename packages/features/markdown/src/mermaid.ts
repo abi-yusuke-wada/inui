@@ -12,8 +12,13 @@ function loadMermaid() {
   return ready;
 }
 
-/** 図の定義を検証してからSVGへ変換する。不正な定義では描画を試みない。 */
+// 画像ノード（img:）・URL・CSSのurl()を含む図。Mermaidは描画の途中で画像を読み込むため（securityLevelがstrictでも）、
+// 描画後のSVGを無害化しても外部への通信を防げない。こうした図は描画せず、呼び出し元で定義をそのまま表示する。
+const EXTERNAL_REFERENCE = /\bimg\s*:|url\s*\(|\/\//i;
+
+/** 図の定義を検証してからSVGへ変換する。不正な定義や外部を参照する定義では描画を試みない。 */
 export async function renderDiagram(code: string, id: string): Promise<string> {
+  if (EXTERNAL_REFERENCE.test(code)) throw new Error('external_reference');
   const mermaid = await loadMermaid();
   await mermaid.parse(code);
   const { svg } = await mermaid.render(id, code);

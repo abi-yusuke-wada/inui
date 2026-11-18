@@ -70,6 +70,8 @@ export function createMarkdownRenderer(window: WindowLike) {
       return purify.sanitize(svg, {
         USE_PROFILES: { svg: true, svgFilters: true, html: true },
         ADD_TAGS: ['foreignObject'],
+        // Mermaidのラベルは foreignObject の中のHTMLで作られる。既定では削除されるため、HTMLを入れられる場所として許可する。
+        HTML_INTEGRATION_POINTS: { foreignobject: true },
         FORBID_TAGS: ['script', 'iframe', 'img', 'image'],
       });
     },

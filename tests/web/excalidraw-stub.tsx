@@ -7,7 +7,7 @@ import { useEffect, useRef } from 'react';
 type Element = { id: string; type: string; version: number; isDeleted?: boolean; fileId?: string };
 declare global { interface Window { inuiTestActiveTool?: string } }
 type Props = {
-  initialData?: { elements?: Element[]; files?: Record<string, unknown>; appState?: { viewBackgroundColor?: string } };
+  initialData?: { elements?: Element[]; files?: Record<string, unknown>; appState?: { viewBackgroundColor?: string; activeTool?: { type: string } } };
   excalidrawAPI?: (api: unknown) => void;
   onChange?: (elements: Element[], appState: unknown, files: unknown) => void;
 };
@@ -20,8 +20,9 @@ export function Excalidraw({ initialData, excalidrawAPI, onChange }: Props) {
     let elements = [...(initialData?.elements ?? [])];
     const appState = { viewBackgroundColor: initialData?.appState?.viewBackgroundColor ?? '#ffffff' };
     const files = initialData?.files ?? {};
+    // 本物と同じく、開いた直後のツールはinitialDataで決まる（APIを渡した後の初期化でinitialDataのツールに戻る）。
+    window.inuiTestActiveTool = initialData?.appState?.activeTool?.type ?? 'selection';
     excalidrawAPI?.({
-      setActiveTool: (tool: { type: string }) => { window.inuiTestActiveTool = tool.type; },
       getSceneElements: () => elements.filter((element) => !element.isDeleted),
       getFiles: () => files,
       getAppState: () => appState,
