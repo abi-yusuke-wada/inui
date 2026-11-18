@@ -1,3 +1,4 @@
+import { randomUUID } from 'node:crypto';
 import { spawn } from 'node:child_process';
 import { mkdir, rename, writeFile } from 'node:fs/promises';
 import { fileURLToPath, pathToFileURL } from 'node:url';
@@ -93,8 +94,10 @@ export function launchService(service, port) {
 async function saveReport(report) {
   await mkdir(`${ROOT}.local-poc`, { recursive: true });
   const path = `${ROOT}.local-poc/http-verification.json`;
-  await writeFile(`${path}.tmp`, `${JSON.stringify(report)}\n`);
-  await rename(`${path}.tmp`, path);
+  // 同時に実行した検証どうしで一時ファイルを共有しないよう、実行ごとに別の名前にする。
+  const temporary = `${path}.${process.pid}.${randomUUID()}.tmp`;
+  await writeFile(temporary, `${JSON.stringify(report)}\n`);
+  await rename(temporary, path);
 }
 
 /** 起動済みは再利用し、不足分の起動・検証・自分の子の片付けをまとめる。 */

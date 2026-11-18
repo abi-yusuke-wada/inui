@@ -10,6 +10,11 @@ Gitの設定を確認し、次の条件をすべて満たす場合だけ承認�
 - originの接続先がこのリポジトリで、push先やURLを書き換える設定がない
 - ブランチ以外の参照（タグ）も送る設定（push.followTags）が有効でない
 - 環境変数 GIT_CONFIG が設定されていない（git configだけに効き、実際のpushとは別の設定を検査してしまうため）
+- リポジトリ（local・worktree）の設定が許可リストの項目だけで、コマンドで与えた設定もない
+  （git はpushの途中で認証ヘルパー等の設定されたプログラムをサンドボックス外で実行しうるため、
+  危険な項目を個別に探すのではなく、許可した項目以外があれば承認を求める）
+- 実行されうるgitフックがない（core.hooksPathが未設定で、フックのディレクトリに.sample以外がない）
+- サブモジュールも送る設定（push.recurseSubmodules・submodule.recurse）が有効でない
 
 条件を満たさないgit pushは、このフックが承認を求める（ask）。settings.jsonのaskルールは
 フックのallowより優先されるため、git pushをaskルールには入れない。拒否はdenyで行う。
@@ -25,6 +30,14 @@ import sys
 WORK_BRANCH = re.compile(r'^(?:feat|docs|fix|chore)/[A-Za-z0-9._-]+(?:/[A-Za-z0-9._-]+)*$')
 ALLOWED_CHARS = re.compile(r'^[A-Za-z0-9 ._/-]+$')
 ORIGIN_URL = 'https://github.com/abi-yusuke-wada/inui.git'
+# リポジトリの設定（local・worktree）で許可する項目。gitが既定で作る項目と、
+# ブランチの追跡設定・VS Codeが付ける項目・利用者名だけに限る。
+LOCAL_KEYS = {
+    'core.repositoryformatversion', 'core.filemode', 'core.bare', 'core.logallrefupdates',
+    'core.ignorecase', 'core.precomposeunicode', 'core.symlinks',
+    'remote.origin.url', 'remote.origin.fetch', 'user.name', 'user.email',
+}
+LOCAL_BRANCH_KEY = re.compile(r'^branch\.[^\s]+\.(remote|merge|vscode-merge-base|github-pr-owner-number)$')
 
 
 def decide(decision, reason):
@@ -69,6 +82,30 @@ def problem(command, cwd):
     _, follow_tags = git(cwd, 'config', '--type=bool', '--get', 'push.followTags')
     if follow_tags == 'true':
         return 'ブランチと一緒にタグも送る設定（push.followTags）が有効です。'
+    code, entries = git(cwd, 'config', '--list', '--show-scope', '--name-only')
+    if code != 0:
+        return 'Gitの設定を確認できませんでした。'
+    for line in entries.splitlines():
+        scope, _, key = line.partition('\t')
+        if scope == 'command':
+            return 'コマンドで与えたGitの設定があります。'
+        if scope in ('local', 'worktree') and key not in LOCAL_KEYS and not LOCAL_BRANCH_KEY.match(key):
+            return 'リポジトリのGit設定に、許可していない項目があります。'
+    code, _ = git(cwd, 'config', '--get', 'core.hooksPath')
+    if code == 0:
+        return 'gitフックの場所を変える設定（core.hooksPath）があります。'
+    code, hooks = git(cwd, 'rev-parse', '--git-path', 'hooks')
+    if code != 0:
+        return 'gitフックの場所を確認できませんでした。'
+    hooks_dir = hooks if os.path.isabs(hooks) else os.path.join(cwd, hooks)
+    if os.path.isdir(hooks_dir) and any(not name.endswith('.sample') for name in os.listdir(hooks_dir)):
+        return 'push中に実行されうるgitフックがあります。'
+    _, recurse = git(cwd, 'config', '--get', 'push.recurseSubmodules')
+    if recurse not in ('', 'no', 'check'):
+        return 'サブモジュールも送る設定（push.recurseSubmodules）が有効です。'
+    _, recurse = git(cwd, 'config', '--type=bool', '--get', 'submodule.recurse')
+    if recurse == 'true':
+        return 'サブモジュールを再帰的に扱う設定（submodule.recurse）が有効です。'
     return None
 
 

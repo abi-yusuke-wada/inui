@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { execFileSync, spawnSync } from 'node:child_process';
-import { mkdtempSync, rmSync } from 'node:fs';
+import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import test from 'node:test';
@@ -110,6 +110,55 @@ test('GIT_CONFIGでgit configの参照先だけが切り替わる場合は承認
     execFileSync('git', ['config', '--file', fake, 'remote.origin.url', ORIGIN], { env: GIT_ENV });
     assert.equal(decide('git push origin feat/sample', repo.dir, 'Bash', { ...GIT_ENV, GIT_CONFIG: fake }), 'ask');
   } finally { repo.cleanup(); }
+});
+
+test('リポジトリの設定が許可リストの項目だけなら通し、それ以外の項目があれば承認を求める', () => {
+  const allowed = repository();
+  try {
+    // ブランチの追跡設定やVS Codeが付ける項目は許可する。
+    allowed.git('config', 'branch.feat/sample.remote', 'origin');
+    allowed.git('config', 'branch.feat/sample.merge', 'refs/heads/feat/sample');
+    allowed.git('config', 'branch.feat/sample.vscode-merge-base', 'origin/main');
+    assert.equal(decide('git push origin feat/sample', allowed.dir), 'allow');
+  } finally { allowed.cleanup(); }
+  for (const [key, value] of [
+    ['credential.helper', '!echo'], ['include.path', '/dev/null'], ['core.sshCommand', 'ssh'],
+    ['core.hooksPath', '.githooks'], ['submodule.lib.url', 'https://example.invalid/lib.git'],
+    ['remote.origin.receivepack', 'git-receive-pack'], ['http.extraHeader', 'X-Test: 1'],
+  ]) {
+    const repo = repository();
+    try {
+      repo.git('config', key, value);
+      assert.equal(decide('git push origin feat/sample', repo.dir), 'ask', key);
+    } finally { repo.cleanup(); }
+  }
+});
+
+test('push中に実行されうるgitフックや、サブモジュールも送る設定があれば承認を求める', () => {
+  const hooked = repository();
+  try {
+    // .sampleは実行されないため許可し、それ以外のフックがあれば承認を求める。
+    writeFileSync(join(hooked.dir, '.git', 'hooks', 'pre-push.sample'), '#!/bin/sh\n');
+    assert.equal(decide('git push origin feat/sample', hooked.dir), 'allow');
+    writeFileSync(join(hooked.dir, '.git', 'hooks', 'pre-push'), '#!/bin/sh\n', { mode: 0o755 });
+    assert.equal(decide('git push origin feat/sample', hooked.dir), 'ask');
+  } finally { hooked.cleanup(); }
+  // ユーザー全体の設定にある場合も含めて確認するため、--global相当のファイルで与える。
+  for (const [key, value] of [['push.recurseSubmodules', 'on-demand'], ['submodule.recurse', 'true'], ['core.hooksPath', '/tmp']]) {
+    const repo = repository();
+    const globalConfig = join(repo.dir, 'global-config');
+    try {
+      execFileSync('git', ['config', '--file', globalConfig, key, value], { env: GIT_ENV });
+      assert.equal(decide('git push origin feat/sample', repo.dir, 'Bash', { ...GIT_ENV, GIT_CONFIG_GLOBAL: globalConfig }), 'ask', key);
+    } finally { repo.cleanup(); }
+  }
+  // ユーザー全体の push.recurseSubmodules=check は送らずに確認するだけなので許可する。
+  const checkOnly = repository();
+  const checkConfig = join(checkOnly.dir, 'global-config');
+  try {
+    execFileSync('git', ['config', '--file', checkConfig, 'push.recurseSubmodules', 'check'], { env: GIT_ENV });
+    assert.equal(decide('git push origin feat/sample', checkOnly.dir, 'Bash', { ...GIT_ENV, GIT_CONFIG_GLOBAL: checkConfig }), 'allow');
+  } finally { checkOnly.cleanup(); }
 });
 
 test('git push以外のコマンドや判定できない入力では何も出力しない', () => {
