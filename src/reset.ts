@@ -7,7 +7,7 @@ import { createLogger, logLevel } from './logger.ts';
 const logger = createLogger({ level: logLevel(process.env.LOG_LEVEL) });
 
 try {
-  // 表がまだなければ作ってから空にする。
+  // 未適用のマイグレーションがあれば適用してから空にする（初めてなら表もここで作る）。
   const { db } = await openAppDatabase(DEFAULT_DB_PATH);
   try {
     await new TaskStore(db).reset();

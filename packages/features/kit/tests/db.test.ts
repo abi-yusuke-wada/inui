@@ -4,6 +4,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import test from 'node:test';
 import type { TestContext } from 'node:test';
+import { DatabaseSync } from 'node:sqlite';
 import { migrate, openLocalDatabase } from '../src/db.ts';
 import type { Migration } from '../src/db.ts';
 
@@ -116,4 +117,71 @@ test('ローカルのDBファイルを置くディレクトリは、所有者だ
   const db = openLocalDatabase(path);
   await db.close();
   assert.equal(statSync(join(path, '..')).mode & 0o777, 0o700);
+});
+
+test('1回に渡せるSQLは1文だけで、2文目以降は黙って捨てずに失敗させる', async (t) => {
+  const db = memoryDatabase(t);
+  // 文の後ろの空白・セミコロン・コメントは受け付ける。
+  await db.run('CREATE TABLE notes (id TEXT PRIMARY KEY, body TEXT) STRICT; -- メモ\n');
+  await db.run("INSERT INTO notes VALUES ('a', 'セミコロン;を含む値');");
+  for (const run of [
+    () => db.query('SELECT * FROM notes; SELECT 1'),
+    () => db.run("INSERT INTO notes VALUES ('b', 'b'); DELETE FROM notes"),
+    () => db.batch([{ sql: "INSERT INTO notes VALUES ('c', 'c'); DROP TABLE notes" }]),
+  ]) {
+    await assert.rejects(run(), /1文だけ/);
+  }
+  assert.deepEqual((await db.query('SELECT id, body FROM notes')).map((row) => ({ ...row })), [{ id: 'a', body: 'セミコロン;を含む値' }]);
+  // 1要素に2文を書いたマイグレーションは、適用も記録もしない。
+  const twoStatements: Migration = { id: 'links/001', up: ['CREATE TABLE links (id TEXT) STRICT; ALTER TABLE links ADD COLUMN url TEXT'] };
+  await assert.rejects(migrate(db, [twoStatements]), /1文だけ/);
+  assert.deepEqual(await tables(db), ['notes', 'schema_migrations']);
+  assert.deepEqual(await db.query('SELECT id FROM schema_migrations'), []);
+});
+
+test('安全な範囲を超える64ビットの整数も読み、範囲内の整数は従来どおり数値で返す', async (t) => {
+  const db = memoryDatabase(t);
+  await db.run('CREATE TABLE counters (name TEXT PRIMARY KEY, value INTEGER NOT NULL) STRICT');
+  await db.run('INSERT INTO counters VALUES (?, ?), (?, ?)', ['large', 9007199254740993n, 'small', 42]);
+  assert.deepEqual((await db.query('SELECT name, value FROM counters ORDER BY name')).map((row) => [row.name, row.value]),
+    [['large', 9007199254740993n], ['small', 42]]);
+  // 列名が __proto__ でも、行のプロトタイプは書き換わらない。
+  const [row] = await db.query('SELECT 1 AS __proto__');
+  assert.equal(Object.getPrototypeOf(row), null);
+  assert.equal(row?.__proto__, 1);
+});
+
+test('別の接続が書き込み中なら、待たずに失敗させる（同期APIで待つとサーバー全体が止まるため）', async (t) => {
+  const path = join(temporaryDirectory(t), 'app.sqlite');
+  const db = openLocalDatabase(path);
+  t.after(() => db.close());
+  await db.run('CREATE TABLE notes (id TEXT PRIMARY KEY) STRICT');
+  const holder = new DatabaseSync(path);
+  t.after(() => holder.close());
+  holder.exec('BEGIN IMMEDIATE');
+  const started = performance.now();
+  await assert.rejects(db.run("INSERT INTO notes VALUES ('a')"), /locked|busy/i);
+  assert.ok(performance.now() - started < 1000);
+  holder.exec('ROLLBACK');
+  await db.run("INSERT INTO notes VALUES ('a')");
+});
+
+test('upが失敗しても、別のプロセスが先に適用していれば適用済みとして扱う', async (t) => {
+  const path = join(temporaryDirectory(t), 'app.sqlite');
+  const first = openLocalDatabase(path);
+  const second = openLocalDatabase(path);
+  t.after(async () => { await first.close(); await second.close(); });
+  const failing: Migration = {
+    id: NOTES.id,
+    // 表の形を確かめている間に、2つ目の接続が同じマイグレーションを適用し、確かめた前提が崩れる。
+    up: async () => {
+      await migrate(second, [NOTES]);
+      throw new Error('前提が崩れた');
+    },
+  };
+  assert.deepEqual(await migrate(first, [failing]), []);
+  assert.deepEqual(await tables(first), ['notes', 'schema_migrations']);
+  // 先に適用されていなければ、upの失敗をそのまま返す。
+  const broken: Migration = { id: 'tags/001', up: async () => { throw new Error('前提が崩れた'); } };
+  await assert.rejects(migrate(first, [broken]), /前提が崩れた/);
 });

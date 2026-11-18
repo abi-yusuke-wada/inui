@@ -103,11 +103,13 @@ test('実ファイルを開き直しても保存したボードが残り、reset
   t.after(() => rmSync(directory, { recursive: true, force: true }));
   const path = join(directory, 'app.sqlite');
   const first = openLocalDatabase(path);
-  await migrate(first, boardMigrations);
-  const store = new BoardStore(first);
-  const board = await store.create('ラフ');
-  await store.update(board.id, { scene: SCENE });
-  await first.close();
+  let board: Awaited<ReturnType<BoardStore['create']>>;
+  try {
+    await migrate(first, boardMigrations);
+    const store = new BoardStore(first);
+    board = await store.create('ラフ');
+    await store.update(board.id, { scene: SCENE });
+  } finally { await first.close(); }
   const second = openLocalDatabase(path);
   try {
     assert.deepEqual(await migrate(second, boardMigrations), []);

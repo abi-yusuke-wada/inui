@@ -27,14 +27,16 @@ test('実ファイルを開き直しても追加・完了を保持し、resetで
   let tick = 0;
   const now = () => new Date(Date.UTC(2026, 10, 16, 0, 0, tick++));
   const first = openLocalDatabase(path);
-  assert.deepEqual(await migrate(first, taskMigrations), ['tasks/001-local-tasks']);
-  const store = new TaskStore(first, { now });
-  assert.deepEqual(await store.list(), []);
-  const write = await store.add('ADRを書く');
-  const review = await store.add('PRを確認する');
-  assert.equal((await store.setDone(write.id, true))?.done, true);
-  assert.equal(await store.setDone('00000000-0000-4000-8000-000000000000', true), undefined);
-  await first.close();
+  let review: Awaited<ReturnType<TaskStore['add']>>;
+  try {
+    assert.deepEqual(await migrate(first, taskMigrations), ['tasks/001-local-tasks']);
+    const store = new TaskStore(first, { now });
+    assert.deepEqual(await store.list(), []);
+    const write = await store.add('ADRを書く');
+    review = await store.add('PRを確認する');
+    assert.equal((await store.setDone(write.id, true))?.done, true);
+    assert.equal(await store.setDone('00000000-0000-4000-8000-000000000000', true), undefined);
+  } finally { await first.close(); }
   const second = openLocalDatabase(path);
   try {
     assert.deepEqual(await migrate(second, taskMigrations), []);

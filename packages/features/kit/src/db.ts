@@ -1,6 +1,7 @@
 import { mkdirSync } from 'node:fs';
 import { dirname } from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
+import type { SQLOutputValue, StatementSync } from 'node:sqlite';
 
 /** SQLへ渡す値と、受け取る値。ローカルのSQLiteとTurso（libSQL）の両方で扱える型に限る。 */
 export type SqlValue = null | number | bigint | string | Uint8Array;
@@ -25,26 +26,55 @@ export interface Database {
   close(): Promise<void>;
 }
 
-/** 別の接続が書き込み中のとき、失敗にせず待つ時間。 */
-const BUSY_TIMEOUT_MS = 5000;
+// 準備した1文の後ろに残ってよいのは、空白とコメントだけ。
+const TRAILING = /--[^\n]*|\/\*[\s\S]*?\*\//g;
 
-/** ローカルのSQLiteファイル（テストでは ':memory:'）を開く。 */
+/**
+ * 1つの文だけを準備する。node:sqliteは最初の文だけを準備し、2つ目以降を黙って捨てるため、
+ * 残りがあれば失敗させる（Tursoへの要求も1要素1文になる）。
+ */
+function prepareOne(db: DatabaseSync, sql: string): StatementSync {
+  const statement = db.prepare(sql);
+  const start = sql.indexOf(statement.sourceSQL);
+  if (start < 0 || sql.slice(start + statement.sourceSQL.length).replace(TRAILING, '').trim() !== '') {
+    throw new Error('SQLは1回に1文だけ渡してください。');
+  }
+  return statement;
+}
+
+/** 64ビットの整数も読めるようにし、安全な範囲のものは従来どおりnumberにする。 */
+function toRow(row: Record<string, SQLOutputValue>): Row {
+  // 列名が __proto__ でも、プロトタイプを書き換えないようにする。
+  const result: Row = Object.create(null);
+  for (const [key, value] of Object.entries(row)) {
+    result[key] = typeof value === 'bigint' && value >= BigInt(Number.MIN_SAFE_INTEGER) && value <= BigInt(Number.MAX_SAFE_INTEGER)
+      ? Number(value) : value;
+  }
+  return result;
+}
+
+/**
+ * ローカルのSQLiteファイル（テストでは ':memory:'）を開く。
+ * node:sqliteは同期APIで、ロックを待つ間はサーバー全体が止まるため、別の接続が書き込み中なら待たずに失敗させる。
+ */
 export function openLocalDatabase(path: string): Database {
   // 業務データを含むため、新しく作るディレクトリは所有者だけが開けるようにする。
   if (path !== ':memory:') mkdirSync(dirname(path), { recursive: true, mode: 0o700 });
-  const db = new DatabaseSync(path, { timeout: BUSY_TIMEOUT_MS });
+  const db = new DatabaseSync(path);
   return {
     async query(sql, args = []) {
-      return db.prepare(sql).all(...args) as Row[];
+      const statement = prepareOne(db, sql);
+      statement.setReadBigInts(true);
+      return statement.all(...args).map(toRow);
     },
     async run(sql, args = []) {
-      return { changes: Number(db.prepare(sql).run(...args).changes) };
+      return { changes: Number(prepareOne(db, sql).run(...args).changes) };
     },
     async batch(statements) {
       // 文の間で待たない（awaitしない）ため、同じプロセスの別の操作がトランザクションへ割り込まない。
       db.exec('BEGIN IMMEDIATE');
       try {
-        for (const { sql, args = [] } of statements) db.prepare(sql).run(...args);
+        for (const { sql, args = [] } of statements) prepareOne(db, sql).run(...args);
         db.exec('COMMIT');
       } catch (error) {
         // SQLiteが自動で取り消した場合はROLLBACKが失敗するため、元の例外を残す。
@@ -60,7 +90,7 @@ export function openLocalDatabase(path: string): Database {
 
 /**
  * テーブル定義の変更。idは適用済みの記録に使うため、適用した後は変更しない。
- * upは適用するSQLで、今の表の形を見て決める必要がある場合（この仕組みより前に作られた表の
+ * upは適用するSQL（1要素に1文）で、今の表の形を見て決める必要がある場合（この仕組みより前に作られた表の
  * 引き継ぎ等）は関数にする。
  */
 export interface Migration {
@@ -71,7 +101,8 @@ export interface Migration {
 /**
  * 未適用のマイグレーションを渡した順に、1件ずつ1つのトランザクションで適用し、適用したidを返す。
  * 適用の記録を各トランザクションの先頭で追加するため、別のプロセスが同じマイグレーションを先に
- * 適用していた場合は、記録の重複で全体が取り消され、適用済みとして扱う。
+ * 適用していた場合は、記録の重複で全体が取り消され、適用済みとして扱う。upが失敗した場合も、
+ * 別のプロセスが先に適用していないかを確かめてから失敗にする。
  */
 export async function migrate(db: Database, migrations: readonly Migration[],
   { now = () => new Date() }: { now?: () => Date } = {}): Promise<string[]> {
@@ -87,8 +118,8 @@ export async function migrate(db: Database, migrations: readonly Migration[],
   const done: string[] = [];
   for (const migration of migrations) {
     if (applied.has(migration.id)) continue;
-    const statements = typeof migration.up === 'function' ? await migration.up(db) : migration.up;
     try {
+      const statements = typeof migration.up === 'function' ? await migration.up(db) : migration.up;
       await db.batch([
         { sql: 'INSERT INTO schema_migrations (id, applied_at) VALUES (?, ?)', args: [migration.id, now().toISOString()] },
         ...statements.map((sql) => ({ sql })),

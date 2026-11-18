@@ -104,7 +104,7 @@ make app-reset
 make app-dev
 ```
 
-`app-reset`は`.local-poc/app.sqlite`の自分のタスクとホワイトボードを空に戻す（表がなければ作ってから空にし、マイグレーションの記録は残す）。GitHubのIssue・PR、`.local-jev`のモデル重みは変更しない。
+`app-reset`は`.local-poc/app.sqlite`の自分のタスクとホワイトボードを空に戻す。未適用のマイグレーションがあれば先に適用し（初めてなら表もここで作る）、マイグレーションの記録は残す。適用済みの記録があるのに表がないDB（壊れたファイルの一部だけを戻した場合など）では表を作り直さずに失敗するため、記録と表がそろったバックアップから戻す。GitHubのIssue・PR、`.local-jev`のモデル重みは変更しない。
 
 型検査・ビルド・コア/API/SQLite/UI操作のテストは`make app-check`、コアの通信契約・失敗処理だけは`make core-check`で確認する。固定応答を注入したテストは実NLI精度の証拠にはしない。
 

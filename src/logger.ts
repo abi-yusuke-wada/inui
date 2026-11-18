@@ -28,7 +28,7 @@ const MESSAGES: Record<LogEvent, string> = {
   http_request: 'HTTPリクエストを処理しました。',
   data_reset: '検証用タスクデータを初期状態へ戻しました。',
   data_reset_failed: '検証用タスクデータを初期化できませんでした。',
-  db_migrated: 'DBのテーブル定義を更新しました。',
+  db_migrated: 'DBマイグレーションを適用しました。',
 };
 const METHODS = new Set(['GET', 'HEAD', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS', 'CONNECT', 'TRACE']);
 const ROUTES = new Set([
