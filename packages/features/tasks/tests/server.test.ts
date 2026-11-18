@@ -2,8 +2,9 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import type { TestContext } from 'node:test';
 import { Hono } from 'hono';
+import { migrate, openLocalDatabase } from '@inui/feature-kit/db';
 import { RequestError } from '@inui/feature-kit/server';
-import { createTaskRoutes, readTaskSources, TaskStore } from '../src/server.ts';
+import { createTaskRoutes, readTaskSources, TaskStore, taskMigrations } from '../src/server.ts';
 import type { TaskSources } from '../src/server.ts';
 
 const GITHUB_TOKEN = 'ghp_' + 'x'.repeat(36);
@@ -36,9 +37,11 @@ function fakeFetch(handler: (url: URL, init?: RequestInit) => Response | Promise
   return { fetchImpl, calls };
 }
 
-function app(t: TestContext, sources: TaskSources, fetchImpl?: typeof fetch, timeoutMs?: number) {
-  const store = new TaskStore(':memory:');
-  t.after(() => store.close());
+async function app(t: TestContext, sources: TaskSources, fetchImpl?: typeof fetch, timeoutMs?: number) {
+  const db = openLocalDatabase(':memory:');
+  t.after(() => db.close());
+  await migrate(db, taskMigrations);
+  const store = new TaskStore(db);
   const root = new Hono();
   root.route('/api', createTaskRoutes({ store, sources,
     upstream: { ...(fetchImpl ? { fetchImpl } : {}), ...(timeoutMs ? { timeoutMs } : {}) } }));
@@ -50,7 +53,7 @@ function app(t: TestContext, sources: TaskSources, fetchImpl?: typeof fetch, tim
 
 test('環境変数の設定がなければGitHubへ接続せず、未設定であることだけを返す（Backlogの経路は持たない）', async (t) => {
   const { fetchImpl, calls } = fakeFetch(() => Response.json({}));
-  const get = app(t, readTaskSources({}), fetchImpl);
+  const get = await app(t, readTaskSources({}), fetchImpl);
   assert.deepEqual(await (await get('/api/tasks/github')).json(), { configured: false });
   assert.equal((await get('/api/tasks/backlog')).status, 404);
   assert.equal(calls.length, 0);
@@ -62,7 +65,7 @@ test('設定値の形式を検証し、値そのものは保持・応答しな�
   const valid = readTaskSources({ INUI_GITHUB_TOKEN: GITHUB_TOKEN, INUI_BACKLOG_SPACE: 'example.backlog.jp', INUI_BACKLOG_API_KEY: 'k'.repeat(64) });
   assert.deepEqual(valid, { github: { token: GITHUB_TOKEN }, invalid: [] });
   const { fetchImpl, calls } = fakeFetch(() => Response.json({}));
-  const response = await app(t, readTaskSources({ INUI_GITHUB_TOKEN: 'short-secret' }), fetchImpl)('/api/tasks/github');
+  const response = await (await app(t, readTaskSources({ INUI_GITHUB_TOKEN: 'short-secret' }), fetchImpl))('/api/tasks/github');
   assert.equal(response.status, 503);
   const text = await response.text();
   assert.equal(JSON.parse(text).error.code, 'invalid_config');
@@ -77,7 +80,7 @@ test('GitHubは自分に関係する未完了のIssue・PRを3条件で検索し
     if (query.includes('author:@me')) return search([pull(3)]);
     return search([pull(3), pull(4)]);
   });
-  const response = await app(t, { github: { token: GITHUB_TOKEN }, invalid: [] }, fetchImpl)('/api/tasks/github');
+  const response = await (await app(t, { github: { token: GITHUB_TOKEN }, invalid: [] }, fetchImpl))('/api/tasks/github');
   assert.equal(response.status, 200);
   const body = await response.json();
   assert.equal(body.configured, true);
@@ -114,7 +117,7 @@ test('連携先の失敗は固定コードへ置き換え、本文や例外を�
   ];
   for (const [handler, status, code] of cases) {
     const { fetchImpl } = fakeFetch(handler);
-    const response = await app(t, { github: { token: GITHUB_TOKEN }, invalid: [] }, fetchImpl)('/api/tasks/github');
+    const response = await (await app(t, { github: { token: GITHUB_TOKEN }, invalid: [] }, fetchImpl))('/api/tasks/github');
     assert.equal(response.status, status);
     const text = await response.text();
     assert.equal(JSON.parse(text).error.code, code);
@@ -129,7 +132,8 @@ test('条件ごとの上限を超えた件数は、表示しなかった件数�
     if (query.includes('author:@me')) return search([pull(2)], 1);
     return search([], 5);
   });
-  const body = await (await app(t, { github: { token: GITHUB_TOKEN }, invalid: [] }, fetchImpl)('/api/tasks/github')).json();
+  const get = await app(t, { github: { token: GITHUB_TOKEN }, invalid: [] }, fetchImpl);
+  const body = await (await get('/api/tasks/github')).json();
   assert.equal(body.tasks.length, 2);
   assert.equal(body.omitted, 129 + 5);
 });
@@ -138,7 +142,7 @@ test('連携先が応答しない場合は期限で打ち切る', async (t) => {
   const { fetchImpl } = fakeFetch((_url, init) => new Promise((_, reject) => {
     init?.signal?.addEventListener('abort', () => reject(new Error('aborted')));
   }));
-  const response = await app(t, { github: { token: GITHUB_TOKEN }, invalid: [] }, fetchImpl, 20)('/api/tasks/github');
+  const response = await (await app(t, { github: { token: GITHUB_TOKEN }, invalid: [] }, fetchImpl, 20))('/api/tasks/github');
   assert.equal(response.status, 504);
   assert.equal((await response.json()).error.code, 'upstream_timeout');
 });

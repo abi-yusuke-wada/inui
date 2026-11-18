@@ -10,7 +10,7 @@ import type { UpstreamOptions } from './upstream.ts';
 
 export { readTaskSources } from './config.ts';
 export type { TaskSources } from './config.ts';
-export { TaskStore } from './store.ts';
+export { TaskStore, taskMigrations } from './store.ts';
 
 const TASK_ID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
 const UPSTREAM_ERRORS = {
@@ -55,9 +55,9 @@ async function external(source: 'github', sources: TaskSources,
 export function createTaskRoutes({ store, sources, upstream = {} }: TaskRoutesOptions): Hono {
   const routes = new Hono();
 
-  routes.get('/tasks/local', (c) => {
+  routes.get('/tasks/local', async (c) => {
     checkQuery(c, []);
-    return c.json({ tasks: store.list() });
+    return c.json({ tasks: await store.list() });
   });
 
   routes.post('/tasks/local', async (c) => {
@@ -65,7 +65,7 @@ export function createTaskRoutes({ store, sources, upstream = {} }: TaskRoutesOp
     if (!isRecord(body) || !keysAre(body, ['title']) || typeof body.title !== 'string') invalidInput();
     const title = body.title.trim();
     if (title.length < 1 || title.length > MAX_TITLE_LENGTH) invalidInput();
-    return c.json({ task: store.add(title) }, 201);
+    return c.json({ task: await store.add(title) }, 201);
   });
 
   routes.patch('/tasks/local/:id', async (c) => {
@@ -74,16 +74,16 @@ export function createTaskRoutes({ store, sources, upstream = {} }: TaskRoutesOp
     // Todo表示は完了のチェック（done）、看板は列（status）を、どちらか1つだけ送る。
     if (!isRecord(body) || Object.keys(body).length !== 1) invalidInput();
     let task: LocalTask | undefined;
-    if (typeof body.done === 'boolean') task = store.setDone(id, body.done);
+    if (typeof body.done === 'boolean') task = await store.setDone(id, body.done);
     else if (typeof body.status === 'string' && (TASK_STATUSES as readonly string[]).includes(body.status)) {
-      task = store.setStatus(id, body.status as typeof TASK_STATUSES[number]);
+      task = await store.setStatus(id, body.status as typeof TASK_STATUSES[number]);
     } else invalidInput();
     if (!task) notFound();
     return c.json({ task });
   });
 
-  routes.delete('/tasks/local/:id', (c) => {
-    if (!store.remove(taskId(c.req.param('id')))) notFound();
+  routes.delete('/tasks/local/:id', async (c) => {
+    if (!(await store.remove(taskId(c.req.param('id'))))) notFound();
     return c.json({ deleted: true });
   });
 

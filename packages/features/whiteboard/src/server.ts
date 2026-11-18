@@ -4,7 +4,7 @@ import type { BoardStore } from './store.ts';
 import { MAX_ELEMENTS, MAX_NAME_LENGTH, MAX_SCENE_BYTES } from './types.ts';
 import type { BoardScene } from './types.ts';
 
-export { BoardStore } from './store.ts';
+export { BoardStore, boardMigrations } from './store.ts';
 
 const BOARD_ID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
 // Excalidrawの背景色の入力欄は、CSSとして有効な色（16進・色名・rgb()等）をそのまま受け付ける。
@@ -47,21 +47,21 @@ function boardScene(value: unknown): BoardScene {
 export function createWhiteboardRoutes({ store }: { store: Pick<BoardStore, 'list' | 'get' | 'create' | 'update' | 'remove'> }): Hono {
   const routes = new Hono();
 
-  routes.get('/whiteboards', (c) => {
+  routes.get('/whiteboards', async (c) => {
     checkQuery(c, []);
-    return c.json({ boards: store.list() });
+    return c.json({ boards: await store.list() });
   });
 
   routes.post('/whiteboards', async (c) => {
     const body = await readJson(c);
     if (!isRecord(body) || !keysAre(body, ['name'])) invalidInput();
-    const { scene: _scene, ...board } = store.create(boardName(body.name));
+    const { scene: _scene, ...board } = await store.create(boardName(body.name));
     return c.json({ board }, 201);
   });
 
-  routes.get('/whiteboards/:id', (c) => {
+  routes.get('/whiteboards/:id', async (c) => {
     checkQuery(c, []);
-    const board = store.get(boardId(c.req.param('id')));
+    const board = await store.get(boardId(c.req.param('id')));
     if (!board) notFound();
     return c.json({ board });
   });
@@ -70,7 +70,7 @@ export function createWhiteboardRoutes({ store }: { store: Pick<BoardStore, 'lis
     const id = boardId(c.req.param('id'));
     const body = await readJson(c, MAX_SCENE_BYTES);
     if (!isRecord(body) || !keysAre(body, ['name', 'scene']) || (body.name === undefined && body.scene === undefined)) invalidInput();
-    const board = store.update(id, {
+    const board = await store.update(id, {
       ...(body.name === undefined ? {} : { name: boardName(body.name) }),
       ...(body.scene === undefined ? {} : { scene: boardScene(body.scene) }),
     });
@@ -78,8 +78,8 @@ export function createWhiteboardRoutes({ store }: { store: Pick<BoardStore, 'lis
     return c.json({ board });
   });
 
-  routes.delete('/whiteboards/:id', (c) => {
-    if (!store.remove(boardId(c.req.param('id')))) notFound();
+  routes.delete('/whiteboards/:id', async (c) => {
+    if (!(await store.remove(boardId(c.req.param('id'))))) notFound();
     return c.json({ deleted: true });
   });
 
