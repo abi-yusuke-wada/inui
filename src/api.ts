@@ -3,6 +3,8 @@ import { Hono } from 'hono';
 import { createIntentRouter, DecisionError } from '@inui/core';
 import type { RoutingDecision } from '@inui/core';
 import { invalidInput, isRecord, keysAre, readJson, RequestError } from '@inui/feature-kit/server';
+import { createResumeRoutes } from '@inui/feature-resume/server';
+import type { GitRunner, ResumeSources } from '@inui/feature-resume/server';
 import { createTaskRoutes } from '@inui/feature-tasks/server';
 import type { TaskSources, TaskStore } from '@inui/feature-tasks/server';
 import { createWhiteboardRoutes } from '@inui/feature-whiteboard/server';
@@ -22,6 +24,8 @@ interface AppOptions {
   taskStore: Pick<TaskStore, 'list' | 'add' | 'setDone' | 'setStatus' | 'remove'>;
   boardStore: Pick<BoardStore, 'list' | 'get' | 'create' | 'update' | 'remove'>;
   taskSources?: TaskSources;
+  resumeSources?: ResumeSources;
+  gitRunner?: GitRunner;
   upstreamFetch?: typeof fetch;
   routeIntent?: (text: string) => Promise<unknown>;
   port?: number;
@@ -47,7 +51,8 @@ function checkedDecision(value: unknown): RoutingDecision {
 
 /** 同一オリジンのローカルAPIを、推論と保存を差し替え可能な形で作る。 */
 export function createApp({
-  taskStore, boardStore, taskSources = { invalid: [] }, upstreamFetch, routeIntent = createIntentRouter(), port = DEFAULT_APP_PORT, logger,
+  taskStore, boardStore, taskSources = { invalid: [] }, resumeSources = { repositories: [], invalid: [] }, gitRunner, upstreamFetch,
+  routeIntent = createIntentRouter(), port = DEFAULT_APP_PORT, logger,
 }: AppOptions) {
   const allowedHosts = [new URL(appOrigin(port)).host, `localhost:${port}`];
   const app = new Hono();
@@ -106,6 +111,9 @@ export function createApp({
     store: taskStore, sources: taskSources, upstream: upstreamFetch ? { fetchImpl: upstreamFetch } : {},
   }));
   app.route('/api', createWhiteboardRoutes({ store: boardStore }));
+  app.route('/api', createResumeRoutes({
+    sources: resumeSources, ...(gitRunner ? { git: gitRunner } : {}), upstream: upstreamFetch ? { fetchImpl: upstreamFetch } : {},
+  }));
 
   app.notFound((c) => c.json({ error: { code: 'not_found', message: '指定された操作はありません。' } }, 404));
   app.onError((error, c) => {

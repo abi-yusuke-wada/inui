@@ -1,0 +1,238 @@
+import assert from 'node:assert/strict';
+import { execFileSync } from 'node:child_process';
+import { chmodSync, existsSync, mkdirSync, readFileSync, rmSync, statSync, symlinkSync, utimesSync, writeFileSync } from 'node:fs';
+import { join } from 'node:path';
+import test from 'node:test';
+import {
+  createGitRunner, GitError, gitEnv, HANDOFF_PATH, MAX_FILES, MAX_HANDOFF_BYTES, MAX_WORKTREES, parseGitHubRemote, parseStatus,
+  readRepository,
+} from '../src/git.ts';
+import type { GitRunner } from '../src/git.ts';
+import { commitIn, createRepository, SETUP_ENV, temporaryDirectory } from './repository.ts';
+
+const git = createGitRunner();
+
+test('worktreeごとのブランチ・変更・最近のコミットを読み、最も新しいコミットの日時を最終作業日時にする', async (t) => {
+  const repo = createRepository(t);
+  repo.commit('最初のコミット', { 'a.txt': 'a\n' }, '2026-11-16T09:00:00+09:00');
+  repo.commit('ADRを書く', { 'b.txt': 'b\n' }, '2026-11-17T09:00:00+09:00');
+  repo.git('remote', 'add', 'origin', 'https://github.com/example/inui.git');
+  const worktree = join(repo.root, 'wt');
+  repo.git('worktree', 'add', '-q', '-b', 'feat/x', worktree);
+  commitIn(worktree, '別のworktreeの作業', { 'c.txt': 'c\n' }, '2026-11-18T09:00:00+09:00');
+  // 本体のworktreeに、変更・ステージ済み・未追跡のファイルを1つずつ作る。
+  repo.write('a.txt', 'changed\n');
+  repo.write('staged.txt', 'staged\n');
+  repo.git('add', 'staged.txt');
+  repo.write('new.txt', 'new\n');
+
+  const status = await readRepository(git, { name: 'repo', path: repo.dir });
+  assert.equal(status.error, undefined);
+  assert.deepEqual(status.github, { owner: 'example', name: 'inui' });
+  assert.equal(status.omittedWorktrees, 0);
+  assert.deepEqual(status.worktrees.map((item) => [item.path, item.branch]), [[repo.dir, 'main'], [worktree, 'feat/x']]);
+  const [main, feature] = status.worktrees;
+  assert.deepEqual(main?.changes, {
+    staged: 1, unstaged: 1, untracked: 1, conflicted: 0, omittedFiles: 0,
+    files: [{ status: '.M', path: 'a.txt' }, { status: 'A.', path: 'staged.txt' }, { status: '??', path: 'new.txt' }],
+  });
+  assert.deepEqual(main?.commits.map((commit) => [commit.subject, commit.committedAt]),
+    [['ADRを書く', '2026-11-17T09:00:00+09:00'], ['最初のコミット', '2026-11-16T09:00:00+09:00']]);
+  assert.match(main?.commits[0]?.sha ?? '', /^[0-9a-f]{40}$/);
+  assert.equal(feature?.commits[0]?.subject, '別のworktreeの作業');
+  assert.equal(status.lastActivityAt, '2026-11-18T09:00:00+09:00');
+});
+
+test('追跡するブランチとの差（先行・遅れ）を読む', async (t) => {
+  const repo = createRepository(t);
+  repo.commit('最初のコミット', { 'a.txt': 'a\n' });
+  const remote = join(repo.root, 'remote.git');
+  execFileSync('git', ['init', '-q', '--bare', remote], { env: SETUP_ENV });
+  repo.git('remote', 'add', 'up', remote);
+  repo.git('push', '-q', 'up', 'main');
+  repo.git('branch', '-q', '--set-upstream-to=up/main');
+  repo.commit('まだ送っていないコミット', { 'b.txt': 'b\n' });
+  const status = await readRepository(git, { name: 'repo', path: repo.dir });
+  assert.deepEqual(status.worktrees[0]?.upstream, { name: 'up/main', ahead: 1, behind: 0 });
+  // GitHub以外のリモートしかなければ、GitHubのリポジトリとは扱わない。
+  assert.equal(status.github, undefined);
+});
+
+test('引き継ぎメモは最も新しく更新されたworktreeのものを読み、未コミットの変更があればそれを優先する', async (t) => {
+  const repo = createRepository(t);
+  repo.commit('メモを書く', { [HANDOFF_PATH]: '# 本体のメモ\n' }, '2020-11-16T09:00:00+09:00');
+  const worktree = join(repo.root, 'wt');
+  repo.git('worktree', 'add', '-q', '-b', 'feat/x', worktree);
+  commitIn(worktree, 'メモを更新する', { [HANDOFF_PATH]: '# 別のworktreeのメモ\n' }, '2020-11-18T09:00:00+09:00');
+
+  const committed = await readRepository(git, { name: 'repo', path: repo.dir });
+  assert.deepEqual(committed.handoff, {
+    worktreePath: worktree, branch: 'feat/x', path: HANDOFF_PATH, updatedAt: '2020-11-18T09:00:00+09:00', uncommitted: false,
+    markdown: '# 別のworktreeのメモ\n', truncated: false,
+  });
+
+  // 本体のメモを書き換えて、まだコミットしていない。
+  repo.write(HANDOFF_PATH, '# 書きかけのメモ\n');
+  const changed = await readRepository(git, { name: 'repo', path: repo.dir });
+  assert.equal(changed.handoff?.worktreePath, repo.dir);
+  assert.equal(changed.handoff?.uncommitted, true);
+  assert.equal(changed.handoff?.markdown, '# 書きかけのメモ\n');
+  assert.ok(Date.parse(changed.handoff?.updatedAt ?? '') > Date.parse('2020-11-18T09:00:00+09:00'));
+});
+
+test('引き継ぎメモは上限で切り、リンクやworktreeの外を指すものは読まない', async (t) => {
+  const repo = createRepository(t);
+  // 3バイトの文字を並べ、上限が文字の途中に来るようにする。
+  const long = 'あ'.repeat(Math.ceil(MAX_HANDOFF_BYTES / 3) + 10);
+  repo.commit('長いメモ', { [HANDOFF_PATH]: long });
+  const truncated = await readRepository(git, { name: 'repo', path: repo.dir });
+  assert.equal(truncated.handoff?.truncated, true);
+  assert.ok(Buffer.byteLength(truncated.handoff?.markdown ?? '') <= MAX_HANDOFF_BYTES);
+  assert.ok(long.startsWith(truncated.handoff?.markdown ?? '-'));
+  assert.ok(!(truncated.handoff?.markdown ?? '').includes('�'));
+
+  const outside = join(repo.root, 'secret.md');
+  writeFileSync(outside, '# worktreeの外のファイル\n');
+  rmSync(join(repo.dir, HANDOFF_PATH));
+  symlinkSync(outside, join(repo.dir, HANDOFF_PATH));
+  assert.equal((await readRepository(git, { name: 'repo', path: repo.dir })).handoff, undefined);
+
+  // docs/ ごとworktreeの外を指している場合も読まない。
+  rmSync(join(repo.dir, 'docs'), { recursive: true });
+  mkdirSync(join(repo.root, 'elsewhere'));
+  writeFileSync(join(repo.root, 'elsewhere', 'HANDOFF.md'), '# 外のメモ\n');
+  symlinkSync(join(repo.root, 'elsewhere'), join(repo.dir, 'docs'));
+  assert.equal((await readRepository(git, { name: 'repo', path: repo.dir })).handoff, undefined);
+});
+
+test('読めないリポジトリ・worktreeは、理由だけを返す', async (t) => {
+  const root = temporaryDirectory(t);
+  assert.deepEqual(await readRepository(git, { name: 'missing', path: join(root, 'missing') }),
+    { name: 'missing', path: join(root, 'missing'), error: 'not_found', worktrees: [], omittedWorktrees: 0 });
+  const plain = join(root, 'plain');
+  mkdirSync(plain);
+  assert.equal((await readRepository(git, { name: 'plain', path: plain })).error, 'not_repository');
+
+  // コミットがまだないリポジトリは、コミットなしとして読む。
+  const empty = createRepository(t);
+  const initial = await readRepository(git, { name: 'empty', path: empty.dir });
+  assert.equal(initial.error, undefined);
+  assert.deepEqual(initial.worktrees[0]?.commits, []);
+  assert.equal(initial.lastActivityAt, undefined);
+
+  // ディレクトリが消えたworktreeは、そのworktreeだけを読めないものとして返す。
+  const repo = createRepository(t);
+  repo.commit('最初のコミット', { 'a.txt': 'a\n' });
+  const worktree = join(repo.root, 'wt');
+  repo.git('worktree', 'add', '-q', '-b', 'feat/x', worktree);
+  rmSync(worktree, { recursive: true });
+  const pruned = await readRepository(git, { name: 'repo', path: repo.dir });
+  assert.deepEqual(pruned.worktrees.map((item) => [item.branch, item.error]), [['main', undefined], ['feat/x', 'not_found']]);
+});
+
+test('表示のためだけに外部のプログラムを動かす設定を止め、インデックスも書き換えない', async (t) => {
+  const repo = createRepository(t);
+  repo.commit('最初のコミット', { 'a.txt': 'a\n' });
+  // 署名付きのコミットを作り、表示するときに署名の検証（gpg.program）が呼ばれる状態にする。
+  // 準備に使う通常のgitもfsmonitorを呼ぶため、外部のプログラムの設定は準備の後で入れる。
+  const tree = repo.git('write-tree').trim();
+  const parent = repo.git('rev-parse', 'HEAD').trim();
+  const signed = execFileSync('git', ['-C', repo.dir, 'hash-object', '-t', 'commit', '-w', '--stdin'], {
+    env: SETUP_ENV, encoding: 'utf8',
+    input: `tree ${tree}\nparent ${parent}\nauthor test <test@example.invalid> 1763424000 +0900\ncommitter test <test@example.invalid> 1763424000 +0900\n`
+      + 'gpgsig -----BEGIN PGP SIGNATURE-----\n \n iQEzBAABCAAdFiEE\n -----END PGP SIGNATURE-----\n\n署名付きのコミット\n',
+  }).trim();
+  repo.git('update-ref', 'refs/heads/main', signed);
+  const marker = (name: string) => join(repo.root, `${name}-ran`);
+  for (const name of ['fsmonitor', 'gpg']) {
+    writeFileSync(join(repo.root, `${name}.sh`), `#!/bin/sh\ntouch '${marker(name)}'\nexit 1\n`);
+    chmodSync(join(repo.root, `${name}.sh`), 0o755);
+  }
+  repo.git('config', 'core.fsmonitor', join(repo.root, 'fsmonitor.sh'));
+  repo.git('config', 'log.showSignature', 'true');
+  repo.git('config', 'gpg.program', join(repo.root, 'gpg.sh'));
+  // ファイルの更新日時だけを変え、通常のstatusならインデックスを書き直す状態にする。
+  const index = join(repo.dir, '.git', 'index');
+  utimesSync(index, new Date('2020-01-01T00:00:00Z'), new Date('2020-01-01T00:00:00Z'));
+  utimesSync(join(repo.dir, 'a.txt'), new Date(), new Date());
+
+  const status = await readRepository(git, { name: 'repo', path: repo.dir });
+  assert.equal(status.worktrees[0]?.commits[0]?.subject, '署名付きのコミット');
+  assert.equal(existsSync(marker('fsmonitor')), false);
+  assert.equal(existsSync(marker('gpg')), false);
+  assert.equal(statSync(index).mtime.toISOString(), '2020-01-01T00:00:00.000Z');
+
+  // 同じ設定の通常のgitでは、どれも起きることを確かめる（検査が意味を持つことの確認）。
+  execFileSync('git', ['-C', repo.dir, 'status', '--porcelain=v2'], { env: SETUP_ENV, stdio: 'ignore' });
+  execFileSync('git', ['-C', repo.dir, 'log', '-1', '--format=%s'], { env: SETUP_ENV, stdio: 'ignore' });
+  assert.equal(existsSync(marker('fsmonitor')), true);
+  assert.equal(existsSync(marker('gpg')), true);
+  assert.notEqual(statSync(index).mtime.toISOString(), '2020-01-01T00:00:00.000Z');
+});
+
+test('gitへはPATHだけを引き継ぎ、呼び出し元のGitの環境変数や利用者全体の設定を使わない', () => {
+  assert.deepEqual(gitEnv('/usr/bin'), { PATH: '/usr/bin', LC_ALL: 'C', GIT_OPTIONAL_LOCKS: '0', GIT_TERMINAL_PROMPT: '0' });
+});
+
+test('gitの実行は時間で打ち切り、同時に動かす数を制限する', async (t) => {
+  const bin = temporaryDirectory(t);
+  const log = join(bin, 'calls.log');
+  // 本物のgitの代わりに、開始と終了を記録して少し待つだけのスクリプトを置く。
+  writeFileSync(join(bin, 'git'), `#!/bin/sh\necho start >> '${log}'\nsleep 0.2\necho end >> '${log}'\n`);
+  chmodSync(join(bin, 'git'), 0o755);
+  const limited: GitRunner = createGitRunner({ path: `${bin}:/usr/bin:/bin`, concurrency: 2 });
+  await Promise.all(Array.from({ length: 6 }, () => limited(bin, ['status'])));
+  let running = 0;
+  let peak = 0;
+  for (const line of readFileSync(log, 'utf8').trim().split('\n')) {
+    running += line === 'start' ? 1 : -1;
+    peak = Math.max(peak, running);
+  }
+  assert.equal(peak, 2);
+
+  // execで置き換え、打ち切ったときに出力の管を持つプロセスが残らないようにする。
+  writeFileSync(join(bin, 'git'), '#!/bin/sh\nexec sleep 5\n');
+  const slow = createGitRunner({ path: `${bin}:/usr/bin:/bin`, timeoutMs: 100 });
+  await assert.rejects(slow(bin, ['status']), (error) => error instanceof GitError && error.code === 'timeout');
+});
+
+test('worktreeの数の上限を超えた分は、数だけを返す', async (t) => {
+  const root = temporaryDirectory(t);
+  const list = Array.from({ length: MAX_WORKTREES + 2 }, (_, index) => `worktree ${root}/wt${index}\nHEAD ${'a'.repeat(40)}\nbranch refs/heads/b${index}\n`).join('\n');
+  const fake: GitRunner = async (_cwd, args) => {
+    if (args[0] === 'worktree') return list;
+    if (args[0] === 'status') return '# branch.oid (initial)\0# branch.head b0\0';
+    throw new GitError('git_failed');
+  };
+  const status = await readRepository(fake, { name: 'repo', path: root });
+  assert.equal(status.worktrees.length, MAX_WORKTREES);
+  assert.equal(status.omittedWorktrees, 2);
+});
+
+test('statusの出力から、名前の変更・衝突・未追跡を数え、ファイルの一覧は上限で切る', () => {
+  const fields = [
+    '# branch.oid 1111111111111111111111111111111111111111', '# branch.head feat/x', '# branch.upstream origin/feat/x', '# branch.ab +2 -3',
+    '2 R. N... 100644 100644 100644 aaaa aaaa R100 新しい名前.md', '古い名前.md',
+    'u UU N... 100644 100644 100644 100644 aaaa bbbb cccc 衝突 した.txt',
+    ...Array.from({ length: MAX_FILES + 1 }, (_, index) => `? 未追跡${index}.txt`),
+  ];
+  const status = parseStatus(`${fields.join('\0')}\0`);
+  assert.equal(status.branch, 'feat/x');
+  assert.deepEqual(status.upstream, { name: 'origin/feat/x', ahead: 2, behind: 3 });
+  assert.deepEqual(status.changes.files.slice(0, 2), [{ status: 'R.', path: '新しい名前.md' }, { status: 'UU', path: '衝突 した.txt' }]);
+  assert.deepEqual([status.changes.staged, status.changes.unstaged, status.changes.conflicted, status.changes.untracked], [1, 0, 1, MAX_FILES + 1]);
+  assert.equal(status.changes.files.length, MAX_FILES);
+  assert.equal(status.changes.omittedFiles, 3);
+  assert.equal(parseStatus('# branch.oid (initial)\0# branch.head (detached)\0').branch, undefined);
+});
+
+test('originのURLからは、GitHubの所有者と名前だけを取り出す', () => {
+  for (const url of ['https://github.com/example/inui.git', 'https://github.com/example/inui', 'https://github.com/example/inui/',
+    'git@github.com:example/inui.git', 'ssh://git@github.com/example/inui.git', 'https://x-access-token:secret@github.com/example/inui.git']) {
+    assert.deepEqual(parseGitHubRemote(url), { owner: 'example', name: 'inui' }, url);
+  }
+  for (const url of ['https://gitlab.com/example/inui.git', 'https://github.example.com/example/inui.git', 'https://github.com/example',
+    'https://github.com/example/inui/extra', 'https://github.com/ex ample/inui', '/root/develop/inui']) {
+    assert.equal(parseGitHubRemote(url), undefined, url);
+  }
+});

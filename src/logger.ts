@@ -34,7 +34,7 @@ const METHODS = new Set(['GET', 'HEAD', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIO
 const ROUTES = new Set([
   '/', '/legacy', '/app.js', '/app.css', '/assets/*', '/api/health', '/api/intent',
   '/api/tasks/local', '/api/tasks/local/:id', '/api/tasks/github',
-  '/api/whiteboards', '/api/whiteboards/:id', '/excalidraw/*', 'other',
+  '/api/whiteboards', '/api/whiteboards/:id', '/api/resume', '/excalidraw/*', 'other',
 ]);
 // IDやファイル名を含む経路は、値を落とした固定の経路名へまとめる。
 const PATTERNS: [RegExp, string][] = [

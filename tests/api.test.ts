@@ -193,6 +193,7 @@ test('APIと静的配信の完了を区別し、URL・ヘッダー・タスク�
     { path: '/api/tasks/local', status: 200, level: 'info', route: '/api/tasks/local', code: undefined },
     { path: '/api/tasks/github', status: 200, level: 'info', route: '/api/tasks/github', code: undefined },
     { path: '/api/whiteboards', status: 200, level: 'info', route: '/api/whiteboards', code: undefined },
+    { path: '/api/resume', status: 200, level: 'info', route: '/api/resume', code: undefined },
     { path: '/api/tasks/local?private=' + privateDetail, status: 400, level: 'warn', route: '/api/tasks/local', code: 'invalid_input' },
     { path: '/' + privateDetail, status: 404, level: 'warn', route: 'other', code: 'not_found' },
     { path: '/api/tasks/local', status: 403, level: 'warn', route: '/api/tasks/local', code: 'invalid_host', host: privateDetail + '.example:8766' },

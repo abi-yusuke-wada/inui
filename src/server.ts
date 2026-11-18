@@ -1,5 +1,6 @@
 import { readFile } from 'node:fs/promises';
 import { serve } from '@hono/node-server';
+import { readResumeSources } from '@inui/feature-resume/server';
 import { readTaskSources, TaskStore } from '@inui/feature-tasks/server';
 import { BoardStore } from '@inui/feature-whiteboard/server';
 import { createApp } from './api.ts';
@@ -32,9 +33,10 @@ async function start(logger: Logger, build: string): Promise<void> {
   }
   const { db } = opened;
   if (opened.applied.length > 0) logger.info('db_migrated');
-  // 連携先の認証情報は環境変数からだけ読み、値はログへ出さない。
+  // 連携先の認証情報と、作業の再開画面で読むリポジトリは環境変数からだけ読み、値はログへ出さない。
   const app = createApp({
-    taskStore: new TaskStore(db), boardStore: new BoardStore(db), taskSources: readTaskSources(process.env), port, logger,
+    taskStore: new TaskStore(db), boardStore: new BoardStore(db), taskSources: readTaskSources(process.env),
+    resumeSources: readResumeSources(process.env), port, logger,
   });
   for (const [route, [filename, contentType]] of Object.entries(assets)) {
     app.get(route, async (c) => {
