@@ -272,6 +272,12 @@ test('PoCの利用経路をJSDOMで操作する（実ブラウザではない）
         await waitFor(() => /表示中: memo\.md/.test(document.body.textContent ?? ''), '見出しのない文書が表示されませんでした。');
         assert.equal(document.querySelector('nav[aria-label="目次"]'), null);
         assert.ok(document.querySelector('.markdown-layout.markdown-layout-single'));
+        // 本文が同じ文書を読み込み直しても、前の文書の図を残さないよう記事を作り直す。
+        const before = document.querySelector('article');
+        await select(new dom.window.File(['見出しのないメモです。\n'], 'memo-copy.md', { type: 'text/markdown' }));
+        await waitFor(() => /表示中: memo-copy\.md/.test(document.body.textContent ?? ''), '同じ本文の文書が表示されませんでした。');
+        assert.ok(document.querySelector('article'));
+        assert.notEqual(document.querySelector('article'), before);
         assert.deepEqual(requests, []);
       });
     });
@@ -472,6 +478,51 @@ test('PoCの利用経路をJSDOMで操作する（実ブラウザではない）
         assert.match(confirms[1] ?? '', /読み込みの間に変更がありました/);
         assert.equal(button('ボードB').disabled, true);
         assert.equal(state(), '未保存の変更があります');
+      });
+    });
+
+    await suite.test('読み込み中のボードを削除したら、そのボードの読み込みを取りやめて開かない', async () => {
+      const ids = { a: '00000000-0000-4000-8000-0000000000d1', b: '00000000-0000-4000-8000-0000000000d2' };
+      let boards = [
+        { id: ids.a, name: 'ボードA', updatedAt: '2026-11-18T00:00:00.000Z' },
+        { id: ids.b, name: 'ボードB', updatedAt: '2026-11-17T00:00:00.000Z' },
+      ];
+      let releaseB: (() => void) | undefined;
+      const fetchImpl: typeof fetch = async (input, options) => {
+        const url = new URL(String(input), 'http://localhost');
+        if (url.pathname === '/api/whiteboards') return response({ boards });
+        const id = url.pathname.replace('/api/whiteboards/', '');
+        if (options?.method === 'DELETE') {
+          boards = boards.filter((item) => item.id !== id);
+          return response({ deleted: true });
+        }
+        const board = { id, name: id === ids.a ? 'ボードA' : 'ボードB', updatedAt: '2026-11-18T00:00:00.000Z',
+          scene: { elements: [], files: {}, appState: {} } };
+        if (id === ids.b) await new Promise<void>((resolve) => { releaseB = resolve; });
+        return response({ board });
+      };
+      dom.window.confirm = () => true;
+      const state = () => document.querySelector('.whiteboard-state')?.textContent;
+      await withApp('/legacy', fetchImpl, async () => {
+        await click('文書');
+        await click('ホワイトボード');
+        await waitFor(() => document.querySelector('link[href="/excalidraw/index.css"]') !== null && button('ボードB') !== undefined,
+          'ボードの一覧が表示されませんでした。');
+        await react.act(async () => { document.querySelector('link[href="/excalidraw/index.css"]')?.dispatchEvent(new dom.window.Event('load')); });
+        await click('ボードA');
+        await waitFor(() => state() === '保存済み', 'ボードAが開きませんでした。');
+        await click('ボードB');
+        assert.match(document.body.textContent ?? '', /ボードを開いています/);
+        const removeB = [...document.querySelectorAll('button')].find((node) => node.getAttribute('aria-label') === '「ボードB」を削除');
+        assert.ok(removeB);
+        await react.act(async () => removeB.click());
+        await waitFor(() => !document.body.textContent?.includes('ボードB'), 'ボードBが一覧から消えませんでした。');
+        assert.doesNotMatch(document.body.textContent ?? '', /ボードを開いています/);
+        // 削除の後に読み込みの応答が届いても、削除したボードは開かない。
+        await react.act(async () => { releaseB?.(); });
+        await react.act(async () => { await new Promise((resolve) => setTimeout(resolve, 10)); });
+        assert.equal(button('ボードA').disabled, true);
+        assert.equal(state(), '保存済み');
       });
     });
 

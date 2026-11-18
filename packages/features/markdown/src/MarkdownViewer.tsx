@@ -121,7 +121,8 @@ export default function MarkdownViewer() {
           <li key={heading.id} className={'toc-level-' + heading.level}><a href={'#' + heading.id}>{heading.text}</a></li>)}</ol>
       </nav>}
       {/* 変換後のHTMLはDOMPurifyで無害化済み（render.ts）。 */}
-      <article ref={article} className="markdown-body" aria-label={doc.name}
+      {/* 本文が同じでも図が違う文書へ切り替えたとき、前の図を残さないよう、読み込むたびに作り直す。 */}
+      <article key={doc.load} ref={article} className="markdown-body" aria-label={doc.name}
         // biome-ignore lint/security/noDangerouslySetInnerHtml: markdown-itで生のHTMLを無効にし、DOMPurifyで無害化したHTMLだけを入れる。
         dangerouslySetInnerHTML={{ __html: doc.rendered.html }} />
     </div>}

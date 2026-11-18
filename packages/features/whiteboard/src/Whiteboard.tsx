@@ -62,6 +62,8 @@ export default function Whiteboard({ onUnsavedChange }: { onUnsavedChange?: (uns
   const edits = useRef(0);
   // いま表示しているボードのID。保存・削除の完了時に、待つ間に別のボードへ切り替わっていないかを確かめる。
   const shownBoard = useRef<string | undefined>(undefined);
+  // 読み込み中のボードのID。読み込みを待つ間にそのボードを削除したら、読み込みを取りやめる。
+  const loadingBoard = useRef<string | undefined>(undefined);
   const listRequests = useLatestRequest();
   const boardRequests = useLatestRequest();
 
@@ -103,6 +105,7 @@ export default function Whiteboard({ onUnsavedChange }: { onUnsavedChange?: (uns
     if (busyRef.current || id === board?.id || (!confirmed && !confirmDiscard())) return;
     const request = boardRequests.begin();
     const editsAtStart = editsSince ?? edits.current;
+    loadingBoard.current = id;
     setLoading(true);
     setError('');
     setNotice('');
@@ -123,7 +126,10 @@ export default function Whiteboard({ onUnsavedChange }: { onUnsavedChange?: (uns
     } catch (failure) {
       if (request.isCurrent()) setError(errorMessage(failure, 'ボードの読み込み'));
     } finally {
-      if (request.isCurrent()) setLoading(false);
+      if (request.isCurrent()) {
+        loadingBoard.current = undefined;
+        setLoading(false);
+      }
     }
   }
 
@@ -184,6 +190,12 @@ export default function Whiteboard({ onUnsavedChange }: { onUnsavedChange?: (uns
     if (!window.confirm(`「${target.name}」を削除しますか？元に戻せません。`)) return;
     void write(async () => {
       await fetchJson('/api/whiteboards/' + target.id, { method: 'DELETE' });
+      // 削除したボードを読み込んでいる途中なら、読み込みを取りやめて開かない。
+      if (loadingBoard.current === target.id) {
+        boardRequests.cancel();
+        loadingBoard.current = undefined;
+        setLoading(false);
+      }
       // 削除を待つ間に別のボードを開いていれば、そのボードは閉じない。
       if (shownBoard.current === target.id) {
         shownBoard.current = undefined;

@@ -7,7 +7,9 @@ import type { BoardScene } from './types.ts';
 export { BoardStore } from './store.ts';
 
 const BOARD_ID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
-const COLOR = /^(?:#[0-9a-fA-F]{3,8}|transparent)$/;
+// Excalidrawの背景色の入力欄は、CSSとして有効な色（16進・色名・rgb()等）をそのまま受け付ける。
+// 外部を読み込む url() などは受け付けないよう、16進・色名・色の関数だけを許可する。
+const COLOR = /^(?:#[0-9a-fA-F]{3,8}|[a-zA-Z]{3,30}|(?:rgba?|hsla?|hwb|lab|lch|oklab|oklch)\([0-9a-zA-Z.,%\s/+-]{1,60}\))$/;
 
 function boardId(value: string): string {
   if (!BOARD_ID.test(value)) invalidInput();

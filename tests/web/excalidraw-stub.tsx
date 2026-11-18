@@ -12,6 +12,15 @@ type Props = {
   onChange?: (elements: Element[], appState: unknown, files: unknown) => void;
 };
 
+/** 本物は要素ごとのversionNonceのハッシュを返す。テストでは要素のidと版から同じ性質の値を作る。 */
+export function hashElementsVersion(elements: readonly Element[]): number {
+  let hash = 5381;
+  for (const char of elements.map((element) => `${element.id}:${element.version}`).join(',')) {
+    hash = ((hash << 5) + hash + char.charCodeAt(0)) >>> 0;
+  }
+  return hash;
+}
+
 export function Excalidraw({ initialData, excalidrawAPI, onChange }: Props) {
   // 本物と同じく、初期データは最初の描画でだけ使う。
   const props = useRef({ initialData, excalidrawAPI, onChange });

@@ -1,13 +1,13 @@
-import { Excalidraw } from '@excalidraw/excalidraw';
+import { Excalidraw, hashElementsVersion } from '@excalidraw/excalidraw';
 import type { ExcalidrawImperativeAPI, ExcalidrawProps } from '@excalidraw/excalidraw/types';
 import type { BoardScene } from './types.ts';
 
 /**
- * 保存対象の描画内容の版。要素の版の合計（追加・変更・削除で変わる）と背景色を組み合わせ、未保存の変更の検出に使う。
- * ズームやスクロールなど、保存しない表示の変更では変わらない。
+ * 保存対象の描画内容の版。要素の変更ごとに変わる乱数（versionNonce）のハッシュと背景色を組み合わせ、未保存の変更の検出に使う。
+ * 版の合計と違い、版が同じ別の要素へ入れ替えた場合も変わる。ズームやスクロールなど、保存しない表示の変更では変わらない。
  */
-export function sceneVersion(elements: readonly { version: number }[], background: string): string {
-  return `${elements.reduce((sum, element) => sum + element.version, 0)}:${background}`;
+export function sceneVersion(elements: Parameters<typeof hashElementsVersion>[0], background: string): string {
+  return `${hashElementsVersion(elements)}:${background}`;
 }
 
 /**

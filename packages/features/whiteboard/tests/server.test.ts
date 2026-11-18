@@ -59,7 +59,9 @@ test('名前・描画内容の形・ID・余分キーを検証し、不正な内
   const { board } = await (await send('POST', '/whiteboards', { name: 'a'.repeat(100) })).json();
   for (const scene of [
     { ...SCENE, elements: 'x' }, { ...SCENE, elements: [1] }, { ...SCENE, files: [] },
-    { ...SCENE, appState: { viewBackgroundColor: 'url(https://example.com/x)' } },
+    // 外部を読み込む値や、色の後ろに別の指定を続ける値は受け付けない。
+    ...['url(https://example.com/x)', 'url(//example.com/x)', 'red;background:url(x)', 'expression(alert(1))',
+      'rgb(1,2,3) url(x)', 'a'.repeat(31)].map((color) => ({ ...SCENE, appState: { viewBackgroundColor: color } })),
     { ...SCENE, appState: { theme: 'dark' } }, { ...SCENE, tool: 'delete_all' },
     { ...SCENE, elements: Array.from({ length: 20_001 }, () => ({})) },
   ]) {
@@ -70,6 +72,16 @@ test('名前・描画内容の形・ID・余分キーを検証し、不正な内
   assert.equal((await send('PATCH', '/whiteboards/00000000-0000-4000-8000-000000000000', { name: 'x' })).status, 404);
   assert.equal((await send('GET', '/whiteboards?all=1')).status, 400);
   assert.deepEqual(store.get(board.id)?.scene, { elements: [], files: {}, appState: {} });
+});
+
+test('Excalidrawの背景色の入力欄が受け付ける色（16進・色名・色の関数）を保存できる', async (t) => {
+  const { send, store } = app(t);
+  const { board } = await (await send('POST', '/whiteboards', { name: '背景色' })).json();
+  for (const color of ['#fff', '#ffeeaa80', 'transparent', 'red', 'rgb(255, 0, 0)', 'rgba(0,0,0,0.5)', 'hsl(120 50% 50% / 0.4)']) {
+    const scene = { ...SCENE, appState: { viewBackgroundColor: color } };
+    assert.equal((await send('PATCH', '/whiteboards/' + board.id, { scene })).status, 200, color);
+    assert.equal(store.get(board.id)?.scene.appState.viewBackgroundColor, color);
+  }
 });
 
 test('画像を含む描画も上限までは保存し、上限を超える本文は受け付けない', async (t) => {
