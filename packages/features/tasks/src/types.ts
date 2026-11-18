@@ -28,9 +28,9 @@ export interface ExternalTask {
   reasons?: GitHubReason[];
 }
 
-/** GitHubの取得結果。設定がなければ取得せず、未設定であることだけを返す。 */
+/** GitHubの取得結果。設定がなければ取得せず、未設定であることだけを返す。omittedは表示しきれなかった件数。 */
 export type ExternalResult =
   | { configured: false }
-  | { configured: true; tasks: ExternalTask[] };
+  | { configured: true; tasks: ExternalTask[]; omitted: number };
 
 export const MAX_TITLE_LENGTH = 200;

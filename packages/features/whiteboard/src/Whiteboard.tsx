@@ -51,10 +51,15 @@ export default function Whiteboard({ onUnsavedChange }: { onUnsavedChange?: (uns
   const [error, setError] = useState('');
   const [notice, setNotice] = useState('');
   const api = useRef<ExcalidrawImperativeAPI | null>(null);
-  // 保存した（または開いた）時点の要素の版と、現在の版。差があれば未保存の変更がある。
-  const savedVersion = useRef<number | undefined>(undefined);
-  const latestVersion = useRef<number | undefined>(undefined);
-  const [dirty, setDirty] = useState(false);
+  // 保存した（または開いた）時点の描画の版と、現在の版。差があれば描画に未保存の変更がある。
+  const savedVersion = useRef<string | undefined>(undefined);
+  const latestVersion = useRef<string | undefined>(undefined);
+  const [sceneDirty, setSceneDirty] = useState(false);
+  // 名前は描画とは別に、保存した（または開いた）時点の値と比べる。
+  const [savedName, setSavedName] = useState('');
+  const dirty = board !== undefined && (sceneDirty || name !== savedName);
+  // 描画・名前を変更した回数。ボードの読み込みを待つ間の変更を見つけるために使う。
+  const edits = useRef(0);
   const listRequests = useLatestRequest();
   const boardRequests = useLatestRequest();
 
@@ -91,20 +96,26 @@ export default function Whiteboard({ onUnsavedChange }: { onUnsavedChange?: (uns
   }
 
   async function open(id: string, { confirmed = false } = {}) {
-    if (busyRef.current || (!confirmed && !confirmDiscard())) return;
+    // 開いているボードは開き直さない（Canvasが作り直されず、保存に使うAPIの参照が戻らないため）。
+    if (busyRef.current || id === board?.id || (!confirmed && !confirmDiscard())) return;
     const request = boardRequests.begin();
+    const editsAtStart = edits.current;
     setLoading(true);
     setError('');
     setNotice('');
     try {
       const data = parseBoard(await fetchJson('/api/whiteboards/' + id, { signal: request.signal }), id);
       if (!request.isCurrent()) return;
+      // 読み込みを待つ間に変更していれば、破棄してよいか確かめ直す。取りやめたら今のボードを残す。
+      if (edits.current !== editsAtStart
+          && !window.confirm('読み込みの間に変更がありました。保存せずにボードを切り替えますか？')) return;
       api.current = null;
       savedVersion.current = undefined;
       latestVersion.current = undefined;
-      setDirty(false);
+      setSceneDirty(false);
       setBoard(data);
       setName(data.name);
+      setSavedName(data.name);
     } catch (failure) {
       if (request.isCurrent()) setError(errorMessage(failure, 'ボードの読み込み'));
     } finally {
@@ -148,13 +159,15 @@ export default function Whiteboard({ onUnsavedChange }: { onUnsavedChange?: (uns
     if (!current || !api.current || !trimmed || trimmed.length > MAX_NAME_LENGTH) return;
     const scene = currentScene(api.current);
     const version = latestVersion.current;
+    const nameAtSave = name;
     void write(async () => {
       parseBoardSummary(await fetchJson('/api/whiteboards/' + current.id, {
         method: 'PATCH', body: { name: trimmed, scene }, timeoutMs: 60_000,
       }));
-      // 保存中に描き足した分は、未保存のまま残す。
+      // 保存中に描き足した分や変えた名前は、未保存のまま残す。
       savedVersion.current = version;
-      setDirty(latestVersion.current !== version);
+      setSceneDirty(latestVersion.current !== version);
+      setSavedName(nameAtSave);
       setNotice('保存しました。');
       await loadList();
     }, 'ボードの保存');
@@ -164,16 +177,21 @@ export default function Whiteboard({ onUnsavedChange }: { onUnsavedChange?: (uns
     if (!window.confirm(`「${target.name}」を削除しますか？元に戻せません。`)) return;
     void write(async () => {
       await fetchJson('/api/whiteboards/' + target.id, { method: 'DELETE' });
-      if (board?.id === target.id) { setBoard(undefined); setDirty(false); api.current = null; }
+      if (board?.id === target.id) { setBoard(undefined); setSceneDirty(false); api.current = null; }
       await loadList();
     }, 'ボードの削除');
   }
 
-  const onVersion = useCallback((version: number) => {
-    latestVersion.current = version;
+  const onVersion = useCallback((version: string) => {
     // 最初の描画で読み込んだ時点の版を基準にし、その後の変化を未保存として扱う。
-    if (savedVersion.current === undefined) { savedVersion.current = version; return; }
-    setDirty(version !== savedVersion.current);
+    if (savedVersion.current === undefined) {
+      savedVersion.current = version;
+      latestVersion.current = version;
+      return;
+    }
+    if (version !== latestVersion.current) edits.current++;
+    latestVersion.current = version;
+    setSceneDirty(version !== savedVersion.current);
   }, []);
   const onReady = useCallback((instance: ExcalidrawImperativeAPI) => { api.current = instance; }, []);
 
@@ -192,7 +210,8 @@ export default function Whiteboard({ onUnsavedChange }: { onUnsavedChange?: (uns
         {boards?.length === 0 && <div className="empty-state" role="status"><p>ボードはまだありません。</p><span>名前を入力して「作成」を押してください。</span></div>}
         {boards && boards.length > 0 && <ul className="task-list">
           {boards.map((item) => <li key={item.id} className={'task-item board-item' + (item.id === board?.id ? ' board-current' : '')}>
-            <button className="board-open" type="button" disabled={busy || loading} aria-current={item.id === board?.id || undefined}
+            <button className="board-open" type="button" disabled={busy || loading || item.id === board?.id}
+              aria-current={item.id === board?.id || undefined}
               onClick={() => { void open(item.id); }}>{item.name}</button>
             <button className="text-button" type="button" disabled={busy} aria-label={`「${item.name}」を削除`}
               onClick={() => remove(item)}>削除</button>
@@ -208,7 +227,7 @@ export default function Whiteboard({ onUnsavedChange }: { onUnsavedChange?: (uns
           <div className="whiteboard-toolbar">
             <label className="visually-hidden" htmlFor="board-name">ボードの名前</label>
             <input id="board-name" type="text" maxLength={MAX_NAME_LENGTH} value={name} disabled={busy}
-              onChange={(event) => { setName(event.target.value); setDirty(true); }} />
+              onChange={(event) => { setName(event.target.value); edits.current++; }} />
             <button className="button button-primary" type="button" disabled={busy || !name.trim() || !stylesReady} onClick={save}>
               {busy ? '保存しています…' : '保存'}
             </button>

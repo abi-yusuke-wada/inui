@@ -136,7 +136,7 @@ test('PoCの利用経路をJSDOMで操作する（実ブラウザではない）
         if (url.pathname === '/api/tasks/github') {
           return response({ configured: true, tasks: [{ id: 'github-1', source: 'github', kind: 'pull_request', key: 'example/inui#12',
             title: 'ADRを更新する', url: 'https://github.com/example/inui/pull/12', updatedAt: '2026-11-15T00:00:00Z',
-            reasons: ['review_requested'] }] });
+            reasons: ['review_requested'] }], omitted: 3 });
         }
         throw new Error('想定外のAPI: ' + url.pathname);
       };
@@ -150,8 +150,9 @@ test('PoCの利用経路をJSDOMで操作する（実ブラウザではない）
         const link = [...document.querySelectorAll('a')].find((node) => node.textContent?.includes('example/inui#12'));
         assert.equal(link?.getAttribute('rel'), 'noopener noreferrer');
         assert.match(link?.closest('li')?.textContent ?? '', /PR.*レビュー依頼/);
-        // 連携先はGitHubだけで、Backlogの欄は出さない。
+        // 連携先はGitHubだけで、Backlogの欄は出さない。上限を超えて表示しなかった件数は知らせる。
         assert.equal(document.body.textContent?.includes('Backlog'), false);
+        assert.match(document.body.textContent ?? '', /3件を表示していません/);
         await change('追加するタスク', 'ADRの下書きを書く');
         const form = field('追加するタスク').closest('form');
         assert.ok(form);
@@ -265,6 +266,12 @@ test('PoCの利用経路をJSDOMで操作する（実ブラウザではない）
         assert.equal(document.querySelector('article script'), null);
         assert.equal(document.querySelectorAll('article td').length, 2);
         assert.match(document.body.textContent ?? '', /表示中: adr\.md/);
+        assert.equal(document.querySelector('.markdown-layout-single'), null);
+        // 見出しのない文書は目次を出さず、本文を1列で表示する。
+        await select(new dom.window.File(['見出しのないメモです。\n'], 'memo.md', { type: 'text/markdown' }));
+        await waitFor(() => /表示中: memo\.md/.test(document.body.textContent ?? ''), '見出しのない文書が表示されませんでした。');
+        assert.equal(document.querySelector('nav[aria-label="目次"]'), null);
+        assert.ok(document.querySelector('.markdown-layout.markdown-layout-single'));
         assert.deepEqual(requests, []);
       });
     });
@@ -330,6 +337,78 @@ test('PoCの利用経路をJSDOMで操作する（実ブラウザではない）
         await click('← メニューに戻る');
         assert.equal(confirms.length, 1);
         await waitFor(() => button('文書') !== undefined, 'メニューへ戻れませんでした。');
+      });
+    });
+
+    await suite.test('ホワイトボードの未保存は背景色と名前も含めて判定し、表示の変更では消さず、読み込み中の変更は確認し直す', async () => {
+      const ids = { a: '00000000-0000-4000-8000-0000000000a1', b: '00000000-0000-4000-8000-0000000000a2' };
+      const boards = [
+        { id: ids.a, name: 'ボードA', updatedAt: '2026-11-18T00:00:00.000Z' },
+        { id: ids.b, name: 'ボードB', updatedAt: '2026-11-17T00:00:00.000Z' },
+      ];
+      const saved: { name: string; scene: { appState: unknown } }[] = [];
+      const pendingB: ((value: Response) => void)[] = [];
+      const fetchImpl: typeof fetch = async (input, options) => {
+        const url = new URL(String(input), 'http://localhost');
+        if (url.pathname === '/api/whiteboards') return response({ boards });
+        const board = boards.find((item) => url.pathname === '/api/whiteboards/' + item.id);
+        if (!board) throw new Error('想定外のAPI: ' + url.pathname);
+        if (options?.method === 'PATCH') {
+          saved.push(JSON.parse(String(options.body)));
+          return response({ board });
+        }
+        const body = { board: { ...board, scene: { elements: [], files: {}, appState: {} } } };
+        if (board.id === ids.b) return await new Promise<Response>((resolve) => { pendingB.push(resolve); }).then(() => response(body));
+        return response(body);
+      };
+      const answers: boolean[] = [];
+      const confirms: string[] = [];
+      dom.window.confirm = (message?: string) => { confirms.push(String(message)); return answers.shift() ?? false; };
+      const state = () => document.querySelector('.whiteboard-state')?.textContent;
+      const emit = (name: string) => react.act(async () => { window.dispatchEvent(new dom.window.Event(name)); });
+      await withApp('/legacy', fetchImpl, async () => {
+        await click('文書');
+        await click('ホワイトボード');
+        await waitFor(() => document.querySelector('link[href="/excalidraw/index.css"]') !== null && button('ボードA') !== undefined,
+          'ボードの一覧が表示されませんでした。');
+        await react.act(async () => { document.querySelector('link[href="/excalidraw/index.css"]')?.dispatchEvent(new dom.window.Event('load')); });
+        await click('ボードA');
+        await waitFor(() => state() === '保存済み', 'ボードAが開きませんでした。');
+        // 開いているボードは選び直せない（選び直すと保存に使う参照が失われるため）。
+        assert.equal(button('ボードA').disabled, true);
+        // 背景色だけの変更も未保存として扱い、保存する。
+        await emit('inui-test-background');
+        assert.equal(state(), '未保存の変更があります');
+        await click('保存');
+        await waitFor(() => state() === '保存済み', '保存できませんでした。');
+        assert.deepEqual(saved.at(-1)?.scene.appState, { viewBackgroundColor: '#fff3bf' });
+        // 名前の変更は、ズーム等の表示の変更が通知されても未保存のまま残す。
+        await change('ボードの名前', 'ボードA（改）');
+        assert.equal(state(), '未保存の変更があります');
+        await emit('inui-test-view');
+        assert.equal(state(), '未保存の変更があります');
+        await click('保存');
+        await waitFor(() => state() === '保存済み', '名前を保存できませんでした。');
+        assert.equal(saved.at(-1)?.name, 'ボードA（改）');
+        await emit('inui-test-view');
+        assert.equal(state(), '保存済み');
+        // 読み込みを待つ間に描いた変更は、確認し直して、取りやめれば今のボードに残す。
+        await click('ボードB');
+        assert.equal(confirms.length, 0);
+        await emit('inui-test-draw');
+        await react.act(async () => pendingB.shift()?.(new Response()));
+        await waitFor(() => confirms.length === 1, '読み込み中の変更を確認しませんでした。');
+        assert.match(confirms[0] ?? '', /読み込みの間に変更がありました/);
+        assert.equal(state(), '未保存の変更があります');
+        assert.equal(button('ボードA').disabled, true);
+        // 開く前の確認で破棄を選べば、読み込み中に変更がない限り切り替える。
+        answers.push(true);
+        await click('ボードB');
+        await react.act(async () => pendingB.shift()?.(new Response()));
+        await waitFor(() => button('ボードB').disabled, 'ボードBへ切り替えませんでした。');
+        assert.equal(confirms.length, 2);
+        assert.match(confirms[1] ?? '', /保存していない変更があります/);
+        assert.equal(state(), '保存済み');
       });
     });
 

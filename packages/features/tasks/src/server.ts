@@ -37,12 +37,13 @@ function notFound(): never {
 
 /** 連携先の失敗を固定のコードと案内文へ置き換え、元の例外は返さない。 */
 async function external(source: 'github', sources: TaskSources,
-  load: () => Promise<ExternalTask[]>): Promise<ExternalResult> {
+  load: () => Promise<{ tasks: ExternalTask[]; omitted: number }>): Promise<ExternalResult> {
   if (sources.invalid.includes(source)) {
     throw new RequestError(503, 'invalid_config', '連携の設定値の形式を確認してください。');
   }
   try {
-    return { configured: true, tasks: await load() };
+    const { tasks, omitted } = await load();
+    return { configured: true, tasks, omitted };
   } catch (error) {
     const code = error instanceof UpstreamError ? error.code : 'upstream_unavailable';
     const [status, message] = UPSTREAM_ERRORS[code];

@@ -27,7 +27,8 @@ const GITHUB_URL = /^https:\/\/github\.com\//;
 export function parseExternal(value: unknown): ExternalResult {
   if (!isRecord(value)) throw new ApiError('invalid');
   if (value.configured === false) return { configured: false };
-  if (value.configured !== true || !Array.isArray(value.tasks)) throw new ApiError('invalid');
+  if (value.configured !== true || !Array.isArray(value.tasks)
+    || !Number.isSafeInteger(value.omitted) || (value.omitted as number) < 0) throw new ApiError('invalid');
   const tasks = value.tasks;
   if (!tasks.every((task) => isRecord(task) && task.source === 'github' && typeof task.id === 'string'
     && ['issue', 'pull_request'].includes(task.kind as string)
@@ -37,5 +38,5 @@ export function parseExternal(value: unknown): ExternalResult {
       ['assigned', 'authored', 'review_requested'].includes(reason as string)))))) {
     throw new ApiError('invalid');
   }
-  return { configured: true, tasks: tasks as unknown as ExternalTask[] };
+  return { configured: true, tasks: tasks as unknown as ExternalTask[], omitted: value.omitted as number };
 }

@@ -120,6 +120,8 @@ main { min-height: 66vh; }
 .chat-toggle { width: 56px; height: 56px; border-radius: 50%; border: 0; background: var(--green); color: #fff; display: inline-flex; align-items: center; justify-content: center; box-shadow: 0 8px 24px #10302440; }
 .chat-toggle:hover, .chat-toggle[aria-expanded="true"] { background: var(--green-dark); }
 .chat-panel { width: min(400px, calc(100vw - 32px)); max-height: min(600px, calc(100dvh - 120px)); display: flex; flex-direction: column; gap: 10px; background: #fff; border: 1px solid var(--border); border-radius: 16px; padding: 12px 16px 16px; box-shadow: 0 16px 40px #10302430; }
+/* 下端を上げた60px分、パネルの高さの上限も下げて、画面の上へはみ出さないようにする。 */
+.chat-dock[data-screen="whiteboard"] .chat-panel { max-height: min(600px, calc(100dvh - 180px)); }
 .chat-panel-header { display: flex; align-items: center; justify-content: space-between; }
 .chat-panel-header h2 { font-size: .95rem; margin: 0; }
 .chat-close { background: none; border: 0; font-size: 1.4rem; line-height: 1; padding: 4px 8px; color: #41584b; }

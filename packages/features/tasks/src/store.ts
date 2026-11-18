@@ -57,10 +57,10 @@ export class TaskStore {
     return { id: row.id as string, title: row.title as string, status, done: status === 'done', createdAt: row.created_at as string };
   }
 
-  /** todo・doing・doneの順に、それぞれ作成順で返す。 */
+  /** todo・doing・doneの順に、それぞれ作成順で返す。作成日時が同じものは追加した順（rowid）にする（idはランダムなため）。 */
   list(): LocalTask[] {
     return this.db.prepare(`SELECT id, title, status, created_at FROM local_tasks
-      ORDER BY CASE status WHEN 'todo' THEN 0 WHEN 'doing' THEN 1 ELSE 2 END, created_at, id`)
+      ORDER BY CASE status WHEN 'todo' THEN 0 WHEN 'doing' THEN 1 ELSE 2 END, created_at, rowid`)
       .all().map((row) => TaskStore.toTask(row));
   }
 

@@ -27,13 +27,24 @@ export function Excalidraw({ initialData, excalidrawAPI, onChange }: Props) {
       getAppState: () => appState,
     });
     onChange?.(elements, appState, files);
-    // テストからの「描く」操作として、要素を1つ追加するイベントを受け付ける。
+    // テストからの操作として、要素を1つ追加する「描く」、背景色の変更、保存しない表示の変更（ズーム等）を受け付ける。
     const draw = () => {
       elements = [...elements, { id: `stub-${elements.length + 1}`, type: 'freedraw', version: 1 }];
       onChange?.(elements, appState, files);
     };
+    const background = () => {
+      appState.viewBackgroundColor = '#fff3bf';
+      onChange?.(elements, appState, files);
+    };
+    const view = () => onChange?.(elements, appState, files);
     window.addEventListener('inui-test-draw', draw);
-    return () => window.removeEventListener('inui-test-draw', draw);
+    window.addEventListener('inui-test-background', background);
+    window.addEventListener('inui-test-view', view);
+    return () => {
+      window.removeEventListener('inui-test-draw', draw);
+      window.removeEventListener('inui-test-background', background);
+      window.removeEventListener('inui-test-view', view);
+    };
   }, []);
   return <div data-testid="excalidraw-stub">ホワイトボード（テスト用）</div>;
 }

@@ -66,3 +66,11 @@ test('看板の列がない以前の表は、未完了をTo do・完了をDone�
     } finally { store.close(); }
   }
 });
+
+test('作成日時が同じタスクも、追加した順に返す', (t) => {
+  const store = new TaskStore(':memory:', { now: () => new Date(Date.UTC(2026, 10, 18)) });
+  t.after(() => store.close());
+  const titles = Array.from({ length: 12 }, (_, index) => `タスク${index + 1}`);
+  for (const title of titles) store.add(title);
+  assert.deepEqual(store.list().map((task) => task.title), titles);
+});

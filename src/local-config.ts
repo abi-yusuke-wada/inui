@@ -6,12 +6,17 @@ import { fileURLToPath } from 'node:url';
 export const APP_NAME = 'inui-local-poc';
 
 /**
- * 配信するビルド（サーバーと画面の入口）の識別子。
- * 起動スクリプトが、別のブランチやworktreeでビルドしたアプリを再利用しないように照合する。
+ * 配信するビルドの識別子。起動スクリプトが、別のブランチやworktreeでビルドしたアプリを再利用しないように照合する。
+ * チェックアウトごとに保存先（`.local-poc/app.sqlite`）が違うため、ビルドの場所も含める。
+ * サーバーが実行時に読み込むコア（`@inui/core`、サーバーには同梱しない）の出力も含め、コアだけの変更でも識別子を変える。
  */
-export async function buildId(distDirectory: URL): Promise<string> {
+export async function buildId(distDirectory: URL, coreEntry = new URL(import.meta.resolve('@inui/core'))): Promise<string> {
   const hash = createHash('sha256');
-  for (const name of ['server.js', 'public/app.js']) hash.update(await readFile(new URL(name, distDirectory)));
+  hash.update(fileURLToPath(distDirectory));
+  for (const file of [new URL('server.js', distDirectory), new URL('public/app.js', distDirectory),
+    new URL('public/app.css', distDirectory), coreEntry]) {
+    hash.update(await readFile(file));
+  }
   return hash.digest('hex');
 }
 

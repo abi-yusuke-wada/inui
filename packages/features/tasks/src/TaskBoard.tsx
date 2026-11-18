@@ -228,7 +228,10 @@ function GitHubTasks() {
       <p>GitHubとは連携していません。</p>
       <span>アプリの起動前に環境変数 INUI_GITHUB_TOKEN を設定すると表示できます。</span>
     </div>}
-    {result?.configured && result.tasks.length === 0 && <div className="empty-state" role="status"><p>該当するチケットはありません。</p></div>}
+    {result?.configured && result.tasks.length === 0 && result.omitted === 0 && <div className="empty-state" role="status"><p>該当するチケットはありません。</p></div>}
+    {result?.configured && result.omitted > 0 && <p className="task-source-note" role="status">
+      件数が多いため、{result.omitted}件を表示していません（条件ごとに更新が新しい100件まで表示）。GitHubで確認してください。
+    </p>}
     {result?.configured && result.tasks.length > 0 && <ul className="task-list">
       {result.tasks.map((task) => <li key={task.id} className="task-item task-external">
         <a href={task.url} target="_blank" rel="noopener noreferrer">

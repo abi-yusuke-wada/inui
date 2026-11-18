@@ -20,6 +20,10 @@ function issue(id: number, overrides: Record<string, unknown> = {}) {
 function pull(id: number) {
   return issue(id, { html_url: `https://github.com/example/inui/pull/${id}`, pull_request: { url: 'x' } });
 }
+/** GitHubの検索APIの応答。total_countは条件に合う全件数で、itemsは1ページ分。 */
+function search(items: unknown[], total = items.length, incomplete = false) {
+  return Response.json({ total_count: total, incomplete_results: incomplete, items });
+}
 
 /** 連携先への要求を記録し、URLごとに用意した応答を返す。実際の通信はしない。 */
 function fakeFetch(handler: (url: URL, init?: RequestInit) => Response | Promise<Response>) {
@@ -69,9 +73,9 @@ test('設定値の形式を検証し、値そのものは保持・応答しな�
 test('GitHubは自分に関係する未完了のIssue・PRを3条件で検索し、重複をまとめる', async (t) => {
   const { fetchImpl, calls } = fakeFetch((url) => {
     const query = url.searchParams.get('q') ?? '';
-    if (query.includes('assignee:@me')) return Response.json({ items: [issue(1), issue(2)] });
-    if (query.includes('author:@me')) return Response.json({ items: [pull(3)] });
-    return Response.json({ items: [pull(3), pull(4)] });
+    if (query.includes('assignee:@me')) return search([issue(1), issue(2)]);
+    if (query.includes('author:@me')) return search([pull(3)]);
+    return search([pull(3), pull(4)]);
   });
   const response = await app(t, { github: { token: GITHUB_TOKEN }, invalid: [] }, fetchImpl)('/api/tasks/github');
   assert.equal(response.status, 200);
@@ -82,10 +86,12 @@ test('GitHubは自分に関係する未完了のIssue・PRを3条件で検索し
   const three = body.tasks.find((task: { key: string }) => task.key === 'example/inui#3');
   assert.equal(three.kind, 'pull_request');
   assert.deepEqual(three.reasons, ['authored', 'review_requested']);
+  assert.equal(body.omitted, 0);
   assert.equal(calls.length, 3);
   for (const call of calls) {
     assert.equal(call.url.origin + call.url.pathname, 'https://api.github.com/search/issues');
     assert.match(call.url.searchParams.get('q') ?? '', /^is:open /);
+    assert.equal(call.url.searchParams.get('per_page'), '100');
     assert.equal(call.init?.method, 'GET');
     assert.equal(call.init?.redirect, 'error');
     assert.equal((call.init?.headers as Record<string, string>).Authorization, `Bearer ${GITHUB_TOKEN}`);
@@ -98,8 +104,13 @@ test('連携先の失敗は固定コードへ置き換え、本文や例外を�
     [() => new Response(SECRET_BODY, { status: 500 }), 502, 'upstream_unavailable'],
     [() => { throw new Error(SECRET_BODY); }, 502, 'upstream_unavailable'],
     [() => new Response(SECRET_BODY, { status: 200 }), 502, 'upstream_invalid'],
-    [() => Response.json({ items: [issue(1, { html_url: 'https://evil.example/' + SECRET_BODY })] }), 502, 'upstream_invalid'],
-    [() => Response.json({ items: [issue(1, { title: 'line\u0000break' })] }), 502, 'upstream_invalid'],
+    [() => search([issue(1, { html_url: 'https://evil.example/' + SECRET_BODY })]), 502, 'upstream_invalid'],
+    [() => search([issue(1, { title: 'line\u0000break' })]), 502, 'upstream_invalid'],
+    // 件数や検索の完了状態がない応答・件数が矛盾する応答は受け付けない。
+    [() => Response.json({ items: [issue(1)] }), 502, 'upstream_invalid'],
+    [() => search([issue(1), issue(2)], 1), 502, 'upstream_invalid'],
+    // 時間内に終わらなかった検索の一部の結果は使わず、再試行を案内する。
+    [() => search([], 0, true), 502, 'upstream_unavailable'],
   ];
   for (const [handler, status, code] of cases) {
     const { fetchImpl } = fakeFetch(handler);
@@ -109,6 +120,18 @@ test('連携先の失敗は固定コードへ置き換え、本文や例外を�
     assert.equal(JSON.parse(text).error.code, code);
     assert.equal(text.includes(SECRET_BODY), false);
   }
+});
+
+test('条件ごとの上限を超えた件数は、表示しなかった件数として返す', async (t) => {
+  const { fetchImpl } = fakeFetch((url) => {
+    const query = url.searchParams.get('q') ?? '';
+    if (query.includes('assignee:@me')) return search([issue(1)], 130);
+    if (query.includes('author:@me')) return search([pull(2)], 1);
+    return search([], 5);
+  });
+  const body = await (await app(t, { github: { token: GITHUB_TOKEN }, invalid: [] }, fetchImpl)('/api/tasks/github')).json();
+  assert.equal(body.tasks.length, 2);
+  assert.equal(body.omitted, 129 + 5);
 });
 
 test('連携先が応答しない場合は期限で打ち切る', async (t) => {

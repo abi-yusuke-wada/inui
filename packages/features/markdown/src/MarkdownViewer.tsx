@@ -96,6 +96,7 @@ export default function MarkdownViewer() {
     void open(event.dataTransfer.files);
   }
 
+  const toc = doc?.rendered.headings.filter((heading) => heading.level <= 3) ?? [];
   return <div className="panel markdown-panel">
     <div className="panel-heading"><p className="eyebrow">MARKDOWN</p><h2>Markdownを読む</h2>
       <p>手元のMarkdownファイルを、読みやすい形で表示します。ファイルの内容はこの画面の中だけで扱い、サーバーへは送りません。</p></div>
@@ -112,10 +113,11 @@ export default function MarkdownViewer() {
     </section>
     {reading && <p className="loading-line" role="status"><span className="loading-dot" />ファイルを読み込んでいます…</p>}
     {error && <Feedback message={error} />}
-    {doc && <div className="markdown-layout">
-      {doc.rendered.headings.length > 0 && <nav className="markdown-toc" aria-label="目次">
+    {/* 目次（h1〜h3）がない文書は、本文が狭い目次の列に入らないよう1列で表示する。 */}
+    {doc && <div className={'markdown-layout' + (toc.length > 0 ? '' : ' markdown-layout-single')}>
+      {toc.length > 0 && <nav className="markdown-toc" aria-label="目次">
         <p className="toc-title">目次</p>
-        <ol>{doc.rendered.headings.filter((heading) => heading.level <= 3).map((heading) =>
+        <ol>{toc.map((heading) =>
           <li key={heading.id} className={'toc-level-' + heading.level}><a href={'#' + heading.id}>{heading.text}</a></li>)}</ol>
       </nav>}
       {/* 変換後のHTMLはDOMPurifyで無害化済み（render.ts）。 */}

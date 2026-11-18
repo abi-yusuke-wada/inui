@@ -2,9 +2,12 @@ import { Excalidraw } from '@excalidraw/excalidraw';
 import type { ExcalidrawImperativeAPI, ExcalidrawProps } from '@excalidraw/excalidraw/types';
 import type { BoardScene } from './types.ts';
 
-/** 要素の版の合計。追加・変更・削除で変わるため、未保存の変更の検出に使う。 */
-export function sceneVersion(elements: readonly { version: number }[]): number {
-  return elements.reduce((sum, element) => sum + element.version, 0);
+/**
+ * 保存対象の描画内容の版。要素の版の合計（追加・変更・削除で変わる）と背景色を組み合わせ、未保存の変更の検出に使う。
+ * ズームやスクロールなど、保存しない表示の変更では変わらない。
+ */
+export function sceneVersion(elements: readonly { version: number }[], background: string): string {
+  return `${elements.reduce((sum, element) => sum + element.version, 0)}:${background}`;
 }
 
 /**
@@ -15,7 +18,7 @@ export function sceneVersion(elements: readonly { version: number }[]): number {
 export default function Canvas({ scene, onReady, onVersion }: {
   scene: BoardScene;
   onReady: (api: ExcalidrawImperativeAPI) => void;
-  onVersion: (version: number) => void;
+  onVersion: (version: string) => void;
 }) {
   // 保存した要素はExcalidrawの形式のまま渡し、Excalidrawがrestoreで検証・補正する。
   const initialData = {
@@ -23,7 +26,8 @@ export default function Canvas({ scene, onReady, onVersion }: {
     files: scene.files,
     appState: { viewBackgroundColor: scene.appState.viewBackgroundColor ?? '#ffffff' },
   } as unknown as ExcalidrawProps['initialData'];
-  const handleChange: NonNullable<ExcalidrawProps['onChange']> = (elements) => onVersion(sceneVersion(elements));
+  const handleChange: NonNullable<ExcalidrawProps['onChange']> = (elements, appState) =>
+    onVersion(sceneVersion(elements, appState.viewBackgroundColor));
   const handleReady = (api: ExcalidrawImperativeAPI) => {
     api.setActiveTool({ type: 'freedraw' });
     onReady(api);
