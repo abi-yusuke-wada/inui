@@ -1,0 +1,26 @@
+{
+  "files": {
+    "includes": ["src/**", "tests/**", "packages/core/src/**", "packages/core/tests/**", "scripts/**/*.mjs"],
+    "ignoreUnknown": true
+  },
+  "vcs": {
+    "enabled": true,
+    "clientKind": "git",
+    "useIgnoreFile": true
+  },
+  "formatter": {
+    "enabled": false
+  },
+  "assist": {
+    "enabled": false
+  },
+  "linter": {
+    "enabled": true,
+    "rules": {
+      "recommended": true,
+      "style": {
+        "useTemplate": "off"
+      }
+    }
+  }
+}

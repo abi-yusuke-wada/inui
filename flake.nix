@@ -20,6 +20,8 @@
           packages = [
             pkgs.nodejs_24
             pkgs.pnpm
+            pkgs.biome
+            pkgs.actionlint
             pkgs.python312
             pkgs.uv
           ]
@@ -31,6 +33,10 @@
           # CLIのサンドボックスは起動時に存在しないディレクトリを拒否できないため、
           # 拒否対象の .aws を作業領域とホームに事前に用意する（既存の権限は変更しない）
           shellHook = ''
+            # プロジェクト固有のTypeScript/esbuildはpnpm-lockで固定する。
+            # Nixのツールを優先し、ローカルのCLIをPATH末尾へ追加する。
+            inui_project_root="$(git rev-parse --show-toplevel 2>/dev/null || pwd)"
+            export PATH="$PATH:$inui_project_root/node_modules/.bin"
             # 作成できない場合は拒否対象がないまま起動しないよう、開発環境の起動を止める
             for dir in "$(git rev-parse --show-toplevel 2>/dev/null || pwd)/.aws" "$HOME/.aws"; do
               if [ ! -d "$dir" ] && ! mkdir -m 700 "$dir"; then

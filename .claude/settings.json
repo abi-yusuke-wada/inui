@@ -31,6 +31,9 @@
       "Edit(~/.ssh/**)",
       "Edit(~/.gnupg/**)",
       "Edit(~/.config/gh/**)",
+      "Edit(./.git/config)",
+      "Edit(./.git/config.worktree)",
+      "Edit(./.git/hooks/**)",
       "Bash(gh pr merge *)",
       "Bash(gh pr review *--approve*)",
       "Bash(gh api *pulls/*/merge*)",
@@ -49,7 +52,10 @@
       "Bash(git push --delete*)",
       "Bash(git push * --delete*)",
       "Bash(git push * main*)",
-      "Bash(git push * :*)",
+      "Bash(git push origin * *)",
+      "Bash(git push *:main*)",
+      "Bash(git push *:refs/*)",
+      "Bash(git push *refs/heads/main*)",
       "Bash(gh *.env*)",
       "Bash(gh *@.*)",
       "Bash(gh *@~*)",
@@ -73,7 +79,7 @@
     ],
     "ask": [
       "Bash(gh *)",
-      "Bash(git push *)",
+      "Bash(git config *)",
       "Bash(git -c * push*)",
       "Bash(git -C * push*)",
       "WebFetch"
@@ -140,5 +146,19 @@
         }
       ]
     }
+  },
+  "hooks": {
+    "PreToolUse": [
+      {
+        "matcher": "Bash",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python3 -I \"$CLAUDE_PROJECT_DIR/.claude/hooks/push-guard.py\"",
+            "timeout": 15
+          }
+        ]
+      }
+    ]
   }
 }

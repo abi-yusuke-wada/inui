@@ -1,0 +1,281 @@
+{
+  "transport": "http-local-poc-api",
+  "metadata": {
+    "endpoint": "http://127.0.0.1:3000/api/intent",
+    "expected_model": "nli-deberta-large",
+    "requests_sha256": "41b3944ffa8001b8ed8bc32af2779e5baf0e2580008ed4c6b59f899d112db49b",
+    "runtime": null,
+    "hf_revision": null,
+    "server_configuration_observed": false,
+    "measurement_scope": "Intent受付のみ。ブラウザ・画面表示・業務保存・正式なIssue #15の測定を含まない。"
+  },
+  "summary": {
+    "matched": 19,
+    "total": 19,
+    "normal": {
+      "matched": 13,
+      "total": 13
+    },
+    "abnormal": {
+      "matched": 6,
+      "total": 6
+    },
+    "people": {
+      "matched": 4,
+      "total": 4
+    },
+    "criterion_met": true,
+    "elapsed_ms": {
+      "mean": 8266.736842105263,
+      "median": 7812,
+      "max": 12713
+    }
+  },
+  "results": [
+    {
+      "sampleID": "leave-no-date",
+      "text": "有給を取りたい",
+      "expected": "leave_request",
+      "actual": "leave_request",
+      "matched": true,
+      "intent_matched": true,
+      "people_matched": null,
+      "elapsed_ms": 9683,
+      "people": null
+    },
+    {
+      "sampleID": "leave-tomorrow",
+      "text": "明日有給を取りたい",
+      "expected": "leave_request",
+      "actual": "leave_request",
+      "matched": true,
+      "intent_matched": true,
+      "people_matched": null,
+      "elapsed_ms": 7055,
+      "people": null
+    },
+    {
+      "sampleID": "leave-afternoon",
+      "text": "11月10日の午後に半休を取りたい",
+      "expected": "leave_request",
+      "actual": "leave_request",
+      "matched": true,
+      "intent_matched": true,
+      "people_matched": null,
+      "elapsed_ms": 6533,
+      "people": null
+    },
+    {
+      "sampleID": "expense-no-values",
+      "text": "交通費を精算したい",
+      "expected": "expense_request",
+      "actual": "expense_request",
+      "matched": true,
+      "intent_matched": true,
+      "people_matched": null,
+      "elapsed_ms": 6190,
+      "people": null
+    },
+    {
+      "sampleID": "expense-yesterday",
+      "text": "昨日の交通費1,200円を精算したい",
+      "expected": "expense_request",
+      "actual": "expense_request",
+      "matched": true,
+      "intent_matched": true,
+      "people_matched": null,
+      "elapsed_ms": 7201,
+      "people": null
+    },
+    {
+      "sampleID": "expense-dated",
+      "text": "2026年10月30日の電車代640円を申請したい",
+      "expected": "expense_request",
+      "actual": "expense_request",
+      "matched": true,
+      "intent_matched": true,
+      "people_matched": null,
+      "elapsed_ms": 7595,
+      "people": null
+    },
+    {
+      "sampleID": "status-all",
+      "text": "申請の状況を見たい",
+      "expected": "application_status",
+      "actual": "application_status",
+      "matched": true,
+      "intent_matched": true,
+      "people_matched": null,
+      "elapsed_ms": 9045,
+      "people": null
+    },
+    {
+      "sampleID": "status-pending",
+      "text": "承認待ちの申請を見せて",
+      "expected": "application_status",
+      "actual": "application_status",
+      "matched": true,
+      "intent_matched": true,
+      "people_matched": null,
+      "elapsed_ms": 9454,
+      "people": null
+    },
+    {
+      "sampleID": "status-returned",
+      "text": "差し戻された申請はある？",
+      "expected": "application_status",
+      "actual": "application_status",
+      "matched": true,
+      "intent_matched": true,
+      "people_matched": null,
+      "elapsed_ms": 8355,
+      "people": null
+    },
+    {
+      "sampleID": "unsupported-travel",
+      "text": "出張を申請したい",
+      "expected": "unsupported_feature",
+      "actual": "unsupported_feature",
+      "matched": true,
+      "intent_matched": true,
+      "people_matched": null,
+      "elapsed_ms": 10841,
+      "people": null
+    },
+    {
+      "sampleID": "unsupported-room",
+      "text": "会議室を予約したい",
+      "expected": "unsupported_feature",
+      "actual": "unsupported_feature",
+      "matched": true,
+      "intent_matched": true,
+      "people_matched": null,
+      "elapsed_ms": 10326,
+      "people": null
+    },
+    {
+      "sampleID": "unsupported-cancel",
+      "text": "申請を取り下げたい",
+      "expected": "unsupported_operation",
+      "actual": "unsupported_operation",
+      "matched": true,
+      "intent_matched": true,
+      "people_matched": null,
+      "elapsed_ms": 12713,
+      "people": null
+    },
+    {
+      "sampleID": "clarify-application",
+      "text": "申請したい",
+      "expected": "clarify",
+      "actual": "clarify",
+      "matched": true,
+      "intent_matched": true,
+      "people_matched": null,
+      "elapsed_ms": 7812,
+      "people": null
+    },
+    {
+      "sampleID": "schedule-fullnames",
+      "text": "山田太郎さんと佐藤花子さんのスケジュールを確認したい",
+      "expected": "schedule_compare",
+      "actual": "schedule_compare",
+      "matched": true,
+      "intent_matched": true,
+      "people_matched": true,
+      "elapsed_ms": 7380,
+      "people": {
+        "selectedIds": [
+          "person-yamada-taro",
+          "person-sato-hanako"
+        ],
+        "ambiguous": [],
+        "unknownNames": []
+      }
+    },
+    {
+      "sampleID": "schedule-unique-surnames",
+      "text": "佐藤さんと鈴木さんの予定を見たい",
+      "expected": "schedule_compare",
+      "actual": "schedule_compare",
+      "matched": true,
+      "intent_matched": true,
+      "people_matched": true,
+      "elapsed_ms": 6020,
+      "people": {
+        "selectedIds": [
+          "person-sato-hanako",
+          "person-suzuki-ichiro"
+        ],
+        "ambiguous": [],
+        "unknownNames": []
+      }
+    },
+    {
+      "sampleID": "schedule-ambiguous-surname",
+      "text": "山田さんと佐藤さんの予定を見たい",
+      "expected": "schedule_compare",
+      "actual": "schedule_compare",
+      "matched": true,
+      "intent_matched": true,
+      "people_matched": true,
+      "elapsed_ms": 6852,
+      "people": {
+        "selectedIds": [
+          "person-sato-hanako"
+        ],
+        "ambiguous": [
+          {
+            "name": "山田",
+            "candidateIds": [
+              "person-yamada-taro",
+              "person-yamada-hanako"
+            ]
+          }
+        ],
+        "unknownNames": []
+      }
+    },
+    {
+      "sampleID": "schedule-unknown-person",
+      "text": "田村さんと佐藤花子さんの予定を確認したい",
+      "expected": "schedule_compare",
+      "actual": "schedule_compare",
+      "matched": true,
+      "intent_matched": true,
+      "people_matched": true,
+      "elapsed_ms": 7010,
+      "people": {
+        "selectedIds": [
+          "person-sato-hanako"
+        ],
+        "ambiguous": [],
+        "unknownNames": [
+          "田村"
+        ]
+      }
+    },
+    {
+      "sampleID": "unsupported-schedule-delete",
+      "text": "山田太郎さんの予定を削除したい",
+      "expected": "unsupported_operation",
+      "actual": "unsupported_operation",
+      "matched": true,
+      "intent_matched": true,
+      "people_matched": null,
+      "elapsed_ms": 7959,
+      "people": null
+    },
+    {
+      "sampleID": "unsupported-schedule-create",
+      "text": "佐藤さんと鈴木さんの会議を登録したい",
+      "expected": "unsupported_operation",
+      "actual": "unsupported_operation",
+      "matched": true,
+      "intent_matched": true,
+      "people_matched": null,
+      "elapsed_ms": 9044,
+      "people": null
+    }
+  ]
+}

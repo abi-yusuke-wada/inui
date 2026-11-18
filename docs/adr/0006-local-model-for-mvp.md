@@ -3,6 +3,8 @@
 - 状態: 決定（2026-11-06）。正式MVPはローカル実NLIを使い、`nli-deberta-large`を基準モデルとする。分類の合格基準は正常9件・対象外と曖昧入力4件の全件一致。公式Jev・自然言語からの自動補完・MCPは部署展開と費用承認の後へ延期する。推論配置はIssue #4で具体化する。
 - 関連: [Issue #16](https://github.com/abi-yusuke-wada/inui/issues/16)、[Issue #4](https://github.com/abi-yusuke-wada/inui/issues/4)、[Issue #15](https://github.com/abi-yusuke-wada/inui/issues/15)、[ADR-0001](0001-mvp-hosting-and-storage.md)、[ADR-0003](0003-separate-core-from-poc-app.md)、[ADR-0004](0004-jev-first-intent-routing.md)、[ADR-0005](0005-local-jev-for-development.md)、[MVP](../../MVP.md)
 
+2026-11-10更新: ローカルPoCは[ADR-0008](0008-local-poc-workflows.md)で予定比較を含む4画面・7候補へ拡張する。基準モデルとLLM不使用は維持し、予定の対象者だけは文章中の人名を社員辞書へ照合して選択する。以下の3画面・13入力の結果はIssue #16時点の履歴であり、新しい19入力の検証とは区別する。
+
 ## 背景
 
 公式Jevの利用費用について社内承認が確定していない。承認・契約を正式MVP着手の前提にせず、ローカルの実NLIモデルを使ってMVPを先行させる方針へ変更する。公式Jevの契約と接続検証は、MVPの部署展開と費用承認の後へ延期する。

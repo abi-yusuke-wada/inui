@@ -11,7 +11,7 @@ import {
   validateResponse,
   runProbe,
   runCli,
-} from './jev-probe.mjs';
+} from '../../scripts/jev-probe.mjs';
 
 const intents = [
   'leave_request',
@@ -659,7 +659,7 @@ test('多言語モデルを指定したとき既定モデルの応答を成功�
     mode: 'local',
     localModel: MULTILINGUAL_LOCAL_MODEL,
     write: output.write,
-    fetchImpl: async (url, options) => {
+    fetchImpl: async (_url, options) => {
       calls += 1;
       assert.equal(JSON.parse(options.body).model, MULTILINGUAL_LOCAL_MODEL);
       return successfulResponse(responseBody(CASES[0].expected, LOCAL_MODEL));
@@ -816,7 +816,7 @@ test('localの未知wire値は中断して固定エラーだけを記録する',
 });
 
 test('保存実推論応答のリプレイで13件をcanonicalへ正規化する（HTTP実接続ではない）', async () => {
-  const fixture = JSON.parse(await readFile(new URL('../docs/jev-prompt-study-2026-11-06.json', import.meta.url), 'utf8'));
+  const fixture = JSON.parse(await readFile(new URL('../../docs/jev-prompt-study-2026-11-06.json', import.meta.url), 'utf8'));
   const run = fixture.runs.find((entry) => entry.profile === fixture.selected_profile);
   assert.ok(run, '採用した実測プロファイルが保存されていること');
   assert.equal(run.metadata.model, LOCAL_MODEL);

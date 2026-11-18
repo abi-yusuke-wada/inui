@@ -25,8 +25,8 @@ inuiの問題提起は「LLMにどんなUIを生成させるか」ではあり�
 
 ## MVPの方向性
 
-申請・ワークフロー（申請を出す側）を題材に、休暇申請・経費精算（交通費）・申請状況の確認の3つを対象として小さく実装し、E2Eの動作と旧形式との比較を確認します。
-自然言語はこの3画面へのIntent振り分けに使い、日付・金額・区分・状態は利用者が画面上で明示的に操作します。公式Jev、自然言語からの引数自動補完、MCPは、MVPの部署展開と費用に関する社内承認後へ延期します（[ADR-0006](docs/adr/0006-local-model-for-mvp.md)）。
+休暇申請・経費精算（交通費）・申請状況の確認・複数人の予定比較を対象として小さく実装し、E2Eの動作と旧形式との比較を確認します。
+自然言語から4画面へ振り分け、予定比較では文章中の人名をサンプル社員辞書へ照合して対象者を選択済みにします。日付・金額・区分・状態は画面上で明示的に操作します。公式Jev、これらの申請項目の自動補完、製品MCPは、部署展開と費用に関する社内承認後へ延期します（[ADR-0006](docs/adr/0006-local-model-for-mvp.md)、[ADR-0008](docs/adr/0008-local-poc-workflows.md)）。
 範囲と完了条件は [MVP.md](MVP.md) にまとめます。
 
 ## 開発環境
@@ -56,18 +56,31 @@ direnvを使わない場合は `nix develop` で開発環境に入ります。
 | --- | --- |
 | `make check` | 開発環境の定義（`nix flake check`）と差分の空白を検証する |
 | `make sandbox-check` | CLIのサンドボックスの前提条件を確認する |
+| `make app-setup` | 固定lockfileの公開npm依存を取得する。利用者の認証設定を参照せず、インストールscriptを実行しない |
+| `make app-setup-offline` | 取得済み依存だけでworkspaceのリンクを更新する（通信なし） |
+| `make app-dev` | アプリ（`127.0.0.1:8766`）と実NLI（`127.0.0.1:8765`）をまとめて起動する |
+| `make app-smoke` | 不足しているサーバーを起動し、実NLIを含む19入力のHTTP検証を行う |
+| `make app-run` | アプリだけを起動する。実NLIを別に管理する場合に使う |
+| `make app-check` | コア・API・SQLite・Webの単体テスト、DOM操作テスト、型検査・ビルドを実行する |
+| `make lint` | BiomeでTypeScript・React・CSSを、actionlintでGitHub Actionsの定義を検査する |
+| `make ci` | lint・型検査・ビルド・テストをまとめて実行する。実NLIやAPIキーは不要 |
+| `make core-check` | 独立コアの単体テストだけを通信なしで実行する |
+| `make app-model-check` | キャッシュ済み実NLIで7候補・19入力を検証する（HTTP・外部通信なし） |
+| `make app-probe` | 起動中のPoCを19入力でHTTP検証する。申請の保存はしない |
+| `make app-diagnose` | アプリとlocal-jevへの接続を個別に確認する。応答本文や秘密情報は表示しない |
+| `make app-reset` | アプリ停止後、ローカルの申請データを初期2件へ戻す |
 | `make jev-check` | JEV接続プローブのオフラインテストを実行する |
-| `make jev-probe` | 従来の自動選択。APIキーありは公式Jev（従量課金）、なしはローカルNLIへ接続する。MVP評価には`make jev-probe-local`を使う |
+| `make jev-probe` | 旧検証用の自動選択。APIキーありは公式Jev（従量課金）、なしはローカルNLIへ接続する。現PoCの評価は`make app-probe`を使う |
 | `make jev-probe-dry-run` | 将来検証用の公式Jevリクエストを固定13入力で表示する（通信なし） |
 | `make jev-probe-live` | 将来の公式Jev検証用。最大13回接続する（APIキー・通信許可・利用料金の確認が必要） |
-| `make jev-probe-local` | 正式MVPの基準としてローカルNLIで固定13入力を検証する（公式APIキーを使わない） |
+| `make jev-probe-local` | Issue #16時点の6候補・固定13入力をローカルNLIで再現する（公式APIキーを使わない） |
 | `make jev-prompt-study` | キャッシュ済み重みで元の質問と採用した質問を比較する（外部通信・HTTPなし） |
 | `make jev-local-setup` | ソースSHAを固定したlocal-jevと、バージョン未固定のCPU用runtimeを取得する |
 | `make jev-local-versions` | 導入済みruntimeの実バージョンを表示する（通信なし） |
 | `make jev-local-pin-model` | 実測revisionの重み・tokenizerを取得し、同名モデルのローカルカードへ固定する |
 | `make jev-local-serve` | ローカルNLIを起動する（初回はモデル重み約0.87GBを取得） |
 
-ローカルNLIの範囲・手順・未検証事項は [接続検証の説明](docs/jev-connection-check.md) を参照してください。MVP基準の検証では、サーバーとプローブの両方で`LOCAL_JEV_MODEL=nli-deberta-large`を明示し、`make jev-local-serve`と`make jev-probe-local`を使います。
+Issue #16時点のローカルNLI検証の範囲・手順は[接続検証の説明](docs/jev-connection-check.md)を参照してください。旧13入力を再現する場合は、サーバーとプローブの両方で`LOCAL_JEV_MODEL=nli-deberta-large`を明示します。予定比較を含む現PoCの7候補・19入力は、`make app-model-check`と、起動後の`make app-probe`で確認します。
 
 プローブの従来の自動選択はコードに残っており、`make jev-probe`は`TYPESAFE_API_KEY`があれば公式Jevを呼びます。公式モードは将来の検証用として残し、現在のMVP基準には使いません。ローカル開発用だった位置づけ（[ADR-0005](docs/adr/0005-local-jev-for-development.md)）は、[ADR-0006](docs/adr/0006-local-model-for-mvp.md)で正式MVPの基準に変更しました。
 
@@ -75,7 +88,13 @@ Issue #16の分類条件は、固定13入力で正常9/9件・対象外と曖昧
 
 過去の多言語NLI比較は正常7/9件・異常0/4件でした。今回の改善ではモデルを変更していません。固定13入力を見ながら調整した結果であり、日本語全般の精度を保証するものではありません。質問・応答契約と再現手順は [接続検証の説明](docs/jev-connection-check.md) を参照してください。
 
-アプリのビルド・起動等のターゲットは、Issue #4の実装に合わせて追加します。
+ローカルPoCの起動・予定比較・保存・旧形式での操作は[実行手順](docs/poc-local.md)を参照してください。自然言語UIと`/legacy`は同じ業務UI・API・データを使います。ローカルSQLiteによる保存であり、Turso・GitHub認証・AWSへの配置は未実装です。
+
+アプリのコードはルートの`src/`、ブラウザの画面とCSSは`src/web/`、独立したIntent判定は`packages/core/`に置きます。アプリ・画面・実行スクリプトのテストは`tests/`へまとめ、コアのテストは`packages/core/tests/`に置きます。ビルド結果は`dist/`、申請DB・診断結果・依存キャッシュは`.local-poc/`に作られ、どちらもGitの管理対象外です。
+
+GitHub Actionsの[CI](.github/workflows/ci.yml)はPRとmainへのpushで`make ci`を実行します。Nixの固定環境とpnpmの固定lockfileを使い、モデルやクラウド環境は起動しません。lintツールを追加した環境へは`nix develop`で入り直してください。
+
+バックエンドのログは`src/logger.ts`で共通化し、時刻・レベル・イベント・リクエストID・処理時間などを1行JSONで出力します。既定は`info`で、`LOG_LEVEL=debug make app-dev`などで切り替えられます。出力内容と確認方法は[実行手順](docs/poc-local.md#バックエンドのログ)を参照してください。
 
 ### Linuxでのサンドボックスの前提条件
 
@@ -91,4 +110,4 @@ CLIのサンドボックスには、devShellが提供する `bubblewrap`（`bwra
 
 ## 現在のステータス
 
-MVPの範囲と完了条件、技術構成（[ADR-0001](docs/adr/0001-mvp-hosting-and-storage.md)）と開発環境（[ADR-0002](docs/adr/0002-development-environment.md)）、コアとPoCアプリの分離方針（[ADR-0003](docs/adr/0003-separate-core-from-poc-app.md)）を基に、[ADR-0006](docs/adr/0006-local-model-for-mvp.md)でローカルモデルを正式MVPの基準にしました。Issue #16の固定13入力は実Engine比較と利用者ホストのHTTP実測で全件一致を確認し、結果と分類の変更を[PR #22](https://github.com/abi-yusuke-wada/inui/pull/22)にまとめました。Issue #4でアプリ本体とローカル推論の配置・呼び出し経路を具体化します。Issue #15では、ローカルモデルを含むブラウザ送信からの応答が30秒以内かを実測します。アプリケーションは未実装です。
+[ADR-0006](docs/adr/0006-local-model-for-mvp.md)でローカルモデルを正式MVPの基準とし、既存13入力の分類・HTTP検証を[PR #22](https://github.com/abi-yusuke-wada/inui/pull/22)へまとめました。現在はIssue #4で4つの業務を扱うローカルPoCを実装しています。構成と部署展開との境界は[ADR-0008](docs/adr/0008-local-poc-workflows.md)を参照してください。予定比較を加えた7候補の実NLI検証は従来の6候補とは別に記録します。部署向けの推論配置・認証・Turso接続は残っており、正式な30秒条件はIssue #15で実測します。

@@ -26,9 +26,12 @@ ADR-0001で、フロントエンドはReact + TypeScript、APIはTypeScript + Ho
 - devShellには必要最小限として次を含める。
   - Node.js 24 LTS（`nodejs_24`）
   - pnpm（パッケージマネージャー）
+  - Biome（TypeScript・React・CSSのlint）とactionlint（GitHub Actions定義の検証。2026-11-11追加）
   - `bubblewrap`・`socat`（Linux・WSLのみ。CLIのサンドボックス実行用）
 - サンドボックスが利用できない場合は起動を止める設定とし、保護なしで実行しない。
 - ビルド・実行・テスト等のコマンドは `Makefile` に集約する。pnpmのscriptsだけに置く案と比べ、Nixの検証やサンドボックスの確認などNode.js以外のコマンドも同じ入口から実行でき、READMEや開発支援CLIへの案内を `make <ターゲット>` に統一できる。GNU MakeはdevShell（`mkShell` の標準環境）に含まれ、追加費用はない。
+- 2026-11-11、利用者のCI・lint整備の依頼を受け、`make lint`と`make ci`を追加した。Biomeとactionlintは`flake.lock`で固定されたnixpkgsから提供する。ESLintと複数のプラグインを追加する案と比べ、JS／TS／TSX／CSSを同じツールで検査でき、npmの依存や設定を増やさずに済むためBiomeを採用した。今回はlintだけを有効にし、自動整形とimport並べ替えは行わない。テンプレート文字列への統一も対象外とし、書式変更だけの差分を増やさない。ライセンス費用はなく、ツール取得時の通信・ディスクは必要。
+- GitHub ActionsはPRとmainへのpushで1ジョブの`make ci`を実行する。ローカルと同じNix環境を使い、公開npm依存を固定lockfileから取得する。ビルド・型検査・テスト・lintまでとし、実モデルの取得・起動やデプロイは行わない。Actionsの利用枠・料金はリポジトリと組織の契約に依存するため、無料と確定しない。
 
 ## 影響
 
@@ -76,6 +79,27 @@ Linux・WSLの再帰globは `glob_scan_max_depth = 8` とし、各サンドボ�
 - Claude: 共有設定で `~/.config/gh` の読み取り・編集を拒否する。`gh` と `git push` はトークンを使うため、サンドボックスの対象外（`excludedCommands`）として実行し、`ask` で毎回利用者の承認を求める。個人設定の確認なしの許可は削除する。
 - PRへの返信・レビュー依頼等のGitHub操作はClaudeが担当し、Codexは使わない。
 - GitHubのトークンは、このリポジトリだけを対象とする権限の狭いトークンに置き換えることを推奨する。
+
+### 作業ブランチへのpushを承認なしにする（2026-11-16変更）
+
+上記で「`git push` を毎回承認」としたが、CodeRabbitの指摘修正を繰り返すたびにpushの承認が発生し、利用者が「git操作は承認なしで進めてほしい」と指示した。`gh`（PR・Issueへの書き込み）は毎回承認のまま、作業ブランチへの通常のpushだけを承認なしにする。
+
+| 案 | 費用・手間 | リスク |
+| --- | --- | --- |
+| A. 従来どおり毎回承認する | 指摘修正のたびに承認が必要 | 最小 |
+| B. `git push *` を許可する | 承認なし | `main` への誤ったpushや強制更新も承認なしで通る |
+| C. `allow` の文字列一致で作業ブランチへのpushだけを許可する | 承認なし | 文字列一致では `feat/x:release` のようなrefspec、2つ目のrefspec、Gitの設定による送信先の書き換えを見分けられず、CodeRabbitのレビューで抜け道が続けて見つかった |
+| D. PreToolUseフックでコマンドとGitの設定を検査し、条件を満たすpushだけを承認なしにする（採用） | 承認なし。検査スクリプトの保守が必要 | 検査スクリプトの誤りが抜け道になる。テストで通す場合と止める場合を確認する |
+
+採用した案Dの内容は次のとおり。追加の費用はない。
+
+- `.claude/hooks/push-guard.py`（エージェントが書き換えられない場所）が、`git push` の実行直前に次をすべて確認した場合だけ承認なしで実行させる。コマンドが `git push origin <ブランチ>` だけで記号（`:`・`+`・`;` 等）や余分な引数を含まない。ブランチが作業ブランチ（`feat/`・`docs/`・`fix/`・`chore/`）で、現在のブランチと同じ。`origin` の接続先（`remote.origin.url`）がこのリポジトリの1件だけで、`remote.origin.push`・`pushurl`・`mirror`・`url.*.insteadOf`・`pushInsteadOf` の設定がなく、タグも送る `push.followTags` が有効でなく、`git config` だけに効く環境変数 `GIT_CONFIG` が設定されていない。さらに、リポジトリの設定（local・worktree）が許可リストの項目（gitが既定で作る `core.*`、`remote.origin.url`・`fetch`、ブランチの追跡設定、VS Codeが付ける項目、`user.name`・`user.email`）だけで、コマンドで与えた設定がなく、実行されうるgitフックがなく（`core.hooksPath` が未設定で、フックのディレクトリに `.sample` 以外がない）、サブモジュールも送る設定（`push.recurseSubmodules`・`submodule.recurse`）が有効でない。gitはpushの途中で認証ヘルパーやフック等の設定されたプログラムをサンドボックス外で実行しうるため、危険な項目を個別に探すのではなく、許可した項目以外があれば承認を求める。あわせて `.git/config`・`.git/config.worktree`・`.git/hooks/` への編集を `deny` にする。
+- 条件を満たさないpushは、フックが承認を求める（`ask`）。設定の `ask` ルールはフックの `allow` より優先されるため、`git push` を `ask` ルールには入れない。フックが動かなかった場合も、pushはサンドボックス外で実行されるコマンドとして通常どおり承認を求められる。
+- `deny`（`main` への指定、force push、削除、ブランチ名の後ろに引数が続くpush、`:` で `main`・`refs/` を指定するpush）は防御を重ねるために残す。末尾が `:*` の規則は前方一致として扱われうるため使わない。`:` 形式の削除（`git push origin :feat/x`）はフックが承認を求める。
+- `ask`: `git config`、`git -c`・`git -C` を付けたpush。
+- フックの判定は `tests/scripts/push-guard.test.mjs` で、一時リポジトリを使って確認し、`make ci` に含める。
+- pushは従来どおりサンドボックス外で実行され、gitは利用者のGitHubの認証情報を使う。
+- 影響: フックはこのリポジトリ内の判定であり、`main` の最終的な保護は、GitHub側のRuleset（[docs/agent-security.md](../agent-security.md) の人間による操作）で行う。
 
 ## AI開発エージェントの権限・責務分離（2026-11-02追加）
 
