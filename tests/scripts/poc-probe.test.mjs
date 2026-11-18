@@ -4,9 +4,8 @@ import { fileURLToPath } from 'node:url';
 import test from 'node:test';
 import { CASES } from '../../scripts/jev-probe.mjs';
 import { POC_CASES, requests, requestsDigest, replay, probeHttp, diagnose, diagnoseWeb, runCli } from '../../scripts/poc-probe.mjs';
-import { listEmployees } from '../../packages/features/schedule/src/people.ts';
 
-const SAVED_FILE = new URL('../../docs/poc-nli-responses-2026-11-17.jsonl', import.meta.url);
+const SAVED_FILE = new URL('../../docs/poc-nli-responses-2026-11-18.jsonl', import.meta.url);
 const savedText = await readFile(SAVED_FILE, 'utf8');
 const savedRecords = savedText.trim().split('\n').map((line) => JSON.parse(line));
 const ORIGIN = 'http://127.0.0.1:8766';
@@ -26,16 +25,17 @@ function capture() {
   return { lines, status, port: 8766, write: (line) => lines.push(line), writeStatus: (line) => status.push(line) };
 }
 
-test('文書・タスク・ホワイトボード・予定の23入力と人名4期待を通信せず取得し、申請の13入力は履歴に残す', async () => {
+test('文書・タスク・ホワイトボードの20入力を通信せず取得し、申請の13入力は履歴に残す', async () => {
   const current = requests();
-  assert.equal(current.length, 23);
-  assert.equal(new Set(current.map((sample) => sample.id)).size, 23);
+  assert.equal(current.length, 20);
+  assert.equal(new Set(current.map((sample) => sample.id)).size, 20);
   const count = (expected) => current.filter((sample) => sample.expected === expected).length;
-  assert.deepEqual([count('markdown_view'), count('task_board'), count('whiteboard'), count('schedule_compare'),
-    count('unsupported_feature'), count('unsupported_operation'), count('clarify')], [4, 5, 3, 4, 2, 3, 2]);
-  assert.equal(current.filter((sample) => sample.expectedPeople !== null).length, 4);
+  assert.deepEqual([count('markdown_view'), count('task_board'), count('whiteboard'),
+    count('unsupported_feature'), count('unsupported_operation'), count('clarify')], [4, 5, 3, 3, 3, 2]);
+  // 予定比較は廃止し、画面への引数（人名）の期待値も持たない。
+  assert.ok(current.every((sample) => !Object.hasOwn(sample, 'expectedPeople') && sample.expected !== 'schedule_compare'));
   assert.ok(current.every((sample) => sample.request.model === 'nli-deberta-large'
-    && sample.request.state === sample.text && Object.keys(sample.request.questions.intent.criteria).length === 7));
+    && sample.request.state === sample.text && Object.keys(sample.request.questions.intent.criteria).length === 6));
   // 申請を題材にした13入力（Issue #16の記録）は変更せず、現行の検証には使わない。
   assert.equal(CASES.length, 13);
   assert.ok(current.every((row) => !['leave_request', 'expense_request', 'application_status'].includes(row.expected)));
@@ -48,15 +48,15 @@ test('文書・タスク・ホワイトボード・予定の23入力と人名4�
   assert.equal(savedRecords[0].metadata.requests_sha256, requestsDigest());
 });
 
-test('保存した実NLI応答23件を現コアで再生し、正常・異常・人名を独立に集計する', async () => {
+test('保存した実NLI応答20件を現コアで再生し、正常（画面）と異常（案内）を独立に集計する', async () => {
   const result = replay(savedText);
   assert.equal(result.transport, 'in-process-local-jev-engine');
   assert.equal(result.metadata.http_route_executed, false);
   assert.equal(result.summary.criterion_met, true);
-  assert.equal(result.summary.matched, 23);
-  assert.deepEqual(result.summary.normal, { matched: 16, total: 16 });
-  assert.deepEqual(result.summary.abnormal, { matched: 7, total: 7 });
-  assert.deepEqual(result.summary.people, { matched: 4, total: 4 });
+  assert.equal(result.summary.matched, 20);
+  assert.deepEqual(result.summary.normal, { matched: 12, total: 12 });
+  assert.deepEqual(result.summary.abnormal, { matched: 8, total: 8 });
+  assert.equal(Object.hasOwn(result.summary, 'people'), false);
   assert.ok(result.results.every((row) => row.truncated === false));
   const output = capture();
   assert.equal(await runCli(['--replay', fileURLToPath(SAVED_FILE)], {
@@ -91,18 +91,18 @@ test('有効な契約でも誤分類やtruncatedのtrue・不明を合格にし�
     records[1].rawResponse.answers.intent = structuredClone(task.rawResponse.answers.intent);
   }));
   assert.equal(wrong.summary.criterion_met, false);
-  assert.equal(wrong.summary.matched, 22);
+  assert.equal(wrong.summary.matched, 19);
   assert.equal(wrong.results[0].actual, 'task_board');
-  assert.equal(wrong.results[0].intent_matched, false);
+  assert.equal(wrong.results[0].matched, false);
   for (const truncated of [true, null]) {
     const result = replay(changedReplay((records) => { records[1].truncated = truncated; }));
     assert.equal(result.summary.criterion_met, false);
-    assert.equal(result.summary.matched, 22);
+    assert.equal(result.summary.matched, 19);
     assert.equal(result.results[0].error, 'truncated_or_unknown');
   }
 });
 
-test('HTTP成功の注入では同一OriginのIntent受付へ23回だけPOSTし、業務保存を呼ばない', async () => {
+test('HTTP成功の注入では同一OriginのIntent受付へ20回だけPOSTし、業務保存を呼ばない', async () => {
   let calls = 0;
   const result = await probeHttp({ port: 8766, fetchImpl: async (url, init) => {
     const sample = POC_CASES[calls++];
@@ -114,11 +114,10 @@ test('HTTP成功の注入では同一OriginのIntent受付へ23回だけPOSTし�
     assert.ok(init.signal instanceof AbortSignal);
     const body = ['unsupported_feature', 'unsupported_operation', 'clarify'].includes(sample.expected)
       ? { kind: 'notice', intent: sample.expected, message: '通信テスト用の固定案内' }
-      : { kind: 'screen', intent: sample.expected, ui: sample.expected,
-        ...(sample.expectedPeople ? { people: sample.expectedPeople } : {}) };
+      : { kind: 'screen', intent: sample.expected, ui: sample.expected };
     return Response.json(body);
   } });
-  assert.equal(calls, 23);
+  assert.equal(calls, 20);
   assert.equal(result.summary.criterion_met, true);
   assert.equal(result.transport, 'http-local-poc-api');
   assert.equal(result.metadata.server_configuration_observed, false);
@@ -126,7 +125,7 @@ test('HTTP成功の注入では同一OriginのIntent受付へ23回だけPOSTし�
   assert.equal(result.metadata.runtime, null);
 });
 
-test('HTTP503を23件とstderrへ記録し、上流本文や例外の詳細を出力しない', async () => {
+test('HTTP503を20件とstderrへ記録し、上流本文や例外の詳細を出力しない', async () => {
   const output = capture();
   let calls = 0;
   let bodyReads = 0;
@@ -140,15 +139,15 @@ test('HTTP503を23件とstderrへ記録し、上流本文や例外の詳細を�
     } };
   } });
   assert.equal(rc, 1);
-  assert.equal(calls, 23);
+  assert.equal(calls, 20);
   assert.equal(bodyReads, 0);
   assert.equal(output.lines.length, 1);
   const result = JSON.parse(output.lines[0]);
   assert.equal(result.summary.matched, 0);
-  assert.equal(result.summary.total, 23);
+  assert.equal(result.summary.total, 20);
   assert.ok(result.results.every((row) => row.error === 'http_error' && row.http_status === 503));
-  assert.equal(output.status.length, 24);
-  assert.match(output.status[0], /0\/23/);
+  assert.equal(output.status.length, 21);
+  assert.match(output.status[0], /0\/20/);
   assert.ok(output.status.slice(1).every((line) => line.endsWith('HTTP 503')));
   assert.equal(JSON.stringify(output).includes(PRIVATE_DETAIL), false);
 });
@@ -159,9 +158,9 @@ test('app HTTP200とlocal-jev ECONNREFUSEDを区別し、診断CLIでも安全�
     calls.push(url);
     assert.equal(init.redirect, 'error');
     assert.ok(init.signal instanceof AbortSignal);
-    if (url === `${ORIGIN}/api/employees`) {
+    if (url === `${ORIGIN}/api/health`) {
       assert.equal(init.method, undefined);
-      return { ok: true, status: 200, json: async () => ({ employees: listEmployees() }) };
+      return { ok: true, status: 200, json: async () => ({ app: 'inui-local-poc', build: 'a'.repeat(64) }) };
     }
     assert.equal(url, 'http://127.0.0.1:8765/v1/systemone');
     assert.equal(init.method, 'POST');
@@ -182,12 +181,14 @@ test('app HTTP200とlocal-jev ECONNREFUSEDを区別し、診断CLIでも安全�
   assert.equal(JSON.stringify(output).includes(PRIVATE_DETAIL), false);
 });
 
-test('別サービスが社員一覧のURLでHTTP 200を返しても、アプリ診断を正常にしない', async () => {
-  const fetchImpl = async (url) => (url.endsWith('/api/employees')
-    ? Response.json({ unexpected: true }) : Response.json(savedRecords[1].rawResponse));
-  const result = await diagnose({ fetchImpl, port: 8766 });
-  assert.equal(result.ok, false);
-  assert.deepEqual(result.checks[0], { service: 'app', ok: false, error: 'connection_or_contract_error' });
+test('別サービスが稼働確認のURLでHTTP 200を返しても、アプリ診断を正常にしない', async () => {
+  for (const body of [{ unexpected: true }, { app: 'other-app', build: 'a'.repeat(64) }, { app: 'inui-local-poc', build: 1 }]) {
+    const fetchImpl = async (url) => (url.endsWith('/api/health')
+      ? Response.json(body) : Response.json(savedRecords[1].rawResponse));
+    const result = await diagnose({ fetchImpl, port: 8766 });
+    assert.equal(result.ok, false);
+    assert.deepEqual(result.checks[0], { service: 'app', ok: false, error: 'connection_or_contract_error' });
+  }
 });
 
 test('Web診断はHTML・JS・CSSの受信完了とビルド一致を確認し、推論や保存を呼ばない', async () => {
@@ -244,7 +245,7 @@ test('18766をHTTPの送信先・Origin・診断・Web配信確認で共有し�
     assert.equal(init.headers.Origin, origin);
     return new Response(null, { status: 503 });
   } });
-  assert.equal(intentCalls, 23);
+  assert.equal(intentCalls, 20);
   // callback内のassert失敗はrequest_failedとして記録されるため、全件がHTTP 503であることも確認する。
   assert.ok(report.results.every((row) => row.error === 'http_error' && row.http_status === 503));
   assert.equal(report.metadata.endpoint, `${origin}/api/intent`);
@@ -252,9 +253,9 @@ test('18766をHTTPの送信先・Origin・診断・Web配信確認で共有し�
   const output = capture();
   assert.equal(await runCli(['--diagnose'], { ...output, port: 18766, fetchImpl: async (url) => {
     diagnosed.push(url);
-    return Response.json(url.includes(':18766/') ? { employees: listEmployees() } : savedRecords[1].rawResponse);
+    return Response.json(url.includes(':18766/') ? { app: 'inui-local-poc', build: 'a'.repeat(64) } : savedRecords[1].rawResponse);
   } }), 0);
-  assert.deepEqual(diagnosed, [`${origin}/api/employees`, 'http://127.0.0.1:8765/v1/systemone']);
+  assert.deepEqual(diagnosed, [`${origin}/api/health`, 'http://127.0.0.1:8765/v1/systemone']);
   const paths = [];
   const web = await diagnoseWeb({
     port: 18766, readAsset: async () => Buffer.from('fixed test asset'),
@@ -308,7 +309,7 @@ test('HTTPエラーで本文を読まない応答も、通信を中止して解�
     signals.push(init.signal);
     return new Response(null, { status: 503 });
   } });
-  assert.equal(report.results.length, 23);
-  assert.equal(signals.length, 23);
+  assert.equal(report.results.length, 20);
+  assert.equal(signals.length, 20);
   assert.ok(signals.every((signal) => signal.aborted));
 });

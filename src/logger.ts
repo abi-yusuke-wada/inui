@@ -31,7 +31,7 @@ const MESSAGES: Record<LogEvent, string> = {
 };
 const METHODS = new Set(['GET', 'HEAD', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS', 'CONNECT', 'TRACE']);
 const ROUTES = new Set([
-  '/', '/legacy', '/app.js', '/app.css', '/assets/*', '/api/health', '/api/intent', '/api/employees', '/api/schedules',
+  '/', '/legacy', '/app.js', '/app.css', '/assets/*', '/api/health', '/api/intent',
   '/api/tasks/local', '/api/tasks/local/:id', '/api/tasks/github', '/api/tasks/backlog',
   '/api/whiteboards', '/api/whiteboards/:id', '/excalidraw/*', 'other',
 ]);

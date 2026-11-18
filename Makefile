@@ -64,9 +64,9 @@ app-ui-check: app-build ## DOM上でタスク保存・Markdown表示・人名選
 	node --test --test-isolation=none dist/ui-tests/App.test.js
 	node --test --test-isolation=none tests/scripts/poc-web.test.mjs
 
-app-replay-check: ## 保存した19件の実NLI応答と現コアを再照合する（推論・通信なし）
+app-replay-check: ## 保存した20件の実NLI応答と現コアを再照合する（推論・通信なし）
 	@mkdir -p -m 700 .local-poc
-	@node scripts/poc-probe.mjs --replay docs/poc-nli-responses-2026-11-17.jsonl > .local-poc/replay-verification.json
+	@node scripts/poc-probe.mjs --replay docs/poc-nli-responses-2026-11-18.jsonl > .local-poc/replay-verification.json
 	@node -p 'JSON.stringify(JSON.parse(require("node:fs").readFileSync(".local-poc/replay-verification.json", "utf8")).summary)'
 
 app-check: app-ui-check app-replay-check ## コア・API・永続化・UIのテストと型・差分を検証する
@@ -75,13 +75,13 @@ app-check: app-ui-check app-replay-check ## コア・API・永続化・UIのテ�
 	node --test --test-isolation=none packages/core/tests/*.test.ts packages/features/*/tests/*.test.ts tests/*.test.ts tests/web/*.test.ts tests/scripts/poc-probe.test.mjs tests/scripts/poc-local.test.mjs tests/scripts/push-guard.test.mjs
 	git diff --check
 
-app-model-check: ## キャッシュ済み実NLIの6候補を19入力で検証する（外部通信なし。worktreeでも本体の.local-jevを使う）
+app-model-check: ## キャッシュ済み実NLIの6候補を20入力で検証する（外部通信なし。worktreeでも本体の.local-jevを使う）
 	@mkdir -p -m 700 .local-poc
 	@env -u TYPESAFE_API_KEY -u HF_TOKEN HF_HOME="$(INUI_SHARED_ROOT)/.local-jev/cache" LOCAL_JEV_MODELS="$(INUI_SHARED_ROOT)/.local-jev/models" HF_HUB_DISABLE_IMPLICIT_TOKEN=1 HF_HUB_OFFLINE=1 TRANSFORMERS_OFFLINE=1 PYTHONDONTWRITEBYTECODE=1 OMP_NUM_THREADS=4 MKL_NUM_THREADS=4 OPENBLAS_NUM_THREADS=4 "$(INUI_SHARED_ROOT)/.local-jev/venv/bin/python" -u scripts/poc-model-check.py > .local-poc/model-responses.jsonl
 	@node scripts/poc-probe.mjs --replay .local-poc/model-responses.jsonl > .local-poc/model-verification.json
 	@node -p 'JSON.stringify(JSON.parse(require("node:fs").readFileSync(".local-poc/model-verification.json", "utf8")).summary)'
 
-app-probe: ## 起動中のPoCと実NLIを19入力でHTTP検証する（申請の保存はしない）
+app-probe: ## 起動中のPoCと実NLIを20入力でHTTP検証する（タスク・ボードの保存はしない）
 	@mkdir -p -m 700 .local-poc
 	@node scripts/poc-probe.mjs > .local-poc/http-verification.json
 	@node -p 'JSON.stringify(JSON.parse(require("node:fs").readFileSync(".local-poc/http-verification.json", "utf8")).summary)'
@@ -97,7 +97,7 @@ app-web-diagnose: ## HTML・JS・CSSの受信完了とビルドとの一致を�
 app-dev: app-build ## アプリと実NLIをまとめて起動する
 	node scripts/poc-local.mjs --dev
 
-app-smoke: app-build ## アプリと実NLIを起動して19入力を検証する
+app-smoke: app-build ## アプリと実NLIを起動して20入力を検証する
 	node scripts/poc-local.mjs --smoke
 
 app-run: app-build ## アプリだけを127.0.0.1:8766で起動する（実NLIは別途起動）

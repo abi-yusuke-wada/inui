@@ -135,7 +135,7 @@ test('初回失敗と再試行成功を要求ID・状態・時間で追跡し、
     calls++;
     if (calls === 1) throw new DecisionError('timeout');
     if (calls === 2) throw new Error('test-only-private-exception');
-    return { kind: 'screen', intent: 'schedule_compare', ui: 'schedule_compare' };
+    return { kind: 'screen', intent: 'whiteboard', ui: 'whiteboard' };
   } });
   for (const status of [504, 503, 200, 400]) {
     const response = await app.request(ORIGIN + '/api/intent', {
@@ -167,7 +167,7 @@ test('初回失敗と再試行成功を要求ID・状態・時間で追跡し、
     assert.ok(Number.isSafeInteger(record.elapsed_ms) && (record.elapsed_ms as number) >= 0);
   }
   assert.equal(JSON.stringify(records).includes('test-only-private'), false);
-  assert.equal((await app.request(ORIGIN + '/api/employees')).status, 200);
+  assert.equal((await app.request(ORIGIN + '/api/tasks/local')).status, 200);
   assert.equal(records.length, 5);
   assert.equal(records[4]?.event, 'http_request');
   assert.equal(store.list().length, 0);
@@ -195,11 +195,11 @@ test('APIと静的配信の完了を区別し、URL・ヘッダー・タスク�
   const requests = [
     { path: '/api/tasks/local', status: 200, level: 'info', route: '/api/tasks/local', code: undefined },
     { path: '/api/tasks/github', status: 200, level: 'info', route: '/api/tasks/github', code: undefined },
-    { path: '/api/schedules?date=2026-11-03&personIds=person-yamada-taro,person-sato-hanako', status: 200, level: 'info', route: '/api/schedules', code: undefined },
-    { path: '/api/employees?private=' + privateDetail, status: 400, level: 'warn', route: '/api/employees', code: 'invalid_input' },
+    { path: '/api/whiteboards', status: 200, level: 'info', route: '/api/whiteboards', code: undefined },
+    { path: '/api/tasks/local?private=' + privateDetail, status: 400, level: 'warn', route: '/api/tasks/local', code: 'invalid_input' },
     { path: '/' + privateDetail, status: 404, level: 'warn', route: 'other', code: 'not_found' },
-    { path: '/api/employees', status: 403, level: 'warn', route: '/api/employees', code: 'invalid_host', host: privateDetail + '.example:8766' },
-    { path: '/api/employees', status: 200, level: 'info', route: '/api/employees', code: undefined },
+    { path: '/api/tasks/local', status: 403, level: 'warn', route: '/api/tasks/local', code: 'invalid_host', host: privateDetail + '.example:8766' },
+    { path: '/api/whiteboards', status: 200, level: 'info', route: '/api/whiteboards', code: undefined },
     { path: '/', status: 200, level: 'debug', route: '/', code: undefined },
   ];
   for (const [index, request] of requests.entries()) {
@@ -238,18 +238,17 @@ test('APIと静的配信の完了を区別し、URL・ヘッダー・タスク�
   assert.equal(JSON.stringify(records).includes(task.id), false);
   assert.equal(store.list().length, 1);
   assert.equal(JSON.stringify(records).includes(privateDetail), false);
-  assert.equal(JSON.stringify(records).includes('佐藤花子'), false);
   assert.equal(JSON.stringify(records).includes('Authorization'), false);
 });
 
 test('loopback Host・同一Origin・JSON・本文上限を強制し、CORSを許可しない', async (t) => {
   const h = harness(t);
   for (const base of ['http://127.0.0.1:3000', 'http://localhost:3000', 'http://external.example:8766']) {
-    assert.equal((await h.app.request(base + '/api/employees')).status, 403);
+    assert.equal((await h.app.request(base + '/api/tasks/local')).status, 403);
   }
-  assert.equal((await h.app.request(ORIGIN + '/api/employees', { headers: { Host: 'external.example:8766' } })).status, 403);
+  assert.equal((await h.app.request(ORIGIN + '/api/tasks/local', { headers: { Host: 'external.example:8766' } })).status, 403);
   // 外部サイトのフレームに埋め込ませない。
-  const framed = await h.app.request(ORIGIN + '/api/employees');
+  const framed = await h.app.request(ORIGIN + '/api/tasks/local');
   assert.equal(framed.headers.get('Content-Security-Policy'), "frame-ancestors 'none'");
   assert.equal(framed.headers.get('X-Frame-Options'), 'DENY');
   for (const origin of [undefined, 'null', 'http://external.example', 'http://localhost:8766', 'http://127.0.0.1:3000']) {
@@ -275,16 +274,16 @@ test('ポートを変更しても選択したloopback Hostと同一Originだけ�
     routeIntent: async () => ({ kind: 'screen', intent: 'task_board', ui: 'task_board' }) });
   const origin = 'http://127.0.0.1:18766';
   for (const base of [origin, 'http://localhost:18766']) {
-    assert.equal((await app.request(base + '/api/employees')).status, 200);
+    assert.equal((await app.request(base + '/api/tasks/local')).status, 200);
     assert.equal((await app.request(base + '/api/intent', {
       method: 'POST', headers: { Origin: base, 'Content-Type': 'application/json' },
       body: JSON.stringify({ text: '自分のタスクを確認したい' }),
     })).status, 200);
   }
   for (const base of [ORIGIN, 'http://localhost:8766', 'http://external.example:18766', 'https://127.0.0.1:18766']) {
-    assert.equal((await app.request(base + '/api/employees')).status, 403);
+    assert.equal((await app.request(base + '/api/tasks/local')).status, 403);
   }
-  assert.equal((await app.request(origin + '/api/employees', { headers: { Host: '127.0.0.1:8766' } })).status, 403);
+  assert.equal((await app.request(origin + '/api/tasks/local', { headers: { Host: '127.0.0.1:8766' } })).status, 403);
   for (const crossOrigin of [ORIGIN, 'http://localhost:18766', 'http://external.example:18766']) {
     const response = await app.request(origin + '/api/intent', {
       method: 'POST', headers: { Origin: crossOrigin, 'Content-Type': 'application/json' },
@@ -296,27 +295,15 @@ test('ポートを変更しても選択したloopback Hostと同一Originだけ�
   assert.equal(store.list().length, 0);
 });
 
-test('予定比較の人名は選択・曖昧・未知に分け、日付や対象を自動補完しない', async (t) => {
+test('廃止した予定比較の判定は受け付けず、社員・予定のAPIも提供しない', async (t) => {
   const h = harness(t, async () => ({ kind: 'screen', intent: 'schedule_compare', ui: 'schedule_compare' }));
-  const response = await h.post('/api/intent', { text: '明日の山田さんと佐藤花子と田中さんの予定を確認したい' });
-  const decision = await response.json();
-  assert.equal(response.status, 200);
-  assert.deepEqual(decision.people.selectedIds, ['person-sato-hanako']);
-  assert.equal(decision.people.ambiguous[0].name, '山田');
-  assert.deepEqual(decision.people.unknownNames, ['田中']);
-  assert.equal(decision.date, undefined);
-  assert.equal((await (await h.get('/api/employees')).json()).employees.length, 4);
-  const empty = await (await h.get('/api/schedules')).json();
-  assert.equal(empty.date, '2026-11-02');
-  assert.deepEqual(empty.employees, []);
-  assert.deepEqual(empty.events, []);
-  const schedules = await (await h.get('/api/schedules?date=2026-11-03&personIds=person-yamada-taro,person-sato-hanako')).json();
-  assert.equal(schedules.employees.length, 2);
-  assert.ok(schedules.events.every((event: { personId: string }) => ['person-yamada-taro', 'person-sato-hanako'].includes(event.personId)));
-  for (const query of ['date=2026-02-29', 'personIds=unknown', 'personIds=person-yamada-taro,person-yamada-taro', 'date=2026-11-02&date=2026-11-03', 'tool=delete']) {
-    assert.equal((await h.get('/api/schedules?' + query)).status, 400);
+  const response = await h.post('/api/intent', { text: '山田太郎さんと佐藤花子さんの予定を確認したい' });
+  assert.equal(response.status, 502);
+  assert.equal(response.headers.get('X-Error-Code'), 'invalid_response');
+  for (const path of ['/api/employees', '/api/schedules?date=2026-11-03']) {
+    assert.equal((await h.get(path)).status, 404);
   }
-  // 予定比較以外の画面には人名の選択を付けない。
+  // 画面の判定に人名などの引数を付けない。
   const tasks = harness(t);
   assert.deepEqual(await (await tasks.post('/api/intent', { text: '山田さんのタスク' })).json(),
     { kind: 'screen', intent: 'task_board', ui: 'task_board' });

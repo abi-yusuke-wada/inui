@@ -55,7 +55,7 @@ test('入力・認証ヘッダー・例外・未知イベントと不正メタ�
   logger.info('http_request', {
     body: privateText, headers: { Authorization: privateText }, stack: privateText, error: new Error(privateText),
     message: privateText, timestamp: privateText, level: privateText, event: privateText,
-    request_id: privateText, method: privateText, route: `/api/schedules?text=${privateText}`,
+    request_id: privateText, method: privateText, route: `/api/tasks/local?text=${privateText}`,
     http_status: NaN, elapsed_ms: Infinity, port: 80, error_code: privateText,
   } as LogFields);
   logger.info(privateText as LogEvent);

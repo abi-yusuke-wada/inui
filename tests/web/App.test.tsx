@@ -2,15 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { JSDOM } from 'jsdom';
 import type { Root } from 'react-dom/client';
-import type { Employee } from '@inui/feature-schedule/client';
 import type { LocalTask } from '@inui/feature-tasks/client';
-
-const employees: Employee[] = [
-  { id: 'yamada-taro', name: '山田太郎' },
-  { id: 'sato-hanako', name: '佐藤花子' },
-  { id: 'suzuki-ichiro', name: '鈴木一郎' },
-  { id: 'yamada-hanako', name: '山田花子' },
-];
 
 /** APIだけをモックするDOM操作テスト。実ブラウザやNLIの精度測定ではない。 */
 test('PoCの利用経路をJSDOMで操作する（実ブラウザではない）', { concurrency: false }, async (suite) => {
@@ -99,8 +91,6 @@ test('PoCの利用経路をJSDOMで操作する（実ブラウザではない）
       }
       assert.ok(condition(), message + '\n表示: ' + document.body.textContent);
     };
-    const checkedNames = () => [...document.querySelectorAll('label')].filter((label) =>
-      label.querySelector<HTMLInputElement>('input[type="checkbox"]')?.checked).map(visibleText);
     const withApp = async (pathname: string, fetchImpl: typeof fetch, work: () => Promise<void>) => {
       dom.window.history.replaceState(null, '', pathname);
       Object.defineProperty(globalThis, 'fetch', { configurable: true, writable: true, value: fetchImpl });
@@ -245,68 +235,6 @@ test('PoCの利用経路をJSDOMで操作する（実ブラウザではない）
       dom.window.localStorage.removeItem('inui.tasks.view');
     });
 
-    await suite.test('社員名付きの予定比較は2人だけ事前選択し、固定日を自動取得して並列表示する', async () => {
-      const selections: { date: string | null; ids: string[] }[] = [];
-      const fetchImpl: typeof fetch = async (input) => {
-        const url = new URL(String(input), 'http://localhost');
-        if (url.pathname === '/api/intent') return response({ kind: 'screen', intent: 'schedule_compare', ui: 'schedule_compare',
-          people: { selectedIds: ['yamada-taro', 'sato-hanako'], ambiguous: [], unknownNames: [] } });
-        if (url.pathname === '/api/employees') return response({ employees });
-        if (url.pathname === '/api/schedules') {
-          selections.push({ date: url.searchParams.get('date'), ids: (url.searchParams.get('personIds') ?? '').split(',') });
-          return response({ date: '2026-11-02', employees: employees.slice(0, 2),
-            events: [{ id: 'event-1', personId: 'yamada-taro', title: 'チーム打合せ', start: '10:00', end: '11:00' }] });
-        }
-        throw new Error('想定外のAPI: ' + url.pathname);
-      };
-      await withApp('/', fetchImpl, async () => {
-        await change('したいこと', '明日の山田太郎さんと佐藤花子さんの予定を比較したい');
-        await click('画面を開く');
-        await waitFor(() => heading('2026/11/02の予定'), '予定が自動表示されませんでした。');
-        assert.deepEqual(checkedNames(), ['山田太郎', '佐藤花子']);
-        assert.equal(field('予定日').value, '2026-11-02');
-        assert.deepEqual(selections, [{ date: '2026-11-02', ids: ['yamada-taro', 'sato-hanako'] }]);
-        const yamada = document.querySelector('section[aria-label="山田太郎の予定"]');
-        const sato = document.querySelector('section[aria-label="佐藤花子の予定"]');
-        assert.ok(yamada && sato);
-        assert.match(yamada.textContent ?? '', /10:00.*11:00.*チーム打合せ/);
-        assert.match(sato.textContent ?? '', /この日の予定はありません/);
-        assert.equal(document.querySelector('section[aria-label="鈴木一郎の予定"]'), null);
-      });
-    });
-
-    await suite.test('同姓と未知の名前を勝手に補充せず、手動で2人選んでから取得する', async () => {
-      const selections: string[][] = [];
-      const fetchImpl: typeof fetch = async (input) => {
-        const url = new URL(String(input), 'http://localhost');
-        if (url.pathname === '/api/intent') return response({ kind: 'screen', intent: 'schedule_compare', ui: 'schedule_compare',
-          people: { selectedIds: [], ambiguous: [{ name: '山田', candidateIds: ['yamada-taro', 'yamada-hanako'] }], unknownNames: ['田中'] } });
-        if (url.pathname === '/api/employees') return response({ employees });
-        if (url.pathname === '/api/schedules') {
-          const ids = (url.searchParams.get('personIds') ?? '').split(',');
-          selections.push(ids);
-          return response({ date: '2026-11-02', employees: employees.filter((employee) => ids.includes(employee.id)), events: [] });
-        }
-        throw new Error('想定外のAPI: ' + url.pathname);
-      };
-      await withApp('/', fetchImpl, async () => {
-        await change('したいこと', '山田さんと田中さんの予定を比較したい');
-        await click('画面を開く');
-        await waitFor(() => document.querySelectorAll('input[type="checkbox"]').length === 4, '社員を選択できませんでした。');
-        assert.deepEqual(checkedNames(), []);
-        assert.equal(selections.length, 0);
-        assert.match(document.body.textContent ?? '', /複数います/);
-        assert.match(document.body.textContent ?? '', /田中/);
-        await react.act(async () => (field('山田太郎') as HTMLInputElement).click());
-        await react.act(async () => (field('鈴木一郎') as HTMLInputElement).click());
-        assert.equal(selections.length, 0);
-        await click('予定を表示');
-        await waitFor(() => heading('2026/11/02の予定'), '手動選択後の予定が表示されませんでした。');
-        assert.deepEqual(selections, [['yamada-taro', 'suzuki-ichiro']]);
-        assert.equal(document.querySelector('section[aria-label="山田花子の予定"]'), null);
-      });
-    });
-
     await suite.test('旧形式のメニューからMarkdown表示を開き、選んだファイルを送信せずに無害化して表示する', async () => {
       const requests: string[] = [];
       const fetchImpl: typeof fetch = async (input) => {
@@ -442,6 +370,9 @@ test('PoCの利用経路をJSDOMで操作する（実ブラウザではない）
       let calls = 0;
       await withApp('/legacy', async () => { calls++; throw new Error('呼びません'); }, async () => {
         await click('仕事');
+        // 予定比較は廃止したため、仕事の分類はタスクと対象外の会議室予約だけにする。
+        assert.deepEqual([...document.querySelectorAll('nav[aria-label="業務メニュー"] button')].map(visibleText),
+          ['← 分類に戻る', 'タスク', '会議室予約']);
         await click('会議室予約');
         await waitFor(() => heading('この機能はまだ利用できません'), '対象外の機能を案内しませんでした。');
         await click('メニューへ戻る');

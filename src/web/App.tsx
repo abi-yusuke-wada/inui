@@ -1,6 +1,5 @@
 import { Component, lazy, Suspense, useCallback, useEffect, useRef, useState } from 'react';
 import type { ReactNode } from 'react';
-import type { PeopleSelection } from '@inui/feature-schedule/client';
 import { Feedback, Loading, useLatestRequest } from '@inui/feature-kit/react';
 import { errorMessage, fetchJson, parseDecision } from './api.ts';
 import type { Notice, Screen } from './api.ts';
@@ -9,7 +8,6 @@ import type { Notice, Screen } from './api.ts';
 const MarkdownViewer = lazy(() => import('@inui/feature-markdown/web'));
 const TaskBoard = lazy(() => import('@inui/feature-tasks/web'));
 const Whiteboard = lazy(() => import('@inui/feature-whiteboard/web'));
-const Schedules = lazy(() => import('@inui/feature-schedule/web'));
 
 const NOTICE_TITLES: Record<Notice, string> = {
   unsupported_feature: 'この機能はまだ利用できません',
@@ -17,15 +15,15 @@ const NOTICE_TITLES: Record<Notice, string> = {
   clarify: 'もう少し詳しく教えてください',
 };
 const NOTICE_MESSAGES: Record<Notice, string> = {
-  unsupported_feature: 'Markdownの表示・タスクの確認・ホワイトボード・予定比較をご利用いただけます。',
+  unsupported_feature: 'Markdownの表示・タスクの確認・ホワイトボードをご利用いただけます。',
   unsupported_operation: 'PRのマージ、Issue・PRの作成やクローズ、予定の登録・削除は、この画面では行えません。',
-  clarify: '文書・タスク・ホワイトボード・予定のどれを扱いたいか、用件を添えて入力してください。',
+  clarify: '文書・タスク・ホワイトボードのどれを扱いたいか、用件を添えて入力してください。',
 };
-const EXAMPLES = ['Markdownを見やすく表示したい', '自分のタスクを確認したい', 'ホワイトボードに絵を描きたい', '山田太郎さんと佐藤花子さんの予定を比較したい'];
+const EXAMPLES = ['Markdownを見やすく表示したい', '自分のタスクを確認したい', 'ホワイトボードに絵を描きたい'];
 type MenuItem = readonly [Screen | 'unsupported_feature', string];
 const MENU: Record<'documents' | 'work', { label: string; items: readonly MenuItem[] }> = {
   documents: { label: '文書', items: [['markdown_view', 'Markdown表示'], ['whiteboard', 'ホワイトボード'], ['unsupported_feature', '文書検索']] },
-  work: { label: '仕事', items: [['task_board', 'タスク'], ['schedule_compare', '予定比較'], ['unsupported_feature', '会議室予約']] },
+  work: { label: '仕事', items: [['task_board', 'タスク'], ['unsupported_feature', '会議室予約']] },
 };
 /** 画面の読み込みに失敗しても、入力欄やメニューは残して案内する。 */
 class ScreenBoundary extends Component<{ children: ReactNode }, { failed: boolean }> {
@@ -40,7 +38,7 @@ class ScreenBoundary extends Component<{ children: ReactNode }, { failed: boolea
 type View =
   | { kind: 'empty' }
   | { kind: 'notice'; intent: Notice; message: string }
-  | { kind: 'screen'; screen: Screen; instance: number; people?: PeopleSelection };
+  | { kind: 'screen'; screen: Screen; instance: number };
 
 export function App() {
   const legacy = window.location.pathname.replace(/\/$/, '') === '/legacy';
@@ -71,11 +69,11 @@ export function App() {
     if (view.kind !== 'empty') resultRegion.current?.focus();
   }, [view]);
 
-  function showScreen(screen: Screen, people?: PeopleSelection) {
+  function showScreen(screen: Screen) {
     routeRequest.cancel();
     setRouting(false);
     setRoutingError('');
-    setView({ kind: 'screen', screen, instance: ++instance.current, ...(people ? { people } : {}) });
+    setView({ kind: 'screen', screen, instance: ++instance.current });
   }
 
   function showNotice(intent: Notice, message = NOTICE_MESSAGES[intent]) {
@@ -99,7 +97,7 @@ export function App() {
         method: 'POST', body: { text: submitted }, signal: request.signal,
       }));
       if (!request.isCurrent()) return;
-      if (decision.kind === 'screen') showScreen(decision.ui, decision.people);
+      if (decision.kind === 'screen') showScreen(decision.ui);
       else showNotice(decision.intent, decision.message);
     } catch (error) {
       if (request.isCurrent()) setRoutingError(errorMessage(error, '画面の表示'));
@@ -193,7 +191,6 @@ export function App() {
             {view.screen === 'markdown_view' && <MarkdownViewer />}
             {view.screen === 'task_board' && <TaskBoard />}
             {view.screen === 'whiteboard' && <Whiteboard onUnsavedChange={reportUnsaved} />}
-            {view.screen === 'schedule_compare' && <Schedules people={view.people} />}
           </Suspense>
         </ScreenBoundary>}
       </section>

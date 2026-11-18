@@ -9,7 +9,7 @@ import {
 } from '../src/index.ts';
 
 const wireIntents = [
-  'markdown_view', 'task_board', 'whiteboard', 'schedule_compare',
+  'markdown_view', 'task_board', 'whiteboard',
   'unsupported_feature', 'unsupported_operation', 'unspecified_request',
 ] as const;
 type WireIntent = typeof wireIntents[number];
@@ -23,7 +23,7 @@ function responseBody(choice: WireIntent = 'task_board') {
         type: 'choice',
         choice: choice as string,
         confidence: 0.7,
-        probabilities: Object.fromEntries(wireIntents.map((intent) => [intent, intent === choice ? 0.7 : 0.05])),
+        probabilities: Object.fromEntries(wireIntents.map((intent) => [intent, intent === choice ? 0.7 : 0.06])),
       },
     },
     usage: { input_tokens: 12, output_tokens: 1 },
@@ -47,7 +47,7 @@ function fakeFetch(implementation: (input: string | URL | Request, init?: Reques
   return implementation;
 }
 
-test('リクエストは入力の前後空白を除き、固定モデル・7候補だけを送る', () => {
+test('リクエストは入力の前後空白を除き、固定モデル・6候補だけを送る', () => {
   const request = buildLocalRequest(' \n 自分のタスクを確認したい \t ');
   assert.equal(request.model, LOCAL_MODEL);
   assert.equal(request.state, '自分のタスクを確認したい');
@@ -59,17 +59,17 @@ test('リクエストは入力の前後空白を除き、固定モデル・7候�
   assert.equal(buildLocalRequest('あ'.repeat(2000)).state.length, 2000);
 });
 
-test('質問文と予定比較の説明は採用済みのものを使い、申請の候補は送らない', async () => {
+test('質問文は採用済みのものを使い、申請と予定比較の候補は送らない', async () => {
   const probe = await import(new URL('../../../scripts/jev-probe.mjs', import.meta.url).href);
   const previous = probe.buildRequest('自分のタスクを確認したい', { model: LOCAL_MODEL });
   const current = buildLocalRequest('自分のタスクを確認したい');
   assert.equal(current.questions.intent.instructions, previous.questions.intent.instructions);
-  assert.equal(current.questions.intent.criteria.schedule_compare, '利用者は複数の社員のスケジュールや予定を確認・比較したい。');
+  assert.equal(Object.hasOwn(current.questions.intent.criteria, 'schedule_compare'), false);
   for (const intent of Object.keys(previous.questions.intent.criteria)) {
     if (intent.startsWith('unsupported_')) continue;
     assert.equal(Object.hasOwn(current.questions.intent.criteria, intent), false);
   }
-  assert.match(current.questions.intent.criteria.unsupported_feature, /予定比較以外/);
+  assert.match(current.questions.intent.criteria.unsupported_feature, /社員の予定の確認など/);
   assert.match(current.questions.intent.criteria.unsupported_operation, /マージ/);
   assert.match(current.questions.intent.criteria.unsupported_operation, /予定を登録・削除/);
 });
@@ -94,7 +94,7 @@ for (const input of ['', ' \n\t ', 'あ'.repeat(2001), null, 123, {}, []]) {
   });
 }
 
-for (const intent of wireIntents.slice(0, 4)) {
+for (const intent of wireIntents.slice(0, 3)) {
   test(`許可した画面に対応付ける: ${intent}`, () => {
     assert.deepEqual(parseLocalResponse(responseBody(intent)), { kind: 'screen', intent, ui: intent });
   });
@@ -117,10 +117,10 @@ for (const [wire, canonical] of [
   });
 }
 
-test('7候補の小数4桁への丸めと最大値の同率を許す', () => {
+test('6候補の小数4桁への丸めと最大値の同率を許す', () => {
   const rounded = responseBody();
-  rounded.answers.intent.confidence = 0.1429;
-  rounded.answers.intent.probabilities = Object.fromEntries(wireIntents.map((intent) => [intent, 0.1429]));
+  rounded.answers.intent.confidence = 0.1667;
+  rounded.answers.intent.probabilities = Object.fromEntries(wireIntents.map((intent) => [intent, 0.1667]));
   assert.equal(parseLocalResponse(rounded).intent, 'task_board');
   const outsideTolerance = structuredClone(rounded);
   outsideTolerance.answers.intent.probabilities.task_board = 0.1675;
@@ -143,14 +143,14 @@ const corruptions: [string, (body: ReturnType<typeof responseBody>) => unknown][
   ['1を超えるconfidence', (body) => { body.answers.intent.confidence = 1.1; return body; }],
   ['NaNのconfidence', (body) => { body.answers.intent.confidence = NaN; return body; }],
   ['文字列のconfidence', (body) => { Reflect.set(body.answers.intent, 'confidence', '0.7'); return body; }],
-  ['確率欠落', (body) => { delete body.answers.intent.probabilities.schedule_compare; return body; }],
+  ['確率欠落', (body) => { delete body.answers.intent.probabilities.whiteboard; return body; }],
   ['未知の確率', (body) => { body.answers.intent.probabilities.clarify = 0; return body; }],
   ['負の確率', (body) => { body.answers.intent.probabilities.task_board = -0.1; return body; }],
   ['無限の確率', (body) => { body.answers.intent.probabilities.task_board = Infinity; return body; }],
   ['文字列の確率', (body) => { Reflect.set(body.answers.intent.probabilities, 'task_board', '0.7'); return body; }],
   ['確率の合計不足', (body) => { body.answers.intent.probabilities.task_board = 0.6; return body; }],
   ['確率の合計過多', (body) => { body.answers.intent.probabilities.task_board = 0.8; return body; }],
-  ['最大確率以外の選択', (body) => { body.answers.intent.choice = 'schedule_compare'; return body; }],
+  ['最大確率以外の選択', (body) => { body.answers.intent.choice = 'whiteboard'; return body; }],
   ['負の使用量', (body) => { body.usage.input_tokens = -1; return body; }],
   ['小数の使用量', (body) => { body.usage.output_tokens = 0.5; return body; }],
   ['文字列の使用量', (body) => { Reflect.set(body.usage, 'input_tokens', '12'); return body; }],
@@ -188,11 +188,11 @@ for (const baseUrl of ['http://127.0.0.1:8765', 'http://localhost:8766/', 'http:
       assert.equal(init?.method, 'POST');
       assert.equal(init?.redirect, 'error');
       assert.deepEqual(init?.headers, { 'Content-Type': 'application/json' });
-      assert.deepEqual(JSON.parse(init?.body as string), buildLocalRequest('予定を比べたい'));
+      assert.deepEqual(JSON.parse(init?.body as string), buildLocalRequest('ホワイトボードに描きたい'));
       assert.ok(init?.signal instanceof AbortSignal);
-      return Response.json(responseBody('schedule_compare'));
+      return Response.json(responseBody('whiteboard'));
     }) });
-    assert.deepEqual(await router(' 予定を比べたい '), { kind: 'screen', intent: 'schedule_compare', ui: 'schedule_compare' });
+    assert.deepEqual(await router(' ホワイトボードに描きたい '), { kind: 'screen', intent: 'whiteboard', ui: 'whiteboard' });
     assert.equal(called, true);
   });
 }

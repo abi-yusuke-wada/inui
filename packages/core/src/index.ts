@@ -4,12 +4,11 @@ export type Intent =
   | 'markdown_view'
   | 'task_board'
   | 'whiteboard'
-  | 'schedule_compare'
   | 'unsupported_feature'
   | 'unsupported_operation'
   | 'clarify';
 
-type ScreenIntent = Extract<Intent, 'markdown_view' | 'task_board' | 'whiteboard' | 'schedule_compare'>;
+type ScreenIntent = Extract<Intent, 'markdown_view' | 'task_board' | 'whiteboard'>;
 type NoticeIntent = Exclude<Intent, ScreenIntent>;
 
 export type RoutingDecision =
@@ -36,14 +35,15 @@ export class DecisionError extends Error {
   }
 }
 
-// Issue #10で題材を、利用者（システムエンジニア）が普段使う文書・タスク・予定へ入れ替えた。
-// 予定比較と対象外操作の説明は、申請を題材にした19入力で採用したものを基準にしている。
+// Issue #10で題材を、利用者（システムエンジニア）が普段使う文書・タスク・ホワイトボードへ入れ替えた。
+// 予定比較は、社内の予定をグループウェアで管理しており連携が現実的でないため外した（予定の入力は対象外の案内にする）。
+// 曖昧入力の説明の「予定」は、外すと短い入力の分類が崩れたため残している（docs/poc-local.md）。
+// 対象外操作の説明は、申請を題材にした19入力で採用したものを基準にしている。
 const LOCAL_CRITERIA = {
   markdown_view: '利用者はMarkdown（マークダウン）ファイルやREADME・ADRなどの文書を、読みやすく表示して読みたい。',
   task_board: '利用者は自分のタスク、GitHubのIssue、レビュー待ちや自分が出したプルリクエスト（プルリク）、Backlogの課題を一覧で確認したい、またはやることを書き留めたい。',
   whiteboard: '利用者はホワイトボードを開いて、手書きで絵や図を描きたい、または描いた絵を見返したい。',
-  schedule_compare: '利用者は複数の社員のスケジュールや予定を確認・比較したい。',
-  unsupported_feature: '利用者は会議室予約や経費精算など、文書の表示・タスクの確認・ホワイトボード・社員の予定比較以外の、具体的に名前を挙げたサービスを利用したい。',
+  unsupported_feature: '利用者は会議室予約や経費精算、社員の予定の確認など、文書の表示・タスクの確認・ホワイトボード以外の、具体的に名前を挙げたサービスを利用したい。',
   unsupported_operation: '利用者はプルリクエストをマージする、IssueやPRを作成・クローズする、文書を編集する、または会議や予定を登録・削除したい。',
   unspecified_request: '利用者は動作だけを述べており、文書・タスク・ホワイトボード・予定など、何を扱いたいかの対象を示していない。',
 };
@@ -54,9 +54,9 @@ const WIRE_INTENTS = Object.keys(LOCAL_CRITERIA) as WireIntent[];
 const PROBABILITY_TOLERANCE = WIRE_INTENTS.length * 0.00005 + Number.EPSILON;
 
 const NOTICE_MESSAGES: Record<NoticeIntent, string> = {
-  unsupported_feature: 'この機能には対応していません。Markdownの表示、タスクの確認、ホワイトボード、予定の比較を利用できます。',
+  unsupported_feature: 'この機能には対応していません。Markdownの表示、タスクの確認、ホワイトボードを利用できます。',
   unsupported_operation: 'この操作には対応していません。PRのマージ、Issue・PRの作成やクローズ、予定の登録・削除は行えません。',
-  clarify: 'Markdownの表示、タスクの確認、ホワイトボード、予定の比較のどれを行いたいか入力してください。',
+  clarify: 'Markdownの表示、タスクの確認、ホワイトボードのどれを行いたいか入力してください。',
 };
 
 /** 入力を検証し、前後の空白だけを取り除く。 */
@@ -67,7 +67,7 @@ function normalizeText(text: string): string {
   return normalized;
 }
 
-/** 固定モデル・7候補のChoiceリクエストを作る。人名や業務引数は抽出しない。 */
+/** 固定モデル・6候補のChoiceリクエストを作る。人名や業務引数は抽出しない。 */
 export function buildLocalRequest(text: string) {
   return {
     model: LOCAL_MODEL,
@@ -110,8 +110,6 @@ function toDecision(choice: WireIntent): RoutingDecision {
     case 'task_board':
       return { kind: 'screen', intent: choice, ui: choice };
     case 'whiteboard':
-      return { kind: 'screen', intent: choice, ui: choice };
-    case 'schedule_compare':
       return { kind: 'screen', intent: choice, ui: choice };
     case 'unsupported_feature':
     case 'unsupported_operation':

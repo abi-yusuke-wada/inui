@@ -219,7 +219,7 @@ test('health確認はappと固定NLIを識別し、接続拒否だけを未起�
     }, 8766), false);
     for (const fetchImpl of [
       async () => Response.json({}, { status: 503 }),
-      async () => Response.json({ employees: [], ok: true, default_model: 'other-model' }),
+      async () => Response.json({ other: [], ok: true, default_model: 'other-model' }),
       async () => { throw new Error(PRIVATE_DETAIL, { cause: { code: 'EPERM' } }); },
       async () => ({ ok: true, status: 200, json: async () => { throw new Error(PRIVATE_DETAIL); } }),
     ]) {
@@ -243,7 +243,7 @@ test('別のブランチやworktreeでビルドしたアプリは再利用せず
     });
   }
   // 同じポートの別サービスは、別の設定・サービスとして案内する。
-  await assert.rejects(checkService('app', async () => Response.json({ employees: [] }), 8766, BUILD), /別の設定・サービス/);
+  await assert.rejects(checkService('app', async () => Response.json({ other: [] }), 8766, BUILD), /別の設定・サービス/);
 });
 
 test('選択した18766を起動確認・子への設定・smoke・案内URLで共有し、NLIは8765に保つ', async () => {

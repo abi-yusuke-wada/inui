@@ -1,8 +1,6 @@
 import { ApiError, errorMessage as kitErrorMessage, isRecord } from '@inui/feature-kit/web';
-import { parsePeopleSelection } from '@inui/feature-schedule/client';
-import type { PeopleSelection } from '@inui/feature-schedule/client';
 
-export { ApiError, LatestRequest, fetchJson, validDate } from '@inui/feature-kit/web';
+export { ApiError, LatestRequest, fetchJson } from '@inui/feature-kit/web';
 
 /** 業務画面と共通の案内に、判定（画面の表示）だけの入力エラーの案内を加える。 */
 export function errorMessage(error: unknown, action: string): string {
@@ -13,23 +11,22 @@ export function errorMessage(error: unknown, action: string): string {
   return kitErrorMessage(error, action);
 }
 
-export type Screen = 'markdown_view' | 'task_board' | 'whiteboard' | 'schedule_compare';
+export type Screen = 'markdown_view' | 'task_board' | 'whiteboard';
 export type Notice = 'unsupported_feature' | 'unsupported_operation' | 'clarify';
 export type Decision =
-  | { kind: 'screen'; intent: Screen; ui: Screen; people?: PeopleSelection }
+  | { kind: 'screen'; intent: Screen; ui: Screen }
   | { kind: 'notice'; intent: Notice; message: string };
 
-export const SCREENS: readonly Screen[] = ['markdown_view', 'task_board', 'whiteboard', 'schedule_compare'];
+export const SCREENS: readonly Screen[] = ['markdown_view', 'task_board', 'whiteboard'];
 const NOTICES: readonly Notice[] = ['unsupported_feature', 'unsupported_operation', 'clarify'];
 
-/** 許可した画面だけを開き、人名の選択情報は予定比較のときだけ構造を確認して受け取る。 */
+/** 許可した画面だけを開く。画面への引数（人名など）は受け取らない。 */
 export function parseDecision(value: unknown): Decision {
   if (!isRecord(value)) throw new ApiError('invalid');
-  if (value.kind === 'screen' && SCREENS.includes(value.intent as Screen) && value.ui === value.intent) {
+  if (value.kind === 'screen' && SCREENS.includes(value.intent as Screen) && value.ui === value.intent
+      && Object.keys(value).length === 3) {
     const screen = value.intent as Screen;
-    if (value.people !== undefined && screen !== 'schedule_compare') throw new ApiError('invalid');
-    const people = value.people === undefined ? undefined : parsePeopleSelection(value.people);
-    return { kind: 'screen', intent: screen, ui: screen, ...(people ? { people } : {}) };
+    return { kind: 'screen', intent: screen, ui: screen };
   }
   if (value.kind === 'notice' && NOTICES.includes(value.intent as Notice) && typeof value.message === 'string') {
     return { kind: 'notice', intent: value.intent as Notice, message: value.message };

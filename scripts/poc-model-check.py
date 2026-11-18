@@ -1,4 +1,4 @@
-"""現コアの23入力を固定revisionの実NLIで評価する。HTTP経路は実行しない。"""
+"""現コアの20入力を固定revisionの実NLIで評価する。HTTP経路は実行しない。"""
 
 import hashlib
 import importlib.metadata
@@ -15,10 +15,10 @@ MODEL = "nli-deberta-large"
 REPOSITORY = "MoritzLaurer/deberta-v3-large-zeroshot-v2.0"
 REVISION = "cf44676c28ba7312e5c5f8f8d2c22b3e0c9cdae2"
 ROOT = Path(__file__).resolve().parent.parent
-# MVP.mdの入力例の件数（画面16件・案内7件）と、コアの候補数。
-CASE_COUNT = 23
-SCREEN_COUNT = 16
-CANDIDATE_COUNT = 7
+# MVP.mdの入力例の件数（画面12件・案内8件）と、コアの候補数。
+CASE_COUNT = 20
+SCREEN_COUNT = 12
+CANDIDATE_COUNT = 6
 FILES = (
     "config.json", "model.safetensors", "added_tokens.json", "special_tokens_map.json",
     "spm.model", "tokenizer.json", "tokenizer_config.json",
@@ -32,11 +32,10 @@ def source_requests():
         cwd=ROOT, check=True, capture_output=True, text=True, timeout=30,
     )
     samples = json.loads(source.stdout)
-    screens = {"markdown_view", "task_board", "whiteboard", "schedule_compare"}
+    screens = {"markdown_view", "task_board", "whiteboard"}
     if (not isinstance(samples, list) or len(samples) != CASE_COUNT
             or len({sample["id"] for sample in samples}) != CASE_COUNT
             or sum(sample["expected"] in screens for sample in samples) != SCREEN_COUNT
-            or sum(sample["expectedPeople"] is not None for sample in samples) != 4
             or any(sample["request"]["model"] != MODEL
                    or sample["request"]["state"] != sample["text"]
                    or set(sample["request"]["questions"]) != {"intent"}

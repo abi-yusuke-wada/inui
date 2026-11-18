@@ -3,7 +3,6 @@ import { Hono } from 'hono';
 import { createIntentRouter, DecisionError } from '@inui/core';
 import type { RoutingDecision } from '@inui/core';
 import { invalidInput, isRecord, keysAre, readJson, RequestError } from '@inui/feature-kit/server';
-import { createScheduleRoutes, selectPeople } from '@inui/feature-schedule/server';
 import { createTaskRoutes } from '@inui/feature-tasks/server';
 import type { TaskSources, TaskStore } from '@inui/feature-tasks/server';
 import { createWhiteboardRoutes } from '@inui/feature-whiteboard/server';
@@ -12,11 +11,11 @@ import { appOrigin, DEFAULT_APP_PORT } from './local-config.ts';
 import { logRoute } from './logger.ts';
 import type { Logger } from './logger.ts';
 
-const SCREEN_INTENTS = ['markdown_view', 'task_board', 'whiteboard', 'schedule_compare'];
+const SCREEN_INTENTS = ['markdown_view', 'task_board', 'whiteboard'];
 const NOTICES = {
   unsupported_feature: 'この機能は今回の対象に含まれていません。',
   unsupported_operation: 'この操作は今回の対象に含まれていません。',
-  clarify: '目的を特定できませんでした。文書・タスク・ホワイトボード・予定のどれを扱いたいか入力してください。',
+  clarify: '目的を特定できませんでした。文書・タスク・ホワイトボードのどれを扱いたいか入力してください。',
 };
 const SAFE_METHODS = ['GET', 'HEAD'];
 interface AppOptions {
@@ -100,11 +99,9 @@ export function createApp({
       if (error instanceof DecisionError) throw error;
       throw new RequestError(503, 'unavailable', '判定に接続できませんでした。時間をおいて再試行してください。');
     }
-    return c.json(decision.kind === 'screen' && decision.intent === 'schedule_compare'
-      ? { ...decision, people: selectPeople(body.text) } : decision);
+    return c.json(decision);
   });
 
-  app.route('/api', createScheduleRoutes());
   app.route('/api', createTaskRoutes({
     store: taskStore, sources: taskSources, upstream: upstreamFetch ? { fetchImpl: upstreamFetch } : {},
   }));

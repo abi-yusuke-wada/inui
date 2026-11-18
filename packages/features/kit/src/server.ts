@@ -28,17 +28,6 @@ export function keysAre(value: Record<string, unknown>, allowed: readonly string
   return Object.keys(value).every((key) => allowed.includes(key));
 }
 
-/** 日付文字列を暦と照合し、存在しない日付を受理しない。 */
-export function isValidDate(value: unknown): value is string {
-  if (typeof value !== 'string' || !/^\d{4}-\d{2}-\d{2}$/.test(value)) return false;
-  const [year, month, day] = value.split('-').map(Number) as [number, number, number];
-  if (year < 1 || month < 1 || month > 12 || day < 1) return false;
-  const leap = year % 4 === 0 && (year % 100 !== 0 || year % 400 === 0);
-  const days = [31, leap ? 29 : 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31];
-  const lastDay = days[month - 1];
-  return lastDay !== undefined && day <= lastDay;
-}
-
 /** クエリに許可外のキーや重複したキーがないことを確認する。 */
 export function checkQuery(c: Context, allowed: readonly string[]): URLSearchParams {
   const query = new URL(c.req.url).searchParams;

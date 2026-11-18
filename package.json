@@ -11,7 +11,6 @@
     "@inui/core": "workspace:*",
     "@inui/feature-kit": "workspace:*",
     "@inui/feature-markdown": "workspace:*",
-    "@inui/feature-schedule": "workspace:*",
     "@inui/feature-tasks": "workspace:*",
     "@inui/feature-whiteboard": "workspace:*",
     "hono": "4.13.17",
