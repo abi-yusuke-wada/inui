@@ -28,12 +28,13 @@ const LABELS = { 'local-jev': '推論サーバー', app: 'アプリ' };
 class LocalError extends Error {}
 class Stopped extends Error {}
 
-// タスク画面の連携先（GitHub）の認証情報。アプリの子プロセスにだけ渡す（ADR-0009）。
-export const APP_INTEGRATION_KEYS = ['INUI_GITHUB_TOKEN'];
+// タスク画面・作業の再開画面の連携先（GitHub）の認証情報と、作業の再開画面で読むリポジトリ。
+// アプリの子プロセスにだけ渡す（ADR-0009、ADR-0011）。
+export const APP_INTEGRATION_KEYS = ['INUI_GITHUB_TOKEN', 'INUI_REPOSITORIES'];
 
 /**
  * 子プロセスには実行環境だけを渡し、認証用の変数は引き継がない。
- * 例外はアプリへ渡す連携先の3変数だけで、推論サーバーには渡さない。
+ * 例外はアプリへ渡す連携の変数（APP_INTEGRATION_KEYS）だけで、推論サーバーには渡さない。
  */
 export function serviceEnv(parent = process.env, port, service) {
   const selectedPort = appPort(port === undefined ? parent : { INUI_POC_PORT: String(port) });

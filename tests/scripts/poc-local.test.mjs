@@ -174,13 +174,14 @@ test('実NLIのvenv・モデルは、worktreeでも本体のチェックアウ�
   assert.equal(localJevDir(outside), `${outside}.local-jev`);
 });
 
-test('GitHubの連携の変数はアプリにだけ渡し、推論サーバーや他の認証情報には広げない', () => {
+test('GitHubの連携と作業の再開画面の変数はアプリにだけ渡し、推論サーバーや他の認証情報には広げない', () => {
   const parent = {
-    PATH: '/test-only/bin', INUI_GITHUB_TOKEN: 'fake-inui-github', INUI_BACKLOG_SPACE: 'example.backlog.jp',
+    PATH: '/test-only/bin', INUI_GITHUB_TOKEN: 'fake-inui-github', INUI_REPOSITORIES: '/test-only/repo', INUI_BACKLOG_SPACE: 'example.backlog.jp',
     INUI_BACKLOG_API_KEY: 'fake-backlog', GH_TOKEN: 'fake-gh', GITHUB_TOKEN: 'fake-github', INUI_GITHUB_MCP_TOKEN: 'fake-mcp',
   };
   const app = serviceEnv(parent, undefined, 'app');
   assert.equal(app.INUI_GITHUB_TOKEN, 'fake-inui-github');
+  assert.equal(app.INUI_REPOSITORIES, '/test-only/repo');
   // 削除したBacklogの連携の設定が残っていても、アプリへ渡さない。
   for (const key of ['INUI_BACKLOG_SPACE', 'INUI_BACKLOG_API_KEY', 'GH_TOKEN', 'GITHUB_TOKEN', 'INUI_GITHUB_MCP_TOKEN']) {
     assert.equal(Object.hasOwn(app, key), false);
