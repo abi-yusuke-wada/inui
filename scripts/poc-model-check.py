@@ -15,9 +15,9 @@ MODEL = "nli-deberta-large"
 REPOSITORY = "MoritzLaurer/deberta-v3-large-zeroshot-v2.0"
 REVISION = "cf44676c28ba7312e5c5f8f8d2c22b3e0c9cdae2"
 ROOT = Path(__file__).resolve().parent.parent
-# MVP.mdの入力例の件数（画面12件・案内8件）と、コアの候補数。
+# MVP.mdの入力例の件数（画面11件・案内9件）と、コアの候補数。
 CASE_COUNT = 20
-SCREEN_COUNT = 12
+SCREEN_COUNT = 11
 CANDIDATE_COUNT = 6
 FILES = (
     "config.json", "model.safetensors", "added_tokens.json", "special_tokens_map.json",

@@ -28,8 +28,8 @@ const LABELS = { 'local-jev': '推論サーバー', app: 'アプリ' };
 class LocalError extends Error {}
 class Stopped extends Error {}
 
-// タスク画面の連携先（GitHub・Backlog）の認証情報。アプリの子プロセスにだけ渡す（ADR-0009）。
-export const APP_INTEGRATION_KEYS = ['INUI_GITHUB_TOKEN', 'INUI_BACKLOG_SPACE', 'INUI_BACKLOG_API_KEY'];
+// タスク画面の連携先（GitHub）の認証情報。アプリの子プロセスにだけ渡す（ADR-0009）。
+export const APP_INTEGRATION_KEYS = ['INUI_GITHUB_TOKEN'];
 
 /**
  * 子プロセスには実行環境だけを渡し、認証用の変数は引き継がない。

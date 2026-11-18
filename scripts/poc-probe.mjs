@@ -12,6 +12,7 @@ const NOTICES = ['unsupported_feature', 'unsupported_operation', 'clarify'];
 
 // Issue #10で題材を入れ替えた20入力（MVP.md）。申請を題材にした13入力はjev-probe.mjsに履歴として残す。
 // 予定比較は廃止し、予定の確認は対象外の機能、予定の削除・登録は対象外の操作として案内する。
+// Backlogの連携も外したため、Backlogの課題の確認は対象外の機能として案内する。
 export const POC_CASES = [
   { id: 'markdown-view', text: 'Markdownを見やすく表示したい', expected: 'markdown_view' },
   { id: 'markdown-readme', text: 'READMEを読みたい', expected: 'markdown_view' },
@@ -21,7 +22,6 @@ export const POC_CASES = [
   { id: 'task-mine', text: '自分のタスクを確認したい', expected: 'task_board' },
   { id: 'task-github-issues', text: 'GitHubのIssueを一覧で見たい', expected: 'task_board' },
   { id: 'task-review', text: 'レビュー待ちのプルリクを確認したい', expected: 'task_board' },
-  { id: 'task-backlog', text: 'Backlogの課題を見たい', expected: 'task_board' },
   { id: 'task-memo', text: 'やることをメモしておきたい', expected: 'task_board' },
   { id: 'whiteboard-open', text: 'ホワイトボードを開きたい', expected: 'whiteboard' },
   { id: 'whiteboard-draw', text: '絵を描きたい', expected: 'whiteboard' },
@@ -29,6 +29,7 @@ export const POC_CASES = [
   { id: 'unsupported-room', text: '会議室を予約したい', expected: 'unsupported_feature' },
   { id: 'unsupported-expense', text: '交通費を精算したい', expected: 'unsupported_feature' },
   { id: 'unsupported-schedule', text: '山田太郎さんと佐藤花子さんの予定を確認したい', expected: 'unsupported_feature' },
+  { id: 'unsupported-backlog', text: 'Backlogの課題を見たい', expected: 'unsupported_feature' },
   { id: 'unsupported-merge', text: 'プルリクエストをマージしたい', expected: 'unsupported_operation' },
   { id: 'unsupported-schedule-delete', text: '山田太郎さんの予定を削除したい', expected: 'unsupported_operation' },
   { id: 'unsupported-schedule-create', text: '佐藤さんと鈴木さんの会議を登録したい', expected: 'unsupported_operation' },

@@ -7,7 +7,6 @@ import { createTaskRoutes, readTaskSources, TaskStore } from '../src/server.ts';
 import type { TaskSources } from '../src/server.ts';
 
 const GITHUB_TOKEN = 'ghp_' + 'x'.repeat(36);
-const BACKLOG_KEY = 'k'.repeat(64);
 const SECRET_BODY = 'test-only-upstream-secret-body';
 
 function issue(id: number, overrides: Record<string, unknown> = {}) {
@@ -45,21 +44,19 @@ function app(t: TestContext, sources: TaskSources, fetchImpl?: typeof fetch, tim
   return (path: string) => root.request('http://127.0.0.1' + path);
 }
 
-test('環境変数の設定がなければ連携先へ接続せず、未設定であることだけを返す', async (t) => {
+test('環境変数の設定がなければGitHubへ接続せず、未設定であることだけを返す（Backlogの経路は持たない）', async (t) => {
   const { fetchImpl, calls } = fakeFetch(() => Response.json({}));
   const get = app(t, readTaskSources({}), fetchImpl);
   assert.deepEqual(await (await get('/api/tasks/github')).json(), { configured: false });
-  assert.deepEqual(await (await get('/api/tasks/backlog')).json(), { configured: false });
+  assert.equal((await get('/api/tasks/backlog')).status, 404);
   assert.equal(calls.length, 0);
 });
 
 test('設定値の形式を検証し、値そのものは保持・応答しない', async (t) => {
   assert.deepEqual(readTaskSources({ INUI_GITHUB_TOKEN: 'short' }).invalid, ['github']);
-  assert.deepEqual(readTaskSources({ INUI_BACKLOG_SPACE: 'example.backlog.jp' }).invalid, ['backlog']);
-  assert.deepEqual(readTaskSources({ INUI_BACKLOG_SPACE: 'evil.example.com', INUI_BACKLOG_API_KEY: BACKLOG_KEY }).invalid, ['backlog']);
-  const valid = readTaskSources({ INUI_GITHUB_TOKEN: GITHUB_TOKEN, INUI_BACKLOG_SPACE: 'Example.backlog.jp', INUI_BACKLOG_API_KEY: BACKLOG_KEY });
-  assert.deepEqual(valid.invalid, []);
-  assert.equal(valid.backlog?.space, 'example.backlog.jp');
+  // 以前のBacklogの設定が残っていても読まない。
+  const valid = readTaskSources({ INUI_GITHUB_TOKEN: GITHUB_TOKEN, INUI_BACKLOG_SPACE: 'example.backlog.jp', INUI_BACKLOG_API_KEY: 'k'.repeat(64) });
+  assert.deepEqual(valid, { github: { token: GITHUB_TOKEN }, invalid: [] });
   const { fetchImpl, calls } = fakeFetch(() => Response.json({}));
   const response = await app(t, readTaskSources({ INUI_GITHUB_TOKEN: 'short-secret' }), fetchImpl)('/api/tasks/github');
   assert.equal(response.status, 503);
@@ -93,29 +90,6 @@ test('GitHubは自分に関係する未完了のIssue・PRを3条件で検索し
     assert.equal(call.init?.redirect, 'error');
     assert.equal((call.init?.headers as Record<string, string>).Authorization, `Bearer ${GITHUB_TOKEN}`);
   }
-});
-
-test('Backlogは自分が担当の未完了の課題を読み、APIキーを応答へ含めない', async (t) => {
-  const { fetchImpl, calls } = fakeFetch((url) => {
-    if (url.pathname === '/api/v2/users/myself') return Response.json({ id: 77, name: 'test-only-name' });
-    return Response.json([{
-      id: 10, issueKey: 'PROJ-12', summary: '顧客向けの資料を直す', updated: '2026-11-15T03:00:00Z',
-      status: { id: 2, name: '処理中' }, dueDate: '2026-11-20T00:00:00Z',
-    }]);
-  });
-  const response = await app(t, { backlog: { space: 'example.backlog.jp', apiKey: BACKLOG_KEY }, invalid: [] }, fetchImpl)('/api/tasks/backlog');
-  assert.equal(response.status, 200);
-  const text = await response.text();
-  assert.equal(text.includes(BACKLOG_KEY), false);
-  assert.deepEqual(JSON.parse(text).tasks, [{
-    id: 'backlog-10', source: 'backlog', kind: 'backlog_issue', key: 'PROJ-12', title: '顧客向けの資料を直す',
-    url: 'https://example.backlog.jp/view/PROJ-12', updatedAt: '2026-11-15T03:00:00Z', status: '処理中', dueDate: '2026-11-20',
-  }]);
-  assert.equal(calls.length, 2);
-  const issues = calls[1]?.url;
-  assert.equal(issues?.host, 'example.backlog.jp');
-  assert.deepEqual(issues?.searchParams.getAll('assigneeId[]'), ['77']);
-  assert.deepEqual(issues?.searchParams.getAll('statusId[]'), ['1', '2', '3']);
 });
 
 test('連携先の失敗は固定コードへ置き換え、本文や例外を返さない', async (t) => {

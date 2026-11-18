@@ -21,23 +21,18 @@ export function parseLocalTask(value: unknown): LocalTask {
   return value.task;
 }
 
-const SAFE_URL: Record<ExternalTask['source'], RegExp> = {
-  github: /^https:\/\/github\.com\//,
-  backlog: /^https:\/\/[a-z0-9-]+\.backlog\.(?:jp|com)\/view\//,
-};
+const GITHUB_URL = /^https:\/\/github\.com\//;
 
-/** 連携先のチケットは、取得元に応じた https のリンクだけを受け付ける。 */
-export function parseExternal(value: unknown, source: ExternalTask['source']): ExternalResult {
+/** GitHubのIssue・PRは、github.com の https のリンクだけを受け付ける。 */
+export function parseExternal(value: unknown): ExternalResult {
   if (!isRecord(value)) throw new ApiError('invalid');
   if (value.configured === false) return { configured: false };
   if (value.configured !== true || !Array.isArray(value.tasks)) throw new ApiError('invalid');
   const tasks = value.tasks;
-  if (!tasks.every((task) => isRecord(task) && task.source === source && typeof task.id === 'string'
-    && ['issue', 'pull_request', 'backlog_issue'].includes(task.kind as string)
+  if (!tasks.every((task) => isRecord(task) && task.source === 'github' && typeof task.id === 'string'
+    && ['issue', 'pull_request'].includes(task.kind as string)
     && typeof task.key === 'string' && typeof task.title === 'string' && typeof task.updatedAt === 'string'
-    && typeof task.url === 'string' && SAFE_URL[source].test(task.url)
-    && (task.status === undefined || typeof task.status === 'string')
-    && (task.dueDate === undefined || typeof task.dueDate === 'string')
+    && typeof task.url === 'string' && GITHUB_URL.test(task.url)
     && (task.reasons === undefined || (Array.isArray(task.reasons) && task.reasons.every((reason) =>
       ['assigned', 'authored', 'review_requested'].includes(reason as string)))))) {
     throw new ApiError('invalid');

@@ -31,7 +31,7 @@ test('文書・タスク・ホワイトボードの20入力を通信せず取得
   assert.equal(new Set(current.map((sample) => sample.id)).size, 20);
   const count = (expected) => current.filter((sample) => sample.expected === expected).length;
   assert.deepEqual([count('markdown_view'), count('task_board'), count('whiteboard'),
-    count('unsupported_feature'), count('unsupported_operation'), count('clarify')], [4, 5, 3, 3, 3, 2]);
+    count('unsupported_feature'), count('unsupported_operation'), count('clarify')], [4, 4, 3, 4, 3, 2]);
   // 予定比較は廃止し、画面への引数（人名）の期待値も持たない。
   assert.ok(current.every((sample) => !Object.hasOwn(sample, 'expectedPeople') && sample.expected !== 'schedule_compare'));
   assert.ok(current.every((sample) => sample.request.model === 'nli-deberta-large'
@@ -54,8 +54,8 @@ test('保存した実NLI応答20件を現コアで再生し、正常（画面）
   assert.equal(result.metadata.http_route_executed, false);
   assert.equal(result.summary.criterion_met, true);
   assert.equal(result.summary.matched, 20);
-  assert.deepEqual(result.summary.normal, { matched: 12, total: 12 });
-  assert.deepEqual(result.summary.abnormal, { matched: 8, total: 8 });
+  assert.deepEqual(result.summary.normal, { matched: 11, total: 11 });
+  assert.deepEqual(result.summary.abnormal, { matched: 9, total: 9 });
   assert.equal(Object.hasOwn(result.summary, 'people'), false);
   assert.ok(result.results.every((row) => row.truncated === false));
   const output = capture();

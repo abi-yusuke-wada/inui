@@ -3,19 +3,15 @@ import type { FormEvent } from 'react';
 import { ApiError, errorMessage, fetchJson } from '@inui/feature-kit/web';
 import { Feedback, Loading, useLatestRequest } from '@inui/feature-kit/react';
 import { MAX_TITLE_LENGTH, parseExternal, parseLocalTask, parseLocalTasks } from './client.ts';
-import type { ExternalResult, ExternalTask, LocalTask, TaskStatus } from './client.ts';
+import type { ExternalResult, LocalTask, TaskStatus } from './client.ts';
 
 const REASON_NAMES = { assigned: '担当', authored: '自分のPR', review_requested: 'レビュー依頼' } as const;
-const SOURCES = {
-  github: { name: 'GitHub', eyebrow: 'GITHUB', env: 'INUI_GITHUB_TOKEN', description: '自分が担当のIssue、自分が作ったPR、レビューを依頼されたPR' },
-  backlog: { name: 'Backlog', eyebrow: 'BACKLOG', env: 'INUI_BACKLOG_SPACE・INUI_BACKLOG_API_KEY', description: '自分が担当の未完了の課題' },
-} as const;
 
-/** 連携先の失敗は、コードに応じて設定の確認か再試行を案内する。 */
-function externalError(error: unknown, name: string): string {
-  if (error instanceof ApiError && error.code === 'upstream_auth') return `${name}の認証に失敗しました。トークン・APIキーと権限を確認してください。`;
-  if (error instanceof ApiError && error.code === 'invalid_config') return `${name}の連携設定の形式を確認してください。`;
-  return errorMessage(error, `${name}からの取得`);
+/** GitHubの失敗は、コードに応じて設定の確認か再試行を案内する。 */
+function githubError(error: unknown): string {
+  if (error instanceof ApiError && error.code === 'upstream_auth') return 'GitHubの認証に失敗しました。トークンと権限を確認してください。';
+  if (error instanceof ApiError && error.code === 'invalid_config') return 'GitHubの連携設定（INUI_GITHUB_TOKEN）の形式を確認してください。';
+  return errorMessage(error, 'GitHubからの取得');
 }
 
 const VIEW_KEY = 'inui.tasks.view';
@@ -36,7 +32,7 @@ export default function TaskBoard() {
   const [view, setView] = useState<View>(savedView);
   return <div className="panel task-panel">
     <div className="panel-heading"><p className="eyebrow">TASKS</p><h2>タスク</h2>
-      <p>自分のタスクと、GitHub・Backlogのチケットを並べて確認できます。連携先のチケットは読み取りだけです。</p></div>
+      <p>自分のタスクと、GitHubのIssue・PRを並べて確認できます。GitHubのIssue・PRは読み取りだけです。</p></div>
     <fieldset className="task-view-switch">
       <legend className="visually-hidden">自分のタスクの表示</legend>
       {([['todo', 'Todo'], ['kanban', '看板']] as const).map(([value, label]) =>
@@ -45,8 +41,7 @@ export default function TaskBoard() {
     </fieldset>
     <div className={'task-columns' + (view === 'kanban' ? ' task-columns-kanban' : '')}>
       <LocalTasks view={view} />
-      <ExternalTasks source="github" />
-      <ExternalTasks source="backlog" />
+      <GitHubTasks />
     </div>
   </div>;
 }
@@ -147,7 +142,7 @@ function LocalTasks({ view }: { view: View }) {
 
 /**
  * 自分のタスクを To do・Doing・Done の列に並べる。カードはドラッグで別の列へ移せる。
- * 連携先（GitHub・Backlog）のチケットは看板に載せず、別の欄で参照だけにする（inuiで閉じると管理が二重になるため）。
+ * GitHubのIssue・PRは看板に載せず、別の欄で参照だけにする（inuiで閉じると管理が二重になるため）。
  * キーボードでも操作できるよう、カードに「←」「→」の移動ボタンを付ける。
  */
 function Kanban({ tasks, busy, onMove, onRemove }: {
@@ -200,8 +195,8 @@ function Kanban({ tasks, busy, onMove, onRemove }: {
   </div>;
 }
 
-function ExternalTasks({ source }: { source: ExternalTask['source'] }) {
-  const meta = SOURCES[source];
+/** 自分が担当のIssue、自分が作ったPR、レビューを依頼されたPRを、リンクとして並べる。 */
+function GitHubTasks() {
   const [result, setResult] = useState<ExternalResult>();
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
@@ -212,26 +207,26 @@ function ExternalTasks({ source }: { source: ExternalTask['source'] }) {
     setLoading(true);
     setError('');
     try {
-      const data = parseExternal(await fetchJson('/api/tasks/' + source, { signal: request.signal }), source);
+      const data = parseExternal(await fetchJson('/api/tasks/github', { signal: request.signal }));
       if (request.isCurrent()) setResult(data);
     } catch (failure) {
-      if (request.isCurrent()) setError(externalError(failure, meta.name));
+      if (request.isCurrent()) setError(githubError(failure));
     } finally {
       if (request.isCurrent()) setLoading(false);
     }
-  }, [requests, source, meta.name]);
+  }, [requests]);
   useEffect(() => { void load(); }, [load]);
 
-  return <section className="task-column" aria-labelledby={source + '-tasks-title'}>
-    <p className="eyebrow">{meta.eyebrow}</p>
-    <h3 id={source + '-tasks-title'}>{meta.name}<span className="status-pill task-readonly">参照のみ</span></h3>
-    <p className="task-source-note">{meta.description}</p>
+  return <section className="task-column" aria-labelledby="github-tasks-title">
+    <p className="eyebrow">GITHUB</p>
+    <h3 id="github-tasks-title">GitHub<span className="status-pill task-readonly">参照のみ</span></h3>
+    <p className="task-source-note">自分が担当のIssue、自分が作ったPR、レビューを依頼されたPR</p>
     {result?.configured && <button className="text-button" type="button" disabled={loading} onClick={() => { void load(); }}>再読み込み</button>}
-    {loading && <Loading message={meta.name + 'から読み込んでいます…'} />}
+    {loading && <Loading message="GitHubから読み込んでいます…" />}
     {error && <Feedback message={error} onRetry={() => { void load(); }} />}
     {result && !result.configured && <div className="empty-state" role="status">
-      <p>{meta.name}とは連携していません。</p>
-      <span>アプリの起動前に環境変数 {meta.env} を設定すると表示できます。</span>
+      <p>GitHubとは連携していません。</p>
+      <span>アプリの起動前に環境変数 INUI_GITHUB_TOKEN を設定すると表示できます。</span>
     </div>}
     {result?.configured && result.tasks.length === 0 && <div className="empty-state" role="status"><p>該当するチケットはありません。</p></div>}
     {result?.configured && result.tasks.length > 0 && <ul className="task-list">
@@ -243,8 +238,6 @@ function ExternalTasks({ source }: { source: ExternalTask['source'] }) {
         <p className="task-meta">
           {task.kind === 'pull_request' && <span className="status-pill">PR</span>}
           {task.reasons?.map((reason) => <span key={reason} className="status-pill">{REASON_NAMES[reason]}</span>)}
-          {task.status && <span className="status-pill">{task.status}</span>}
-          {task.dueDate && <span>期限 {task.dueDate.replaceAll('-', '/')}</span>}
         </p>
       </li>)}
     </ul>}

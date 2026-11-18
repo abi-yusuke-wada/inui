@@ -69,7 +69,8 @@ test('質問文は採用済みのものを使い、申請と予定比較の候�
     if (intent.startsWith('unsupported_')) continue;
     assert.equal(Object.hasOwn(current.questions.intent.criteria, intent), false);
   }
-  assert.match(current.questions.intent.criteria.unsupported_feature, /社員の予定の確認など/);
+  assert.match(current.questions.intent.criteria.unsupported_feature, /社員の予定の確認、Backlogの課題の確認など/);
+  assert.doesNotMatch(current.questions.intent.criteria.task_board, /Backlog/);
   assert.match(current.questions.intent.criteria.unsupported_operation, /マージ/);
   assert.match(current.questions.intent.criteria.unsupported_operation, /予定を登録・削除/);
 });

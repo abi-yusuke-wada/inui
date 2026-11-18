@@ -133,10 +133,10 @@ test('PoCの利用経路をJSDOMで操作する（実ブラウザではない）
           task.status = task.done ? 'done' : 'todo';
           return response({ task });
         }
-        if (url.pathname === '/api/tasks/github') return response({ configured: false });
-        if (url.pathname === '/api/tasks/backlog') {
-          return response({ configured: true, tasks: [{ id: 'backlog-1', source: 'backlog', kind: 'backlog_issue', key: 'PROJ-1',
-            title: '顧客向け資料の修正', url: 'https://example.backlog.jp/view/PROJ-1', updatedAt: '2026-11-15T00:00:00Z', status: '処理中' }] });
+        if (url.pathname === '/api/tasks/github') {
+          return response({ configured: true, tasks: [{ id: 'github-1', source: 'github', kind: 'pull_request', key: 'example/inui#12',
+            title: 'ADRを更新する', url: 'https://github.com/example/inui/pull/12', updatedAt: '2026-11-15T00:00:00Z',
+            reasons: ['review_requested'] }] });
         }
         throw new Error('想定外のAPI: ' + url.pathname);
       };
@@ -146,10 +146,12 @@ test('PoCの利用経路をJSDOMで操作する（実ブラウザではない）
         await click('画面を開く');
         await waitFor(() => heading('自分のタスク') && document.body.textContent?.includes('タスクはまだありません') === true,
           'タスク画面が開きませんでした。');
-        await waitFor(() => document.body.textContent?.includes('GitHubとは連携していません') === true, 'GitHubの未設定を案内しませんでした。');
-        await waitFor(() => document.body.textContent?.includes('PROJ-1') === true, 'Backlogの課題が表示されませんでした。');
-        const link = [...document.querySelectorAll('a')].find((node) => node.textContent?.includes('PROJ-1'));
+        await waitFor(() => document.body.textContent?.includes('example/inui#12') === true, 'GitHubのPRが表示されませんでした。');
+        const link = [...document.querySelectorAll('a')].find((node) => node.textContent?.includes('example/inui#12'));
         assert.equal(link?.getAttribute('rel'), 'noopener noreferrer');
+        assert.match(link?.closest('li')?.textContent ?? '', /PR.*レビュー依頼/);
+        // 連携先はGitHubだけで、Backlogの欄は出さない。
+        assert.equal(document.body.textContent?.includes('Backlog'), false);
         await change('追加するタスク', 'ADRの下書きを書く');
         const form = field('追加するタスク').closest('form');
         assert.ok(form);
@@ -186,7 +188,7 @@ test('PoCの利用経路をJSDOMで操作する（実ブラウザではない）
           task.done = body.status === 'done';
           return response({ task });
         }
-        if (url.pathname === '/api/tasks/github' || url.pathname === '/api/tasks/backlog') return response({ configured: false });
+        if (url.pathname === '/api/tasks/github') return response({ configured: false });
         throw new Error('想定外のAPI: ' + url.pathname);
       };
       dom.window.localStorage.removeItem('inui.tasks.view');
@@ -197,13 +199,13 @@ test('PoCの利用経路をJSDOMで操作する（実ブラウザではない）
         await waitFor(() => document.body.textContent?.includes('設計を書く') === true, 'タスクを表示しませんでした。');
         assert.equal(button('Todo').getAttribute('aria-pressed'), 'true');
         assert.equal(column('To do'), null);
-        // GitHub・Backlogの欄は参照のみで、看板には載せない。
-        assert.equal(document.querySelectorAll('.task-readonly').length, 2);
+        // GitHubの欄は参照のみで、看板には載せない。
+        assert.equal(document.querySelectorAll('.task-readonly').length, 1);
+        assert.match(document.body.textContent ?? '', /GitHubとは連携していません/);
         await click('看板');
         assert.equal(dom.window.localStorage.getItem('inui.tasks.view'), 'kanban');
         assert.match(column('To do')?.textContent ?? '', /設計を書く/);
         assert.match(column('Doing')?.textContent ?? '', /レビューする/);
-        assert.equal(document.body.textContent?.includes('Backlog（'), false);
         const move = [...document.querySelectorAll('button')].find((node) => node.getAttribute('aria-label') === '「設計を書く」をDoingへ移動');
         assert.ok(move);
         await react.act(async () => move.click());
@@ -337,7 +339,7 @@ test('PoCの利用経路をJSDOMで操作する（実ブラウザではない）
       const fetchImpl: typeof fetch = async (input) => {
         const url = new URL(String(input), 'http://localhost');
         if (url.pathname === '/api/tasks/local') return response({ tasks: [] });
-        if (url.pathname === '/api/tasks/github' || url.pathname === '/api/tasks/backlog') return response({ configured: false });
+        if (url.pathname === '/api/tasks/github') return response({ configured: false });
         if (url.pathname !== '/api/intent') throw new Error('想定外のAPI: ' + url.pathname);
         calls++;
         if (calls === 1) return response({ kind: 'notice', intent: 'clarify', message: '目的を特定できませんでした。' });
