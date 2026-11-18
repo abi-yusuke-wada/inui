@@ -331,7 +331,7 @@ test('PoCの利用経路をJSDOMで操作する（実ブラウザではない）
       });
     });
 
-    await suite.test('再送信すると、前に表示した案内や業務画面を消してから新しい結果を表示する', async () => {
+    await suite.test('最初は中央で入力し、画面を開いた後は右下のパネルから送り直す（履歴を残し、前の画面は送信時に消す）', async () => {
       const pending: ((value: Response) => void)[] = [];
       let calls = 0;
       const fetchImpl: typeof fetch = async (input) => {
@@ -343,26 +343,61 @@ test('PoCの利用経路をJSDOMで操作する（実ブラウザではない）
         if (calls === 1) return response({ kind: 'notice', intent: 'clarify', message: '目的を特定できませんでした。' });
         return await new Promise<Response>((resolve) => { pending.push(resolve); });
       };
+      const toggle = () => document.querySelector<HTMLButtonElement>('.chat-toggle');
+      const entries = () => [...document.querySelectorAll('.chat-entry')].map(visibleText);
       await withApp('/', fetchImpl, async () => {
+        // 最初は入力欄を画面の中央に出し、右下のボタンはまだ出さない。
+        assert.equal(heading('今日は、何をしますか？'), true);
+        assert.equal(toggle(), null);
         await change('したいこと', '開いて');
         await click('画面を開く');
         await waitFor(() => heading('もう少し詳しく教えてください'), '曖昧な入力の案内を表示しませんでした。');
+        assert.equal(heading('ほかに、したいことはありますか？'), true);
+        assert.equal(field('したいこと').value, '', '送信した文は入力欄から消して履歴に残す');
         await change('したいこと', '自分のタスクを確認したい');
         await click('画面を開く');
-        // 結果を待つあいだも、前の案内は表示しない。見出しは送信後の表示のまま。
-        assert.equal(heading('もう少し詳しく教えてください'), false);
-        assert.equal(heading('ほかに、したいことはありますか？'), true);
+        // 結果を待つあいだも、前のやり取りは履歴として残す。
+        assert.equal(heading('もう少し詳しく教えてください'), true);
         assert.match(document.body.textContent ?? '', /入力を確認しています/);
         await react.act(async () => pending.shift()?.(response({ kind: 'screen', intent: 'task_board', ui: 'task_board' })));
         await waitFor(() => heading('自分のタスク'), 'タスク画面を表示しませんでした。');
-        // 業務画面を開いた後の再送信でも、前の画面は送信した時点で消す。
+        // 業務画面を開いたら、入力欄は右下のボタンへしまい、画面全体を業務画面に使う。
+        assert.equal(document.getElementById('intent-text'), null);
+        assert.ok(document.querySelector('.app-shell.app-shell-full'));
+        assert.equal(document.querySelector('.site-footer'), null);
+        assert.equal(toggle()?.getAttribute('aria-expanded'), 'false');
+        await click('したいことを入力');
+        assert.equal(toggle()?.getAttribute('aria-expanded'), 'true');
+        assert.equal(document.activeElement?.id, 'intent-text');
+        assert.deepEqual(entries(), ['あなた：開いて', 'もう少し詳しく教えてください目的を特定できませんでした。',
+          'あなた：自分のタスクを確認したい', '「タスク」を開きました。']);
+        // パネルから送り直しても、前の業務画面は送信した時点で消す。
         await change('したいこと', 'お腹がすいた');
         await click('画面を開く');
         assert.equal(heading('自分のタスク'), false);
-        assert.equal(heading('タスク'), false);
+        assert.ok(document.querySelector('.workspace-empty'));
         await react.act(async () => pending.shift()?.(response({ kind: 'notice', intent: 'unsupported_feature', message: '対象外です。' })));
         await waitFor(() => heading('この機能はまだ利用できません'), '新しい案内を表示しませんでした。');
-        assert.equal(calls, 3);
+        // 失敗したときは、同じ文をもう一度送れる。
+        await change('したいこと', 'READMEを読みたい');
+        await click('画面を開く');
+        await react.act(async () => pending.shift()?.(response({ error: { code: 'unavailable' } }, 503)));
+        await waitFor(() => document.querySelector('.chat-error') !== null, '失敗を表示しませんでした。');
+        await click('もう一度試す');
+        assert.equal(entries().filter((entry) => entry === 'あなた：READMEを読みたい').length, 2);
+        await react.act(async () => pending.shift()?.(response({ kind: 'screen', intent: 'markdown_view', ui: 'markdown_view' })));
+        await waitFor(() => heading('Markdownを読む'), '再試行でMarkdown表示を開きませんでした。');
+        assert.equal(toggle()?.getAttribute('aria-expanded'), 'false', '画面を開いたらパネルを閉じる');
+        assert.equal(calls, 5);
+        // 日本語入力の変換を取り消すEscではパネルを閉じず、変換していないEscで閉じて右下のボタンへ戻る。
+        await click('したいことを入力');
+        const pressEscape = (isComposing: boolean) => react.act(async () => document.getElementById('intent-text')?.dispatchEvent(
+          new dom.window.KeyboardEvent('keydown', { key: 'Escape', bubbles: true, isComposing })));
+        await pressEscape(true);
+        assert.ok(document.getElementById('intent-text'));
+        await pressEscape(false);
+        assert.equal(document.getElementById('intent-text'), null);
+        assert.equal(document.activeElement, toggle());
       });
     });
 
