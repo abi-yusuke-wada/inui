@@ -79,12 +79,12 @@ test('名前・描画内容の形・ID・余分キーを検証し、不正な内
 });
 
 test('Excalidrawの背景色の入力欄が受け付ける色（16進・色名・色の関数）を保存できる', async (t) => {
-  const { send, store } = app(t);
+  const { send, store } = await app(t);
   const { board } = await (await send('POST', '/whiteboards', { name: '背景色' })).json();
   for (const color of ['#fff', '#ffeeaa80', 'transparent', 'red', 'rgb(255, 0, 0)', 'rgba(0,0,0,0.5)', 'hsl(120 50% 50% / 0.4)']) {
     const scene = { ...SCENE, appState: { viewBackgroundColor: color } };
     assert.equal((await send('PATCH', '/whiteboards/' + board.id, { scene })).status, 200, color);
-    assert.equal(store.get(board.id)?.scene.appState.viewBackgroundColor, color);
+    assert.equal((await store.get(board.id))?.scene.appState.viewBackgroundColor, color);
   }
 });
 
