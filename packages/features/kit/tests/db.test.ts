@@ -185,3 +185,19 @@ test('upが失敗しても、別のプロセスが先に適用していれば適
   const broken: Migration = { id: 'tags/001', up: async () => { throw new Error('前提が崩れた'); } };
   await assert.rejects(migrate(first, [broken]), /前提が崩れた/);
 });
+
+test('トランザクションの開始・確定・取り消しは、文として受け付けない', async (t) => {
+  const db = memoryDatabase(t);
+  await db.run('CREATE TABLE notes (id TEXT PRIMARY KEY) STRICT');
+  for (const sql of ['BEGIN', 'COMMIT', 'end transaction', 'ROLLBACK', 'SAVEPOINT s1', 'RELEASE s1', '-- 確定する\n  COMMIT', '/* c */ COMMIT;']) {
+    await assert.rejects(db.run(sql), /batchに任せて/, sql);
+    await assert.rejects(db.batch([{ sql: "INSERT INTO notes VALUES ('a')" }, { sql }]), /batchに任せて/, sql);
+  }
+  // 途中で確定されず、まとめて取り消されている。
+  assert.deepEqual(await db.query('SELECT id FROM notes'), []);
+  // マイグレーションの途中で確定させて、記録だけが残ることもない。
+  const committing: Migration = { id: 'broken/001', up: ['COMMIT', 'CREATE TABLE broken ('] };
+  await assert.rejects(migrate(db, [committing]), /batchに任せて/);
+  assert.deepEqual(await db.query('SELECT id FROM schema_migrations'), []);
+  assert.deepEqual(await tables(db), ['notes', 'schema_migrations']);
+});

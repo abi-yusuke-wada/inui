@@ -28,12 +28,16 @@ export interface Database {
 
 // 準備した1文の後ろに残ってよいのは、空白とコメントだけ。
 const TRAILING = /--[^\n]*|\/\*[\s\S]*?\*\//g;
+// トランザクションの開始・確定・取り消しの文（先頭の空白とコメントは読み飛ばす）。
+const TRANSACTION_CONTROL = /^(?:\s+|--[^\n]*(?:\n|$)|\/\*[\s\S]*?\*\/)*(?:BEGIN|COMMIT|END|ROLLBACK|SAVEPOINT|RELEASE)\b/i;
 
 /**
  * 1つの文だけを準備する。node:sqliteは最初の文だけを準備し、2つ目以降を黙って捨てるため、
- * 残りがあれば失敗させる（Tursoへの要求も1要素1文になる）。
+ * 残りがあれば失敗させる（Tursoへの要求も1要素1文になる）。トランザクションの区切りはbatchだけが行い、
+ * 文の中で確定・取り消しをさせない（途中で確定されると、まとめて確定する約束が守れないため）。
  */
 function prepareOne(db: DatabaseSync, sql: string): StatementSync {
+  if (TRANSACTION_CONTROL.test(sql)) throw new Error('トランザクションの開始・確定・取り消しはbatchに任せてください。');
   const statement = db.prepare(sql);
   const start = sql.indexOf(statement.sourceSQL);
   if (start < 0 || sql.slice(start + statement.sourceSQL.length).replace(TRAILING, '').trim() !== '') {
