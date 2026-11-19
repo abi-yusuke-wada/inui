@@ -5,6 +5,7 @@ import { DecisionError } from '@inui/core';
 import { TaskStore } from '@inui/feature-tasks/server';
 import { BoardStore } from '@inui/feature-whiteboard/server';
 import { createApp } from '../src/api.ts';
+import { openAppDatabase } from '../src/db.ts';
 import { createLogger } from '../src/logger.ts';
 
 const ORIGIN = 'http://127.0.0.1:8766';
@@ -19,21 +20,17 @@ function captureLogger() {
   });
   return { logger, records };
 }
-function memoryStore(t: TestContext) {
-  const store = new TaskStore(':memory:');
-  t.after(() => store.close());
-  return store;
+/** メモリ上のDBにアプリと同じマイグレーションで表を作り、タスクとボードの保存先を返す。 */
+async function memoryStores(t: TestContext) {
+  const { db } = await openAppDatabase(':memory:');
+  t.after(() => db.close());
+  return { taskStore: new TaskStore(db), boardStore: new BoardStore(db) };
 }
-function memoryBoards(t: TestContext) {
-  const boards = new BoardStore(':memory:');
-  t.after(() => boards.close());
-  return boards;
-}
-function harness(t: TestContext, routeIntent: (text: string) => Promise<unknown> = async () => (
+async function harness(t: TestContext, routeIntent: (text: string) => Promise<unknown> = async () => (
   { kind: 'screen', intent: 'task_board', ui: 'task_board' }
 )) {
-  const store = memoryStore(t);
-  const app = createApp({ taskStore: store, boardStore: memoryBoards(t), routeIntent });
+  const { taskStore: store, boardStore } = await memoryStores(t);
+  const app = createApp({ taskStore: store, boardStore, routeIntent });
   const send = (method: string, path: string, body?: unknown) => app.request(ORIGIN + path, {
     method, headers: JSON_HEADERS, ...(body === undefined ? {} : { body: JSON.stringify(body) }),
   });
@@ -48,12 +45,12 @@ function harness(t: TestContext, routeIntent: (text: string) => Promise<unknown>
 
 test('Intentでタスク画面を開くだけでは保存せず、明示した追加・完了・削除だけを保存する', async (t) => {
   let input = '';
-  const h = harness(t, async (text) => { input = text; return { kind: 'screen', intent: 'task_board', ui: 'task_board' }; });
+  const h = await harness(t, async (text) => { input = text; return { kind: 'screen', intent: 'task_board', ui: 'task_board' }; });
   const opened = await h.post('/api/intent', { text: ' やることをメモしておきたい ' });
   assert.equal(opened.status, 200);
   assert.deepEqual(await opened.json(), { kind: 'screen', intent: 'task_board', ui: 'task_board' });
   assert.equal(input, 'やることをメモしておきたい');
-  assert.equal(h.store.list().length, 0);
+  assert.equal((await h.store.list()).length, 0);
   const created = await h.post('/api/tasks/local', { title: '  ADRの下書きを書く  ' });
   assert.equal(created.status, 201);
   const { task } = await created.json();
@@ -62,22 +59,22 @@ test('Intentでタスク画面を開くだけでは保存せず、明示した�
   assert.deepEqual((await (await h.get('/api/tasks/local')).json()).tasks, [task]);
   const doing = await h.patch('/api/tasks/local/' + task.id, { status: 'doing' });
   assert.equal(doing.status, 200);
-  assert.deepEqual([(await doing.json()).task.status, h.store.list()[0]?.done], ['doing', false]);
+  assert.deepEqual([(await doing.json()).task.status, (await h.store.list())[0]?.done], ['doing', false]);
   const completed = await h.patch('/api/tasks/local/' + task.id, { done: true });
   assert.equal(completed.status, 200);
-  assert.deepEqual([(await completed.json()).task.status, h.store.list()[0]?.status], ['done', 'done']);
+  assert.deepEqual([(await completed.json()).task.status, (await h.store.list())[0]?.status], ['done', 'done']);
   assert.equal((await h.remove('/api/tasks/local/' + task.id)).status, 200);
-  assert.equal(h.store.list().length, 0);
+  assert.equal((await h.store.list()).length, 0);
   assert.equal((await h.remove('/api/tasks/local/' + task.id)).status, 404);
 });
 
 test('タスクの件名・完了状態・ID・余分キーを検証し、不正な入力を保存しない', async (t) => {
-  const h = harness(t);
+  const h = await harness(t);
   for (const body of [{ title: '' }, { title: ' '.repeat(3) }, { title: 'a'.repeat(201) }, { title: 42 },
     { title: '件名', done: true }, { title: '件名', tool: 'delete_all' }, [], null]) {
     assert.equal((await h.post('/api/tasks/local', body)).status, 400);
   }
-  assert.equal(h.store.list().length, 0);
+  assert.equal((await h.store.list()).length, 0);
   const { task } = await (await h.post('/api/tasks/local', { title: 'a'.repeat(200) })).json();
   for (const body of [{ done: 'true' }, { done: 1 }, { done: true, title: '変更' }, {}, { status: 'backlog' },
     { status: 'closed' }, { status: 'done', done: true }, { status: ['done'] }]) {
@@ -86,7 +83,7 @@ test('タスクの件名・完了状態・ID・余分キーを検証し、不正
   assert.equal((await h.patch('/api/tasks/local/not-a-uuid', { done: true })).status, 400);
   assert.equal((await h.patch('/api/tasks/local/00000000-0000-4000-8000-000000000000', { done: true })).status, 404);
   assert.equal((await h.get('/api/tasks/local?status=done')).status, 400);
-  assert.equal(h.store.list()[0]?.done, false);
+  assert.equal((await h.store.list())[0]?.done, false);
   for (const text of ['', ' '.repeat(4), 'a'.repeat(2001), 42]) {
     assert.equal((await h.post('/api/intent', { text })).status, 400);
   }
@@ -101,11 +98,11 @@ test('未許可のIntent・UI・Toolや削除した申請画面を拒否して�
     { kind: 'screen', intent: 'task_board', ui: 'task_board', tool: 'save' },
     { kind: 'notice', intent: 'other', message: '任意' },
   ]) {
-    const h = harness(t, async () => decision);
+    const h = await harness(t, async () => decision);
     assert.equal((await h.post('/api/intent', { text: '自分のタスクを確認したい' })).status, 502);
-    assert.equal(h.store.list().length, 0);
+    assert.equal((await h.store.list()).length, 0);
   }
-  const h = harness(t);
+  const h = await harness(t);
   for (const path of ['/api/applications', '/api/applications/leave']) {
     assert.equal((await h.get(path)).status, 404);
   }
@@ -115,23 +112,23 @@ test('推論の失敗を400/502/503/504へ分け、生の例外を表示しな�
   for (const [code, expected] of [
     ['invalid_input', 400], ['invalid_response', 502], ['unavailable', 503], ['timeout', 504],
   ] as const) {
-    const h = harness(t, async () => { throw new DecisionError(code); });
+    const h = await harness(t, async () => { throw new DecisionError(code); });
     const response = await h.post('/api/intent', { text: 'タスク' });
     assert.equal(response.status, expected);
     assert.equal((await response.json()).error.code, code);
   }
-  const h = harness(t, async () => { throw new Error('secret-token-value'); });
+  const h = await harness(t, async () => { throw new Error('secret-token-value'); });
   const response = await h.post('/api/intent', { text: 'タスク' });
   assert.equal(response.status, 503);
   assert.ok(!(await response.text()).includes('secret-token-value'));
 });
 
 test('初回失敗と再試行成功を要求ID・状態・時間で追跡し、入力や例外をログへ含めない', async (t) => {
-  const store = memoryStore(t);
+  const { taskStore: store, boardStore } = await memoryStores(t);
   const { logger, records } = captureLogger();
   const requestIds: string[] = [];
   let calls = 0;
-  const app = createApp({ taskStore: store, boardStore: memoryBoards(t), logger, routeIntent: async () => {
+  const app = createApp({ taskStore: store, boardStore, logger, routeIntent: async () => {
     calls++;
     if (calls === 1) throw new DecisionError('timeout');
     if (calls === 2) throw new Error('test-only-private-exception');
@@ -170,11 +167,11 @@ test('初回失敗と再試行成功を要求ID・状態・時間で追跡し、
   assert.equal((await app.request(ORIGIN + '/api/tasks/local')).status, 200);
   assert.equal(records.length, 5);
   assert.equal(records[4]?.event, 'http_request');
-  assert.equal(store.list().length, 0);
+  assert.equal((await store.list()).length, 0);
 });
 
 test('ログ出力の失敗でIntentの成功応答を失敗に変更しない', async (t) => {
-  const app = createApp({ taskStore: memoryStore(t), boardStore: memoryBoards(t),
+  const app = createApp({ ...await memoryStores(t),
     routeIntent: async () => ({ kind: 'screen', intent: 'markdown_view', ui: 'markdown_view' }),
     logger: createLogger({ write: () => { throw new Error('test-only-diagnostic-failure'); } }),
   });
@@ -187,9 +184,9 @@ test('ログ出力の失敗でIntentの成功応答を失敗に変更しない',
 });
 
 test('APIと静的配信の完了を区別し、URL・ヘッダー・タスクの内容をログへ出さない', async (t) => {
-  const store = memoryStore(t);
+  const { taskStore: store, boardStore } = await memoryStores(t);
   const { logger, records } = captureLogger();
-  const app = createApp({ taskStore: store, boardStore: memoryBoards(t), logger });
+  const app = createApp({ taskStore: store, boardStore, logger });
   app.get('/', (c) => c.text('テスト用画面'));
   const privateDetail = 'test-only-private-request-data';
   const requests = [
@@ -236,13 +233,13 @@ test('APIと静的配信の完了を区別し、URL・ヘッダー・タスク�
   assert.equal(records.at(-1)?.route, '/api/tasks/local/:id');
   assert.equal(records.at(-1)?.method, 'PATCH');
   assert.equal(JSON.stringify(records).includes(task.id), false);
-  assert.equal(store.list().length, 1);
+  assert.equal((await store.list()).length, 1);
   assert.equal(JSON.stringify(records).includes(privateDetail), false);
   assert.equal(JSON.stringify(records).includes('Authorization'), false);
 });
 
 test('loopback Host・同一Origin・JSON・本文上限を強制し、CORSを許可しない', async (t) => {
-  const h = harness(t);
+  const h = await harness(t);
   for (const base of ['http://127.0.0.1:3000', 'http://localhost:3000', 'http://external.example:8766']) {
     assert.equal((await h.app.request(base + '/api/tasks/local')).status, 403);
   }
@@ -265,12 +262,12 @@ test('loopback Host・同一Origin・JSON・本文上限を強制し、CORSを�
   assert.equal((await h.app.request(ORIGIN + '/api/intent', { method: 'POST', headers: { Origin: ORIGIN, 'Content-Type': 'application/json' }, body: '{' })).status, 400);
   assert.equal((await h.post('/api/intent', { text: 'a'.repeat(17000) })).status, 413);
   assert.equal((await h.post('/api/tasks/local', { title: 'a'.repeat(17000) })).status, 413);
-  assert.equal(h.store.list().length, 0);
+  assert.equal((await h.store.list()).length, 0);
 });
 
 test('ポートを変更しても選択したloopback Hostと同一Originだけを許可する', async (t) => {
-  const store = memoryStore(t);
-  const app = createApp({ taskStore: store, boardStore: memoryBoards(t), port: 18766,
+  const { taskStore: store, boardStore } = await memoryStores(t);
+  const app = createApp({ taskStore: store, boardStore, port: 18766,
     routeIntent: async () => ({ kind: 'screen', intent: 'task_board', ui: 'task_board' }) });
   const origin = 'http://127.0.0.1:18766';
   for (const base of [origin, 'http://localhost:18766']) {
@@ -292,11 +289,11 @@ test('ポートを変更しても選択したloopback Hostと同一Originだけ�
     assert.equal(response.status, 403);
     assert.equal(response.headers.get('Access-Control-Allow-Origin'), null);
   }
-  assert.equal(store.list().length, 0);
+  assert.equal((await store.list()).length, 0);
 });
 
 test('廃止した予定比較の判定は受け付けず、社員・予定のAPIも提供しない', async (t) => {
-  const h = harness(t, async () => ({ kind: 'screen', intent: 'schedule_compare', ui: 'schedule_compare' }));
+  const h = await harness(t, async () => ({ kind: 'screen', intent: 'schedule_compare', ui: 'schedule_compare' }));
   const response = await h.post('/api/intent', { text: '山田太郎さんと佐藤花子さんの予定を確認したい' });
   assert.equal(response.status, 502);
   assert.equal(response.headers.get('X-Error-Code'), 'invalid_response');
@@ -304,16 +301,16 @@ test('廃止した予定比較の判定は受け付けず、社員・予定のAP
     assert.equal((await h.get(path)).status, 404);
   }
   // 画面の判定に人名などの引数を付けない。
-  const tasks = harness(t);
+  const tasks = await harness(t);
   assert.deepEqual(await (await tasks.post('/api/intent', { text: '山田さんのタスク' })).json(),
     { kind: 'screen', intent: 'task_board', ui: 'task_board' });
 });
 
 test('DBの例外本文をHTTP応答へ含めない', async () => {
-  const store = new TaskStore(':memory:');
+  const { db } = await openAppDatabase(':memory:');
   const { logger, records } = captureLogger();
-  const app = createApp({ taskStore: store, boardStore: new BoardStore(':memory:'), logger, routeIntent: async () => null });
-  store.close();
+  const app = createApp({ taskStore: new TaskStore(db), boardStore: new BoardStore(db), logger, routeIntent: async () => null });
+  await db.close();
   const response = await app.request(ORIGIN + '/api/tasks/local');
   assert.equal(response.status, 500);
   assert.deepEqual(await response.json(), { error: { code: 'internal_error', message: '処理を完了できませんでした。画面からやり直してください。' } });

@@ -3,6 +3,7 @@ import { serve } from '@hono/node-server';
 import { readTaskSources, TaskStore } from '@inui/feature-tasks/server';
 import { BoardStore } from '@inui/feature-whiteboard/server';
 import { createApp } from './api.ts';
+import { openAppDatabase } from './db.ts';
 import { APP_NAME, appPort, buildId, DEFAULT_DB_PATH } from './local-config.ts';
 import { createLogger, logLevel } from './logger.ts';
 import type { Logger } from './logger.ts';
@@ -20,12 +21,21 @@ const FONT_FAMILY = /^[A-Za-z]{1,40}$/;
 const FONT_FILE = /^[A-Za-z0-9_-]{1,120}\.woff2$/;
 
 /** 起動失敗も生の例外を表示せず、IPv4 loopbackで開始する。 */
-function start(logger: Logger, build: string): void {
+async function start(logger: Logger, build: string): Promise<void> {
   const port = appPort();
-  const store = new TaskStore(DEFAULT_DB_PATH);
-  const boards = new BoardStore(DEFAULT_DB_PATH);
+  // DBを開けない・表を更新できない場合も、例外の本文は出さずに固定のコードだけを記録する。
+  const opened = await openAppDatabase(DEFAULT_DB_PATH).catch(() => undefined);
+  if (!opened) {
+    logger.error('server_failed', { error_code: 'db_setup_failed' });
+    process.exitCode = 1;
+    return;
+  }
+  const { db } = opened;
+  if (opened.applied.length > 0) logger.info('db_migrated');
   // 連携先の認証情報は環境変数からだけ読み、値はログへ出さない。
-  const app = createApp({ taskStore: store, boardStore: boards, taskSources: readTaskSources(process.env), port, logger });
+  const app = createApp({
+    taskStore: new TaskStore(db), boardStore: new BoardStore(db), taskSources: readTaskSources(process.env), port, logger,
+  });
   for (const [route, [filename, contentType]] of Object.entries(assets)) {
     app.get(route, async (c) => {
       const content = await readFile(new URL(`./public/${filename}`, import.meta.url));
@@ -59,33 +69,37 @@ function start(logger: Logger, build: string): void {
     logger.info('server_started', { port });
   });
   let closing = false;
+  /** DBを閉じ、閉じられたかを返す。失敗は固定のコードだけを記録する。 */
+  async function closeDatabase(): Promise<boolean> {
+    try {
+      await db.close();
+      return true;
+    } catch {
+      logger.error('server_failed', { port, error_code: 'shutdown_failed' });
+      process.exitCode = 1;
+      return false;
+    }
+  }
   function close(): void {
     if (closing) return;
     closing = true;
-    server.close(() => {
-      try {
-        store.close();
-        boards.close();
-        logger.info('server_stopped', { port });
-      } catch {
-        logger.error('server_failed', { port, error_code: 'shutdown_failed' });
-        process.exitCode = 1;
-      }
+    server.close(async () => {
+      if (await closeDatabase()) logger.info('server_stopped', { port });
     });
   }
   process.once('SIGINT', close);
   process.once('SIGTERM', close);
-  server.on('error', () => {
+  server.on('error', async () => {
     logger.error('server_failed', { port, error_code: 'listen_failed' });
     if (!closing) {
       closing = true;
-      try { store.close(); boards.close(); } catch { logger.error('server_failed', { port, error_code: 'shutdown_failed' }); }
+      await closeDatabase();
     }
     process.exitCode = 1;
   });
 }
 const logger = createLogger({ level: logLevel(process.env.LOG_LEVEL) });
-try { start(logger, await buildId(new URL('./', import.meta.url))); } catch {
+try { await start(logger, await buildId(new URL('./', import.meta.url))); } catch {
   logger.error('server_failed', { error_code: 'startup_failed' });
   process.exitCode = 1;
 }

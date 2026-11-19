@@ -5,6 +5,7 @@
   "type": "module",
   "exports": {
     "./server": "./src/server.ts",
+    "./store": "./src/store.ts",
     "./client": "./src/client.ts",
     "./web": "./src/Whiteboard.tsx",
     "./styles.css": "./src/styles.css"

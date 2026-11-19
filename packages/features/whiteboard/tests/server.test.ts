@@ -4,9 +4,11 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import test from 'node:test';
 import type { TestContext } from 'node:test';
+import { DatabaseSync } from 'node:sqlite';
 import { Hono } from 'hono';
+import { migrate, openLocalDatabase } from '@inui/feature-kit/db';
 import { RequestError } from '@inui/feature-kit/server';
-import { BoardStore, createWhiteboardRoutes } from '../src/server.ts';
+import { BoardStore, boardMigrations, createWhiteboardRoutes } from '../src/server.ts';
 
 const SCENE = {
   elements: [{ id: 'e1', type: 'freedraw', version: 3, points: [[0, 0], [10, 12]] }],
@@ -14,10 +16,12 @@ const SCENE = {
   appState: { viewBackgroundColor: '#ffffff' },
 };
 
-function app(t: TestContext) {
+async function app(t: TestContext) {
   let tick = 0;
-  const store = new BoardStore(':memory:', { now: () => new Date(Date.UTC(2026, 10, 17, 0, 0, tick++)) });
-  t.after(() => store.close());
+  const db = openLocalDatabase(':memory:');
+  t.after(() => db.close());
+  await migrate(db, boardMigrations);
+  const store = new BoardStore(db, { now: () => new Date(Date.UTC(2026, 10, 17, 0, 0, tick++)) });
   const root = new Hono();
   root.route('/api', createWhiteboardRoutes({ store }));
   root.onError((error, c) => error instanceof RequestError
@@ -30,7 +34,7 @@ function app(t: TestContext) {
 }
 
 test('ボードを作成・保存・再読み込み・改名・削除し、一覧は更新の新しい順に返す', async (t) => {
-  const { send } = app(t);
+  const { send } = await app(t);
   const created = await send('POST', '/whiteboards', { name: '  設計のラフ  ' });
   assert.equal(created.status, 201);
   const { board } = await created.json();
@@ -52,7 +56,7 @@ test('ボードを作成・保存・再読み込み・改名・削除し、一�
 });
 
 test('名前・描画内容の形・ID・余分キーを検証し、不正な内容を保存しない', async (t) => {
-  const { send, store } = app(t);
+  const { send, store } = await app(t);
   for (const body of [{ name: '' }, { name: ' ' }, { name: 'a'.repeat(101) }, { name: 1 }, { name: 'x', scene: SCENE }]) {
     assert.equal((await send('POST', '/whiteboards', body)).status, 400);
   }
@@ -71,21 +75,21 @@ test('名前・描画内容の形・ID・余分キーを検証し、不正な内
   assert.equal((await send('PATCH', '/whiteboards/not-a-uuid', { name: 'x' })).status, 400);
   assert.equal((await send('PATCH', '/whiteboards/00000000-0000-4000-8000-000000000000', { name: 'x' })).status, 404);
   assert.equal((await send('GET', '/whiteboards?all=1')).status, 400);
-  assert.deepEqual(store.get(board.id)?.scene, { elements: [], files: {}, appState: {} });
+  assert.deepEqual((await store.get(board.id))?.scene, { elements: [], files: {}, appState: {} });
 });
 
 test('Excalidrawの背景色の入力欄が受け付ける色（16進・色名・色の関数）を保存できる', async (t) => {
-  const { send, store } = app(t);
+  const { send, store } = await app(t);
   const { board } = await (await send('POST', '/whiteboards', { name: '背景色' })).json();
   for (const color of ['#fff', '#ffeeaa80', 'transparent', 'red', 'rgb(255, 0, 0)', 'rgba(0,0,0,0.5)', 'hsl(120 50% 50% / 0.4)']) {
     const scene = { ...SCENE, appState: { viewBackgroundColor: color } };
     assert.equal((await send('PATCH', '/whiteboards/' + board.id, { scene })).status, 200, color);
-    assert.equal(store.get(board.id)?.scene.appState.viewBackgroundColor, color);
+    assert.equal((await store.get(board.id))?.scene.appState.viewBackgroundColor, color);
   }
 });
 
 test('画像を含む描画も上限までは保存し、上限を超える本文は受け付けない', async (t) => {
-  const { send } = app(t);
+  const { send } = await app(t);
   const { board } = await (await send('POST', '/whiteboards', { name: '画像' })).json();
   const image = { id: 'f1', mimeType: 'image/png', dataURL: 'data:image/png;base64,' + 'A'.repeat(2 * 1024 * 1024), created: 1 };
   const scene = { ...SCENE, files: { f1: image } };
@@ -94,18 +98,40 @@ test('画像を含む描画も上限までは保存し、上限を超える本�
   assert.equal((await send('PATCH', '/whiteboards/' + board.id, { scene: huge })).status, 413);
 });
 
-test('実ファイルを開き直しても保存したボードが残り、resetで空に戻る', (t) => {
+test('実ファイルを開き直しても保存したボードが残り、resetで空に戻る', async (t) => {
   const directory = mkdtempSync(join(tmpdir(), 'inui-boards-'));
   t.after(() => rmSync(directory, { recursive: true, force: true }));
   const path = join(directory, 'app.sqlite');
-  const first = new BoardStore(path);
-  const board = first.create('ラフ');
-  first.update(board.id, { scene: SCENE });
-  first.close();
-  const second = new BoardStore(path);
+  const first = openLocalDatabase(path);
+  let board: Awaited<ReturnType<BoardStore['create']>>;
   try {
-    assert.deepEqual(second.get(board.id)?.scene, SCENE);
-    second.reset();
-    assert.deepEqual(second.list(), []);
-  } finally { second.close(); }
+    await migrate(first, boardMigrations);
+    const store = new BoardStore(first);
+    board = await store.create('ラフ');
+    await store.update(board.id, { scene: SCENE });
+  } finally { await first.close(); }
+  const second = openLocalDatabase(path);
+  try {
+    assert.deepEqual(await migrate(second, boardMigrations), []);
+    const reopened = new BoardStore(second);
+    assert.deepEqual((await reopened.get(board.id))?.scene, SCENE);
+    await reopened.reset();
+    assert.deepEqual(await reopened.list(), []);
+  } finally { await second.close(); }
+});
+
+test('マイグレーションの仕組みより前に作られたボードの表は、変更せずに引き継ぐ', async (t) => {
+  const directory = mkdtempSync(join(tmpdir(), 'inui-boards-'));
+  t.after(() => rmSync(directory, { recursive: true, force: true }));
+  const path = join(directory, 'app.sqlite');
+  const old = new DatabaseSync(path);
+  old.exec(`CREATE TABLE whiteboards (id TEXT PRIMARY KEY, name TEXT NOT NULL CHECK(length(name) BETWEEN 1 AND 100),
+      scene TEXT NOT NULL CHECK(json_valid(scene)), updated_at TEXT NOT NULL) STRICT;
+    INSERT INTO whiteboards VALUES ('b1', 'ラフ', '${JSON.stringify(SCENE)}', '2026-11-17T00:00:00.000Z');`);
+  old.close();
+  const db = openLocalDatabase(path);
+  try {
+    assert.deepEqual(await migrate(db, boardMigrations), ['whiteboard/001-whiteboards']);
+    assert.deepEqual(await new BoardStore(db).get('b1'), { id: 'b1', name: 'ラフ', updatedAt: '2026-11-17T00:00:00.000Z', scene: SCENE });
+  } finally { await db.close(); }
 });

@@ -1,6 +1,6 @@
 export type LogLevel = 'debug' | 'info' | 'warn' | 'error';
 export type LogEvent = 'server_started' | 'server_stopped' | 'server_failed'
-  | 'intent_request' | 'http_request' | 'data_reset' | 'data_reset_failed';
+  | 'intent_request' | 'http_request' | 'data_reset' | 'data_reset_failed' | 'db_migrated';
 
 export interface LogFields {
   request_id?: string;
@@ -28,6 +28,7 @@ const MESSAGES: Record<LogEvent, string> = {
   http_request: 'HTTPリクエストを処理しました。',
   data_reset: '検証用タスクデータを初期状態へ戻しました。',
   data_reset_failed: '検証用タスクデータを初期化できませんでした。',
+  db_migrated: 'DBマイグレーションを適用しました。',
 };
 const METHODS = new Set(['GET', 'HEAD', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS', 'CONNECT', 'TRACE']);
 const ROUTES = new Set([
@@ -45,7 +46,7 @@ const PATTERNS: [RegExp, string][] = [
 const ERROR_CODES = new Set([
   'invalid_input', 'invalid_content_type', 'body_too_large', 'invalid_host', 'invalid_origin',
   'unavailable', 'invalid_response', 'timeout', 'not_found', 'internal_error',
-  'startup_failed', 'listen_failed', 'shutdown_failed', 'reset_failed',
+  'startup_failed', 'db_setup_failed', 'listen_failed', 'shutdown_failed', 'reset_failed',
   'task_not_found', 'board_not_found', 'invalid_config', 'upstream_auth', 'upstream_unavailable', 'upstream_invalid', 'upstream_timeout',
 ]);
 const FIELD_CHECKS: Record<keyof LogFields, (value: unknown) => boolean> = {

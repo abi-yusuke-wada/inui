@@ -2,7 +2,7 @@
 
 Markdownの表示・タスク・ホワイトボードを、開発機で実NLIと接続して確認する手順。設計判断と部署展開との区別は[ADR-0008](adr/0008-local-poc-workflows.md)と[ADR-0009](adr/0009-feature-packages-and-subject-change.md)、対象と完了条件は[MVP](../MVP.md)を参照する。
 
-入口（BFF・自然言語UI）はルートの`src/`、業務機能は`packages/features/`（`markdown`・`tasks`・`whiteboard`と共通部品の`kit`）、独立したIntent判定は`packages/core/`に置き、ビルド結果は`dist/`に出力する。業務画面は遅延読み込みのチャンクとして`dist/public/assets/`へ分かれる。依存定義を変えたブランチへ切り替えたときは、devShellで`make app-setup-offline`（取得済みでない依存があれば`make app-setup`）を実行して依存リンクを更新する。起動中のアプリには構成変更が反映されないため、Ctrl+Cで停止してから`make app-dev`で起動し直す。
+入口（BFF・自然言語UI）はルートの`src/`、業務機能は`packages/features/`（`markdown`・`tasks`・`whiteboard`と、DBの接続・マイグレーションを含む共通部品の`kit`）、独立したIntent判定は`packages/core/`に置き、ビルド結果は`dist/`に出力する。業務画面は遅延読み込みのチャンクとして`dist/public/assets/`へ分かれる。依存定義を変えたブランチへ切り替えたときは、devShellで`make app-setup-offline`（取得済みでない依存があれば`make app-setup`）を実行して依存リンクを更新する。起動中のアプリには構成変更が反映されないため、Ctrl+Cで停止してから`make app-dev`で起動し直す。
 
 テストは実装から分け、ルートの`tests/`に入口のAPI・ログ、`tests/web/`に画面、`tests/scripts/`に実行・検証スクリプトのテストを置く。コアと業務機能のテストは、それぞれのパッケージの`tests/`で管理する。型検査・lintにはテストも含め、製品のビルド対象は実装だけとする。
 
@@ -14,12 +14,14 @@ worktreeで作業する場合も、pnpmのストア・メタデータキャッ�
 
 | 内容 | 用途 |
 | --- | --- |
-| `app.sqlite` | タスク画面で追加した自分のタスクと、保存したホワイトボード（以前の申請データのテーブルが残っていても読み書きしない） |
+| `app.sqlite` | タスク画面で追加した自分のタスクと、保存したホワイトボード。適用済みのマイグレーションを`schema_migrations`に記録する（以前の申請データのテーブルが残っていても読み書きしない） |
 | `http-verification.json`など | 分類プローブ・接続診断・Web配信確認の結果 |
 | `pnpm-store/`・`cache/` | 取得済み依存などのキャッシュ（worktreeでは本体の`.local-poc/`のものを使う） |
 | `config/`・`state/` | 利用者の認証設定から分離した依存管理用の作業領域 |
 
 丸ごと削除すると保存済みのタスク・ボードも失われる。タスクとボードだけ空に戻す場合は、アプリ停止後に`make app-reset`を使う。
+
+表は、アプリの起動時と`make app-reset`の前に、未適用のマイグレーションで作成・変更する。以前の版で作った表は、そのまま引き継ぐ。DBを開けない場合やマイグレーションに失敗した場合は、`db_setup_failed`を記録して起動を中止する（[ADR-0010](adr/0010-shared-db-and-migrations.md)）。
 
 ## 準備と起動
 
@@ -102,7 +104,7 @@ make app-reset
 make app-dev
 ```
 
-`app-reset`は`.local-poc/app.sqlite`の自分のタスクとホワイトボードを空に戻す。GitHubのIssue・PR、`.local-jev`のモデル重みは変更しない。
+`app-reset`は`.local-poc/app.sqlite`の自分のタスクとホワイトボードを空に戻す。未適用のマイグレーションがあれば先に適用し（初めてなら表もここで作る）、マイグレーションの記録は残す。適用済みの記録があるのに表がないDB（壊れたファイルの一部だけを戻した場合など）では表を作り直さずに失敗するため、記録と表がそろったバックアップから戻す。GitHubのIssue・PR、`.local-jev`のモデル重みは変更しない。
 
 型検査・ビルド・コア/API/SQLite/UI操作のテストは`make app-check`、コアの通信契約・失敗処理だけは`make core-check`で確認する。固定応答を注入したテストは実NLI精度の証拠にはしない。
 
