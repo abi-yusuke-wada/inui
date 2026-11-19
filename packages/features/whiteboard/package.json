@@ -1,0 +1,21 @@
+{
+  "name": "@inui/feature-whiteboard",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    "./server": "./src/server.ts",
+    "./client": "./src/client.ts",
+    "./web": "./src/Whiteboard.tsx",
+    "./styles.css": "./src/styles.css"
+  },
+  "dependencies": {
+    "@excalidraw/excalidraw": "0.18.1",
+    "@inui/feature-kit": "workspace:*"
+  },
+  "peerDependencies": {
+    "hono": "4.13.17",
+    "react": "19.3.1",
+    "react-dom": "19.3.1"
+  }
+}

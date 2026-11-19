@@ -14,5 +14,5 @@
     "types": ["node"],
     "jsx": "react-jsx"
   },
-  "include": ["src/**/*.ts", "src/**/*.tsx", "tests/**/*.ts", "tests/**/*.tsx"]
+  "include": ["src/**/*.ts", "src/**/*.tsx", "tests/**/*.ts", "tests/**/*.tsx", "packages/features/*/src/**/*.ts", "packages/features/*/src/**/*.tsx", "packages/features/*/tests/**/*.ts"]
 }

@@ -2,41 +2,39 @@ import { createHash } from 'node:crypto';
 import { readFile } from 'node:fs/promises';
 import { isDeepStrictEqual } from 'node:util';
 import { pathToFileURL } from 'node:url';
-import { CASES } from './jev-probe.mjs';
 import { LOCAL_MODEL, buildLocalRequest, parseLocalResponse } from '../packages/core/src/index.ts';
-import { listEmployees, selectPeople } from '../src/people.ts';
-import { appPort, appOrigin } from '../src/local-config.ts';
+import { APP_NAME, appPort, appOrigin } from '../src/local-config.ts';
 
 const REVISION = 'cf44676c28ba7312e5c5f8f8d2c22b3e0c9cdae2';
 const ENGINE_TRANSPORT = 'in-process-local-jev-engine';
-const SCREENS = ['leave_request', 'expense_request', 'application_status', 'schedule_compare'];
+const SCREENS = ['markdown_view', 'task_board', 'whiteboard'];
 const NOTICES = ['unsupported_feature', 'unsupported_operation', 'clarify'];
-const noAmbiguity = (selectedIds) => ({ selectedIds, ambiguous: [], unknownNames: [] });
 
-// 既存13件の期待値は参照し、予定比較の4件と対象外操作の2件だけを加える。
+// Issue #10で題材を入れ替えた20入力（MVP.md）。申請を題材にした13入力はjev-probe.mjsに履歴として残す。
+// 予定比較は廃止し、予定の確認は対象外の機能、予定の削除・登録は対象外の操作として案内する。
+// Backlogの連携も外したため、Backlogの課題の確認は対象外の機能として案内する。
 export const POC_CASES = [
-  ...CASES.map((sample) => ({ ...sample, expectedPeople: null })),
-  {
-    id: 'schedule-fullnames', text: '山田太郎さんと佐藤花子さんのスケジュールを確認したい', expected: 'schedule_compare',
-    expectedPeople: noAmbiguity(['person-yamada-taro', 'person-sato-hanako']),
-  },
-  {
-    id: 'schedule-unique-surnames', text: '佐藤さんと鈴木さんの予定を見たい', expected: 'schedule_compare',
-    expectedPeople: noAmbiguity(['person-sato-hanako', 'person-suzuki-ichiro']),
-  },
-  {
-    id: 'schedule-ambiguous-surname', text: '山田さんと佐藤さんの予定を見たい', expected: 'schedule_compare',
-    expectedPeople: {
-      selectedIds: ['person-sato-hanako'],
-      ambiguous: [{ name: '山田', candidateIds: ['person-yamada-taro', 'person-yamada-hanako'] }], unknownNames: [],
-    },
-  },
-  {
-    id: 'schedule-unknown-person', text: '田村さんと佐藤花子さんの予定を確認したい', expected: 'schedule_compare',
-    expectedPeople: { selectedIds: ['person-sato-hanako'], ambiguous: [], unknownNames: ['田村'] },
-  },
-  { id: 'unsupported-schedule-delete', text: '山田太郎さんの予定を削除したい', expected: 'unsupported_operation', expectedPeople: null },
-  { id: 'unsupported-schedule-create', text: '佐藤さんと鈴木さんの会議を登録したい', expected: 'unsupported_operation', expectedPeople: null },
+  { id: 'markdown-view', text: 'Markdownを見やすく表示したい', expected: 'markdown_view' },
+  { id: 'markdown-readme', text: 'READMEを読みたい', expected: 'markdown_view' },
+  { id: 'markdown-adr', text: 'ADRの文書を開きたい', expected: 'markdown_view' },
+  // 音声入力では「Markdown」がカタカナで入力される。
+  { id: 'markdown-katakana', text: 'マークダウンを見やすくしたい', expected: 'markdown_view' },
+  { id: 'task-mine', text: '自分のタスクを確認したい', expected: 'task_board' },
+  { id: 'task-github-issues', text: 'GitHubのIssueを一覧で見たい', expected: 'task_board' },
+  { id: 'task-review', text: 'レビュー待ちのプルリクを確認したい', expected: 'task_board' },
+  { id: 'task-memo', text: 'やることをメモしておきたい', expected: 'task_board' },
+  { id: 'whiteboard-open', text: 'ホワイトボードを開きたい', expected: 'whiteboard' },
+  { id: 'whiteboard-draw', text: '絵を描きたい', expected: 'whiteboard' },
+  { id: 'whiteboard-sketch', text: '設計の図を手書きでラフに描きたい', expected: 'whiteboard' },
+  { id: 'unsupported-room', text: '会議室を予約したい', expected: 'unsupported_feature' },
+  { id: 'unsupported-expense', text: '交通費を精算したい', expected: 'unsupported_feature' },
+  { id: 'unsupported-schedule', text: '山田太郎さんと佐藤花子さんの予定を確認したい', expected: 'unsupported_feature' },
+  { id: 'unsupported-backlog', text: 'Backlogの課題を見たい', expected: 'unsupported_feature' },
+  { id: 'unsupported-merge', text: 'プルリクエストをマージしたい', expected: 'unsupported_operation' },
+  { id: 'unsupported-schedule-delete', text: '山田太郎さんの予定を削除したい', expected: 'unsupported_operation' },
+  { id: 'unsupported-schedule-create', text: '佐藤さんと鈴木さんの会議を登録したい', expected: 'unsupported_operation' },
+  { id: 'clarify-check', text: '確認したい', expected: 'clarify' },
+  { id: 'clarify-open', text: '開いて', expected: 'clarify' },
 ];
 
 /** 現コアの質問を入力と結び付け、Python側へそのまま渡す。 */
@@ -62,16 +60,12 @@ const isRecord = (value) => value !== null && typeof value === 'object' && !Arra
 const exactKeys = (value, keys) => isRecord(value) && Object.keys(value).length === keys.length && keys.every((key) => Object.hasOwn(value, key));
 const elapsedValid = (value) => typeof value === 'number' && Number.isFinite(value) && value >= 0;
 
-/** APIから受けた自由な本文は記録せず、許可した判断と辞書の選択だけを照合する。 */
-function parseApiDecision(body, sample) {
+/** APIから受けた自由な本文は記録せず、許可した判断だけを照合する。 */
+function parseApiDecision(body) {
   if (!isRecord(body)) throw new ProbeError('invalid_response');
   if (body.kind === 'screen' && SCREENS.includes(body.intent) && body.ui === body.intent
-      && exactKeys(body, body.intent === 'schedule_compare' ? ['kind', 'intent', 'ui', 'people'] : ['kind', 'intent', 'ui'])) {
-    if (body.intent === 'schedule_compare' && !isDeepStrictEqual(body.people, selectPeople(sample.text))) {
-      throw new ProbeError('invalid_people');
-    }
-    return { kind: 'screen', intent: body.intent, ui: body.ui,
-      ...(body.intent === 'schedule_compare' ? { people: body.people } : {}) };
+      && exactKeys(body, ['kind', 'intent', 'ui'])) {
+    return { kind: 'screen', intent: body.intent, ui: body.ui };
   }
   if (body.kind === 'notice' && NOTICES.includes(body.intent) && typeof body.message === 'string'
       && exactKeys(body, ['kind', 'intent', 'message'])) {
@@ -82,29 +76,23 @@ function parseApiDecision(body, sample) {
 
 /** 成否を現行の期待値で計算する。ファイル内のmatchedや期待値は採用しない。 */
 function resultFor(sample, decision, elapsed, extra = {}) {
-  const people = decision.intent === 'schedule_compare' ? selectPeople(sample.text) : null;
-  const intentMatched = decision.intent === sample.expected;
-  const peopleMatched = sample.expectedPeople === null ? null : isDeepStrictEqual(people, sample.expectedPeople);
   return {
     sampleID: sample.id, text: sample.text, expected: sample.expected, actual: decision.intent,
-    matched: intentMatched && peopleMatched !== false, intent_matched: intentMatched,
-    people_matched: peopleMatched, elapsed_ms: elapsed, people, ...extra,
+    matched: decision.intent === sample.expected, elapsed_ms: elapsed, ...extra,
   };
 }
 
-/** 正常・対象外と曖昧入力・人名選択を別集計する。時間はこの呼出経路に限る。 */
+/** 正常（画面）と、対象外・曖昧入力（案内）を別集計する。時間はこの呼出経路に限る。 */
 function report(transport, metadata, results) {
   const normal = results.filter((row) => SCREENS.includes(row.expected));
   const abnormal = results.filter((row) => !SCREENS.includes(row.expected));
-  const people = results.filter((row) => POC_CASES.find((sample) => sample.id === row.sampleID)?.expectedPeople !== null);
   const times = results.map((row) => row.elapsed_ms).filter(elapsedValid).sort((a, b) => a - b);
   const count = (rows) => ({ matched: rows.filter((row) => row.matched).length, total: rows.length });
   return {
     transport, metadata,
     summary: {
       ...count(results), normal: count(normal), abnormal: count(abnormal),
-      people: { matched: people.filter((row) => row.people_matched === true).length, total: people.length },
-      criterion_met: results.length === 19 && results.every((row) => row.matched),
+      criterion_met: results.length === POC_CASES.length && results.every((row) => row.matched),
       elapsed_ms: times.length ? {
         mean: times.reduce((sum, value) => sum + value, 0) / times.length,
         median: times.length % 2 ? times[Math.floor(times.length / 2)] : (times[times.length / 2 - 1] + times[times.length / 2]) / 2,
@@ -126,7 +114,7 @@ function checkMetadata(metadata) {
       || metadata.response_conversion !== 'SystemOneResponse.model_validate(raw).model_dump()'
       || metadata.http_route_executed !== false || metadata.torch_threads !== 4 || metadata.torch_interop_threads !== 1
       || metadata.warmup !== false || metadata.device !== 'cpu' || metadata.dtype !== 'torch.float32'
-      || metadata.hf_revision !== REVISION || metadata.requests_sha256 !== requestsDigest() || metadata.case_count !== 19
+      || metadata.hf_revision !== REVISION || metadata.requests_sha256 !== requestsDigest() || metadata.case_count !== POC_CASES.length
       || typeof metadata.hf_model !== 'string' || !elapsedValid(metadata.model_load_ms)
       || !exactKeys(metadata.runtime, ['local-jev', 'torch', 'transformers'])
       || !Object.values(metadata.runtime).every((value) => typeof value === 'string' && value.length > 0)
@@ -135,17 +123,17 @@ function checkMetadata(metadata) {
       || !exactKeys(metadata.peak_rss, ['value', 'unit', 'platform', 'scope'])
       || !elapsedValid(metadata.peak_rss.value) || !['KiB', 'bytes', 'platform-native'].includes(metadata.peak_rss.unit)
       || typeof metadata.peak_rss.platform !== 'string'
-      || metadata.peak_rss.scope !== 'Python process through 19 Engine calls; not a deployed Lambda measurement') {
+      || metadata.peak_rss.scope !== `Python process through ${POC_CASES.length} Engine calls; not a deployed Lambda measurement`) {
     throw new ProbeError('invalid_metadata');
   }
 }
 
-/** 完全な19件のJSONLだけを受け付け、coreと人名処理で独立に再検証する。 */
+/** 入力の件数どおりの完全なJSONLだけを受け付け、coreで独立に再検証する。 */
 export function replay(jsonl) {
   let records;
   try { records = jsonl.trim().split('\n').map((line) => JSON.parse(line)); }
   catch { throw new ProbeError('invalid_replay'); }
-  if (records.length !== 20 || !exactKeys(records[0], ['type', 'metadata']) || records[0].type !== 'metadata') {
+  if (records.length !== POC_CASES.length + 1 || !exactKeys(records[0], ['type', 'metadata']) || records[0].type !== 'metadata') {
     throw new ProbeError('invalid_replay');
   }
   const metadata = records[0].metadata;
@@ -186,14 +174,13 @@ export async function probeHttp({ fetchImpl = globalThis.fetch, port } = {}) {
           body: JSON.stringify({ text: sample.text }), redirect: 'error', signal: controller.signal,
         });
         if (!response.ok) throw new ProbeError('http_error', response.status);
-        return parseApiDecision(await response.json(), sample);
+        return parseApiDecision(await response.json());
       };
       const decision = await Promise.race([operation(), deadline]);
       results.push(resultFor(sample, decision, Math.round(performance.now() - started)));
     } catch (error) {
       results.push({ sampleID: sample.id, text: sample.text, expected: sample.expected, actual: null,
-        matched: false, intent_matched: false, people_matched: sample.expectedPeople === null ? null : false,
-        elapsed_ms: Math.round(performance.now() - started), error: error instanceof ProbeError ? error.code : 'request_failed',
+        matched: false, elapsed_ms: Math.round(performance.now() - started), error: error instanceof ProbeError ? error.code : 'request_failed',
         http_status: error instanceof ProbeError && Number.isInteger(error.httpStatus) ? error.httpStatus : null });
     } finally {
       clearTimeout(timer);
@@ -214,7 +201,7 @@ export async function diagnose({ fetchImpl = globalThis.fetch, port } = {}) {
   const checks = [];
   for (const service of ['app', 'local-jev']) {
     try {
-      const response = await fetchImpl(service === 'app' ? `${origin}/api/employees` : 'http://127.0.0.1:8765/v1/systemone', {
+      const response = await fetchImpl(service === 'app' ? `${origin}/api/health` : 'http://127.0.0.1:8765/v1/systemone', {
         ...(service === 'local-jev' ? {
           method: 'POST', headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify(buildLocalRequest(POC_CASES[0].text)),
@@ -224,7 +211,12 @@ export async function diagnose({ fetchImpl = globalThis.fetch, port } = {}) {
       if (!response.ok) { checks.push({ service, ok: false, http_status: response.status }); continue; }
       if (service === 'local-jev') parseLocalResponse(await response.json());
       // 別のサービスが同じポートでHTTP 200を返す場合を正常と扱わない。
-      else if (!isDeepStrictEqual(await response.json(), { employees: listEmployees() })) throw new Error('unexpected_app_response');
+      else {
+        const body = await response.json();
+        if (!exactKeys(body, ['app', 'build']) || body.app !== APP_NAME || typeof body.build !== 'string') {
+          throw new Error('unexpected_app_response');
+        }
+      }
       checks.push({ service, ok: true, http_status: response.status });
     } catch (error) {
       const codes = ['ECONNREFUSED', 'ECONNRESET', 'EPERM', 'EACCES', 'ETIMEDOUT', 'EAI_AGAIN'];

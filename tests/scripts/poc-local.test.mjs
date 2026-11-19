@@ -1,8 +1,9 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
+import { execFileSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
-import { runLocal, serviceEnv, checkService } from '../../scripts/poc-local.mjs';
-import { listEmployees } from '../../src/people.ts';
+import { runLocal, serviceEnv, checkService, localJevDir } from '../../scripts/poc-local.mjs';
+const BUILD = 'a'.repeat(64);
 
 const PRIVATE_DETAIL = 'test-only-private-failure';
 
@@ -159,10 +160,35 @@ test('子の環境は実行用allowlistと固定設定だけで、偽トーク�
   assert.equal(env.OMP_NUM_THREADS, '4');
   assert.equal(env.MKL_NUM_THREADS, '4');
   assert.equal(env.OPENBLAS_NUM_THREADS, '4');
-  assert.equal(env.HF_HOME, fileURLToPath(new URL('../../.local-jev/cache', import.meta.url)));
-  assert.equal(env.LOCAL_JEV_MODELS, fileURLToPath(new URL('../../.local-jev/models', import.meta.url)));
+  assert.equal(env.HF_HOME, `${localJevDir()}/cache`);
+  assert.equal(env.LOCAL_JEV_MODELS, `${localJevDir()}/models`);
   assert.equal(Object.hasOwn(env, 'LOCAL_JEV_MODEL'), false);
   assert.deepEqual(fake, original);
+});
+
+test('実NLIのvenv・モデルは、worktreeでも本体のチェックアウトの.local-jevを使う', () => {
+  const common = execFileSync('git', ['rev-parse', '--path-format=absolute', '--git-common-dir'], { encoding: 'utf8' }).trim();
+  assert.equal(localJevDir(), common.replace(/\/\.git$/, '/.local-jev'));
+  // gitで本体を特定できない場所では、指定したチェックアウトの.local-jevを使う。
+  const outside = fileURLToPath(new URL('file:///'));
+  assert.equal(localJevDir(outside), `${outside}.local-jev`);
+});
+
+test('GitHubの連携の変数はアプリにだけ渡し、推論サーバーや他の認証情報には広げない', () => {
+  const parent = {
+    PATH: '/test-only/bin', INUI_GITHUB_TOKEN: 'fake-inui-github', INUI_BACKLOG_SPACE: 'example.backlog.jp',
+    INUI_BACKLOG_API_KEY: 'fake-backlog', GH_TOKEN: 'fake-gh', GITHUB_TOKEN: 'fake-github', INUI_GITHUB_MCP_TOKEN: 'fake-mcp',
+  };
+  const app = serviceEnv(parent, undefined, 'app');
+  assert.equal(app.INUI_GITHUB_TOKEN, 'fake-inui-github');
+  // 削除したBacklogの連携の設定が残っていても、アプリへ渡さない。
+  for (const key of ['INUI_BACKLOG_SPACE', 'INUI_BACKLOG_API_KEY', 'GH_TOKEN', 'GITHUB_TOKEN', 'INUI_GITHUB_MCP_TOKEN']) {
+    assert.equal(Object.hasOwn(app, key), false);
+  }
+  for (const env of [serviceEnv(parent, undefined, 'local-jev'), serviceEnv(parent)]) {
+    for (const key of Object.keys(parent).filter((name) => name !== 'PATH')) assert.equal(Object.hasOwn(env, key), false);
+  }
+  assert.equal(Object.hasOwn(serviceEnv({ INUI_GITHUB_TOKEN: '' }, undefined, 'app'), 'INUI_GITHUB_TOKEN'), false);
 });
 
 test('子へ渡すログレベルは許可値だけにし、不正な環境値を転送しない', () => {
@@ -182,28 +208,43 @@ test('health確認はappと固定NLIを識別し、接続拒否だけを未起�
     urls.push(url);
     assert.equal(init.redirect, 'error');
     assert.ok(init.signal instanceof AbortSignal);
-    return Response.json(url.includes(':8766/') ? { employees: listEmployees() }
+    return Response.json(url.includes(':8766/') ? { app: 'inui-local-poc', build: BUILD }
       : { ok: true, default_model: 'nli-deberta-large' });
   };
-  assert.equal(await checkService('app', healthy, 8766), true);
+  assert.equal(await checkService('app', healthy, 8766, BUILD), true);
   assert.equal(await checkService('local-jev', healthy, 8766), true);
-  assert.deepEqual(urls, ['http://127.0.0.1:8766/api/employees', 'http://127.0.0.1:8765/healthz']);
+  assert.deepEqual(urls, ['http://127.0.0.1:8766/api/health', 'http://127.0.0.1:8765/healthz']);
   for (const service of ['app', 'local-jev']) {
     assert.equal(await checkService(service, async () => {
       throw new Error(PRIVATE_DETAIL, { cause: { code: 'ECONNREFUSED' } });
     }, 8766), false);
     for (const fetchImpl of [
       async () => Response.json({}, { status: 503 }),
-      async () => Response.json({ employees: [], ok: true, default_model: 'other-model' }),
+      async () => Response.json({ other: [], ok: true, default_model: 'other-model' }),
       async () => { throw new Error(PRIVATE_DETAIL, { cause: { code: 'EPERM' } }); },
       async () => ({ ok: true, status: 200, json: async () => { throw new Error(PRIVATE_DETAIL); } }),
     ]) {
-      await assert.rejects(checkService(service, fetchImpl, 8766), (error) => {
+      await assert.rejects(checkService(service, fetchImpl, 8766, BUILD), (error) => {
         assert.equal(error.message.includes(PRIVATE_DETAIL), false);
         return true;
       });
     }
   }
+});
+
+test('別のブランチやworktreeでビルドしたアプリは再利用せず、停止を案内する', async () => {
+  for (const fetchImpl of [
+    // 以前のビルド（/api/healthがない）は404を返す。
+    async () => Response.json({ error: { code: 'not_found' } }, { status: 404 }),
+    async () => Response.json({ app: 'inui-local-poc', build: 'b'.repeat(64) }),
+  ]) {
+    await assert.rejects(checkService('app', fetchImpl, 8766, BUILD), (error) => {
+      assert.match(error.message, /別のビルド/);
+      return true;
+    });
+  }
+  // 同じポートの別サービスは、別の設定・サービスとして案内する。
+  await assert.rejects(checkService('app', async () => Response.json({ other: [] }), 8766, BUILD), /別の設定・サービス/);
 });
 
 test('選択した18766を起動確認・子への設定・smoke・案内URLで共有し、NLIは8765に保つ', async () => {
@@ -230,11 +271,11 @@ test('選択した18766を起動確認・子への設定・smoke・案内URLで�
   const urls = [];
   const fetchImpl = async (url) => {
     urls.push(url);
-    return Response.json(url.includes(':18766/') ? { employees: listEmployees() } : { ok: true, default_model: 'nli-deberta-large' });
+    return Response.json(url.includes(':18766/') ? { app: 'inui-local-poc', build: BUILD } : { ok: true, default_model: 'nli-deberta-large' });
   };
-  assert.equal(await checkService('app', fetchImpl, 18766), true);
+  assert.equal(await checkService('app', fetchImpl, 18766, BUILD), true);
   assert.equal(await checkService('local-jev', fetchImpl, 18766), true);
-  assert.deepEqual(urls, ['http://127.0.0.1:18766/api/employees', 'http://127.0.0.1:8765/healthz']);
+  assert.deepEqual(urls, ['http://127.0.0.1:18766/api/health', 'http://127.0.0.1:8765/healthz']);
 });
 
 test('不正なポートはサービス確認や起動の前に安全なエラーにし、子へ渡さない', async () => {

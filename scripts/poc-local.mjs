@@ -1,38 +1,65 @@
 import { randomUUID } from 'node:crypto';
-import { spawn } from 'node:child_process';
+import { execFileSync, spawn } from 'node:child_process';
 import { mkdir, rename, writeFile } from 'node:fs/promises';
 import { fileURLToPath, pathToFileURL } from 'node:url';
-import { isDeepStrictEqual } from 'node:util';
-import { listEmployees } from '../src/people.ts';
-import { appPort, appOrigin } from '../src/local-config.ts';
+import { APP_NAME, appPort, appOrigin, buildId } from '../src/local-config.ts';
 import { logLevel } from '../src/logger.ts';
 import { LOCAL_MODEL } from '../packages/core/src/index.ts';
 import { probeHttp } from './poc-probe.mjs';
 
 const ROOT = fileURLToPath(new URL('../', import.meta.url));
+
+/**
+ * 実NLIのvenv・モデルは本体のチェックアウトの.local-jevを使う（worktreeでも共有する。ADR-0009）。
+ * gitで本体を特定できない場合は、このチェックアウトの.local-jevを使う。
+ */
+export function localJevDir(root = ROOT) {
+  try {
+    const common = execFileSync('git', ['rev-parse', '--path-format=absolute', '--git-common-dir'], {
+      cwd: root, encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'], timeout: 5000,
+    }).trim();
+    if (common.startsWith('/') && common.endsWith('/.git')) return `${common.slice(0, -'.git'.length)}.local-jev`;
+  } catch { /* gitを使えない環境では、このチェックアウトを使う。 */ }
+  return `${root}.local-jev`;
+}
+const LOCAL_JEV_DIR = localJevDir();
 const SERVICES = ['local-jev', 'app'];
 const LABELS = { 'local-jev': '推論サーバー', app: 'アプリ' };
 class LocalError extends Error {}
 class Stopped extends Error {}
 
-/** 子プロセスには実行環境だけを渡し、認証用の変数は引き継がない。 */
-export function serviceEnv(parent = process.env, port) {
+// タスク画面の連携先（GitHub）の認証情報。アプリの子プロセスにだけ渡す（ADR-0009）。
+export const APP_INTEGRATION_KEYS = ['INUI_GITHUB_TOKEN'];
+
+/**
+ * 子プロセスには実行環境だけを渡し、認証用の変数は引き継がない。
+ * 例外はアプリへ渡す連携先の3変数だけで、推論サーバーには渡さない。
+ */
+export function serviceEnv(parent = process.env, port, service) {
   const selectedPort = appPort(port === undefined ? parent : { INUI_POC_PORT: String(port) });
   const env = {};
   for (const key of ['PATH', 'LD_LIBRARY_PATH', 'TMPDIR', 'TMP', 'TEMP', 'LANG', 'LC_ALL']) {
     if (typeof parent[key] === 'string') env[key] = parent[key];
   }
+  if (service === 'app') {
+    for (const key of APP_INTEGRATION_KEYS) if (typeof parent[key] === 'string' && parent[key] !== '') env[key] = parent[key];
+  }
   return {
     ...env, NODE_ENV: 'production', INUI_POC_PORT: String(selectedPort), LOG_LEVEL: logLevel(parent.LOG_LEVEL),
-    HF_HOME: `${ROOT}.local-jev/cache`, LOCAL_JEV_MODELS: `${ROOT}.local-jev/models`,
+    HF_HOME: `${LOCAL_JEV_DIR}/cache`, LOCAL_JEV_MODELS: `${LOCAL_JEV_DIR}/models`,
     HF_HUB_OFFLINE: '1', TRANSFORMERS_OFFLINE: '1', HF_HUB_DISABLE_IMPLICIT_TOKEN: '1',
     OMP_NUM_THREADS: '4', MKL_NUM_THREADS: '4', OPENBLAS_NUM_THREADS: '4',
   };
 }
 
-/** 接続拒否だけを未起動とし、別のサービスや権限エラーを上書きしない。 */
-export async function checkService(service, fetchImpl = globalThis.fetch, port) {
-  const url = service === 'app' ? `${appOrigin(appPort(port === undefined ? undefined : { INUI_POC_PORT: String(port) }))}/api/employees`
+const OTHER_BUILD = 'アプリのポートでは、別のビルド（別のブランチやworktree）のアプリが起動しています。そのアプリを停止してから起動し直してください。';
+
+/**
+ * 接続拒否だけを未起動とし、別のサービスや権限エラーを上書きしない。
+ * アプリは手元のビルドと同じ場合だけ再利用し、別のworktreeで起動したアプリを黙って使わない。
+ */
+export async function checkService(service, fetchImpl = globalThis.fetch, port, expectedBuild) {
+  const url = service === 'app' ? `${appOrigin(appPort(port === undefined ? undefined : { INUI_POC_PORT: String(port) }))}/api/health`
     : 'http://127.0.0.1:8765/healthz';
   let response;
   try { response = await fetchImpl(url, { redirect: 'error', signal: AbortSignal.timeout(1500) }); }
@@ -40,23 +67,31 @@ export async function checkService(service, fetchImpl = globalThis.fetch, port) 
     if (error?.cause?.code === 'ECONNREFUSED') return false;
     throw new LocalError(`${LABELS[service]}への接続を確認できません。ポートと実行権限を確認してください。`);
   }
+  // 以前のビルドには/api/healthがないため、404は別のビルドとして案内する。
+  if (service === 'app' && response.status === 404) throw new LocalError(OTHER_BUILD);
   if (!response.ok) throw new LocalError(`${LABELS[service]}の応答はHTTP ${response.status}です。既存の起動プロセスを確認してください。`);
   let body;
   try { body = await response.json(); }
   catch { throw new LocalError(`${LABELS[service]}の応答を確認できません。`); }
-  const valid = service === 'app' ? isDeepStrictEqual(body, { employees: listEmployees() })
+  const valid = service === 'app' ? body?.app === APP_NAME && typeof body?.build === 'string'
     : body?.ok === true && body?.default_model === LOCAL_MODEL;
   if (!valid) throw new LocalError(`${LABELS[service]}のポートには別の設定・サービスが起動しています。`);
+  if (service === 'app') {
+    let local;
+    try { local = expectedBuild ?? await buildId(new URL('../dist/', import.meta.url)); }
+    catch { throw new LocalError('手元のビルドを確認できません。make app-build を実行してください。'); }
+    if (body.build !== local) throw new LocalError(OTHER_BUILD);
+  }
   return true;
 }
 
 /** PIDは自分が生成した子だけ保持し、そのプロセス群だけを終了する。 */
 export function launchService(service, port) {
-  const command = service === 'app' ? process.execPath : `${ROOT}.local-jev/venv/bin/local-jev`;
+  const command = service === 'app' ? process.execPath : `${LOCAL_JEV_DIR}/venv/bin/local-jev`;
   const args = service === 'app' ? [`${ROOT}dist/server.js`]
     : ['serve', '--model', LOCAL_MODEL, '--host', '127.0.0.1', '--port', '8765'];
   const grouped = process.platform !== 'win32';
-  const child = spawn(command, args, { cwd: ROOT, env: serviceEnv(process.env, port), stdio: 'inherit', detached: grouped });
+  const child = spawn(command, args, { cwd: ROOT, env: serviceEnv(process.env, port, service), stdio: 'inherit', detached: grouped });
   let stopping = false;
   let closed = false;
   let onClose;

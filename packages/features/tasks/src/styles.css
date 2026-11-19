@@ -1,0 +1,42 @@
+/* タスクの画面。共通の部品は入口の styles.css で定義する。 */
+.task-columns { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 20px; align-items: start; }
+.task-column { background: #f7f9f4; border: 1px solid #e0e7d9; border-radius: 12px; padding: 18px; min-width: 0; }
+.task-column .eyebrow { margin-bottom: 6px; }
+.task-column h3 { margin-bottom: 10px; }
+.task-source-note { color: var(--muted); font-size: .76rem; margin-bottom: 6px; }
+.task-add { display: flex; gap: 8px; margin-bottom: 14px; }
+.task-add input { min-width: 0; padding: 9px 11px; }
+.task-add .button { min-height: 40px; padding: 8px 14px; flex-shrink: 0; }
+.task-list { list-style: none; padding: 0; margin: 10px 0 0; }
+.task-item { background: #fff; border: 1px solid #e2e8db; border-radius: 8px; padding: 10px 12px; font-size: .85rem; }
+.task-item + .task-item { margin-top: 8px; }
+.task-item > label { display: flex; gap: 10px; align-items: flex-start; overflow-wrap: anywhere; }
+.task-item .text-button { padding: 4px 0 0 28px; font-size: .75rem; color: #8b5a4a; }
+.task-done > label span { text-decoration: line-through; color: var(--muted); }
+.task-external a { display: flex; flex-direction: column; gap: 3px; text-decoration: none; color: inherit; overflow-wrap: anywhere; }
+.task-external a:hover span:last-child { text-decoration: underline; }
+.task-key { color: #607c50; font-size: .72rem; font-weight: 600; }
+.task-meta { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; margin: 8px 0 0; color: var(--muted); font-size: .72rem; }
+.task-meta .status-pill { background: #eef3eb; color: #3d5a44; padding: 2px 8px; }
+.task-column .empty-state { padding: 22px 14px; }
+/* 看板表示では自分のタスクを横幅いっぱいに広げ、GitHubの欄は下に置く。 */
+.task-view-switch { display: flex; gap: 8px; margin-bottom: 16px; }
+.task-view-switch .button { min-height: 38px; padding: 6px 16px; }
+.task-columns-kanban { grid-template-columns: minmax(0, 1fr); }
+.kanban { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 14px; margin-top: 6px; }
+.kanban-column { background: #fff; border: 1px solid #e2e8db; border-radius: 10px; padding: 12px; min-height: 160px; }
+.kanban-column-over { border-color: var(--green); background: #f0f6ec; }
+.kanban-column h4 { display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px; font-size: .9rem; }
+.kanban-count { color: var(--muted); font-size: .75rem; font-weight: 500; }
+.kanban-card { display: flex; flex-direction: column; gap: 6px; cursor: grab; background: #fafbf8; }
+.kanban-card:active { cursor: grabbing; }
+.kanban-title { overflow-wrap: anywhere; }
+.kanban-actions { display: flex; gap: 10px; justify-content: flex-end; }
+.kanban-actions .text-button { padding: 2px 4px; font-size: .8rem; }
+.task-item .kanban-remove { padding-left: 4px; color: #8b5a4a; }
+.task-readonly { margin-left: 8px; background: #eef3eb; color: #3d5a44; padding: 2px 8px; font-weight: 500; vertical-align: middle; }
+.task-item > label .status-pill { margin-left: auto; background: #eef3eb; color: #3d5a44; padding: 2px 8px; }
+@media (max-width: 960px) {
+  .task-columns, .task-columns-kanban { grid-template-columns: 1fr; }
+  .kanban { grid-template-columns: 1fr; }
+}

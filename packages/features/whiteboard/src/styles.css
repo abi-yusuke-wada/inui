@@ -1,0 +1,16 @@
+/* ホワイトボードの画面。Excalidraw自体のCSSは、画面を開いたときに /excalidraw/index.css から読み込む。 */
+.whiteboard-layout { display: grid; grid-template-columns: minmax(200px, 260px) minmax(0, 1fr); gap: 24px; align-items: start; }
+.whiteboard-list .task-add { margin-bottom: 12px; }
+.board-item { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+.board-item .text-button { padding: 4px 0; font-size: .75rem; color: #8b5a4a; }
+.board-open { background: none; border: 0; padding: 4px 0; text-align: left; color: inherit; font-size: .85rem; overflow-wrap: anywhere; flex: 1; }
+.board-current { border-color: #85a77a; background: #eaf3e6; }
+.whiteboard-main { min-width: 0; }
+.whiteboard-toolbar { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; margin-bottom: 12px; }
+.whiteboard-toolbar input { flex: 1; min-width: 160px; }
+.whiteboard-state { color: var(--muted); font-size: .76rem; }
+/* 画面全体に表示したとき、ヘッダー・見出し・ツールバーを除いた高さを描画に使う。 */
+.whiteboard-canvas { height: max(420px, calc(100dvh - 250px)); border: 1px solid #e0e7d9; border-radius: 12px; overflow: hidden; }
+@media (max-width: 860px) {
+  .whiteboard-layout { grid-template-columns: 1fr; }
+}

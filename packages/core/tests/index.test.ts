@@ -9,13 +9,13 @@ import {
 } from '../src/index.ts';
 
 const wireIntents = [
-  'leave_request', 'expense_request', 'application_status', 'schedule_compare',
-  'unsupported_feature', 'unsupported_operation', 'unspecified_application',
+  'markdown_view', 'task_board', 'whiteboard',
+  'unsupported_feature', 'unsupported_operation', 'unspecified_request',
 ] as const;
 type WireIntent = typeof wireIntents[number];
 
 /** 通信契約のテスト用応答。分類精度の実測には使わない。 */
-function responseBody(choice: WireIntent = 'leave_request') {
+function responseBody(choice: WireIntent = 'task_board') {
   return {
     model: LOCAL_MODEL,
     answers: {
@@ -23,7 +23,7 @@ function responseBody(choice: WireIntent = 'leave_request') {
         type: 'choice',
         choice: choice as string,
         confidence: 0.7,
-        probabilities: Object.fromEntries(wireIntents.map((intent) => [intent, intent === choice ? 0.7 : 0.05])),
+        probabilities: Object.fromEntries(wireIntents.map((intent) => [intent, intent === choice ? 0.7 : 0.06])),
       },
     },
     usage: { input_tokens: 12, output_tokens: 1 },
@@ -47,10 +47,10 @@ function fakeFetch(implementation: (input: string | URL | Request, init?: Reques
   return implementation;
 }
 
-test('リクエストは入力の前後空白を除き、固定モデル・7候補だけを送る', () => {
-  const request = buildLocalRequest(' \n 有給を取りたい \t ');
+test('リクエストは入力の前後空白を除き、固定モデル・6候補だけを送る', () => {
+  const request = buildLocalRequest(' \n 自分のタスクを確認したい \t ');
   assert.equal(request.model, LOCAL_MODEL);
-  assert.equal(request.state, '有給を取りたい');
+  assert.equal(request.state, '自分のタスクを確認したい');
   assert.deepEqual(Object.keys(request), ['model', 'state', 'questions']);
   assert.deepEqual(Object.keys(request.questions), ['intent']);
   assert.equal(request.questions.intent.type, 'choice');
@@ -59,25 +59,27 @@ test('リクエストは入力の前後空白を除き、固定モデル・7候�
   assert.equal(buildLocalRequest('あ'.repeat(2000)).state.length, 2000);
 });
 
-test('採用済み質問を保持し、予定比較と対象外の説明だけを拡張する', async () => {
+test('質問文は採用済みのものを使い、申請と予定比較の候補は送らない', async () => {
   const probe = await import(new URL('../../../scripts/jev-probe.mjs', import.meta.url).href);
-  const previous = probe.buildRequest('有給を取りたい', { model: LOCAL_MODEL });
-  const current = buildLocalRequest('有給を取りたい');
+  const previous = probe.buildRequest('自分のタスクを確認したい', { model: LOCAL_MODEL });
+  const current = buildLocalRequest('自分のタスクを確認したい');
   assert.equal(current.questions.intent.instructions, previous.questions.intent.instructions);
-  for (const intent of ['leave_request', 'expense_request', 'application_status', 'unspecified_application'] as const) {
-    assert.equal(current.questions.intent.criteria[intent], previous.questions.intent.criteria[intent]);
+  assert.equal(Object.hasOwn(current.questions.intent.criteria, 'schedule_compare'), false);
+  for (const intent of Object.keys(previous.questions.intent.criteria)) {
+    if (intent.startsWith('unsupported_')) continue;
+    assert.equal(Object.hasOwn(current.questions.intent.criteria, intent), false);
   }
-  assert.match(current.questions.intent.criteria.schedule_compare, /予定.*比較/);
-  assert.match(current.questions.intent.criteria.unsupported_feature, /予定比較以外/);
+  assert.match(current.questions.intent.criteria.unsupported_feature, /社員の予定の確認、Backlogの課題の確認など/);
+  assert.doesNotMatch(current.questions.intent.criteria.task_board, /Backlog/);
+  assert.match(current.questions.intent.criteria.unsupported_operation, /マージ/);
   assert.match(current.questions.intent.criteria.unsupported_operation, /予定を登録・削除/);
-  assert.equal(Object.keys(previous.questions.intent.criteria).length, 6);
 });
 
 test('リクエストを変更しても次の呼び出しの候補説明を汚染しない', () => {
-  const request = buildLocalRequest('有給を取りたい');
-  const original = request.questions.intent.criteria.leave_request;
-  request.questions.intent.criteria.leave_request = '改変した説明';
-  assert.equal(buildLocalRequest('有給を取りたい').questions.intent.criteria.leave_request, original);
+  const request = buildLocalRequest('自分のタスクを確認したい');
+  const original = request.questions.intent.criteria.task_board;
+  request.questions.intent.criteria.task_board = '改変した説明';
+  assert.equal(buildLocalRequest('自分のタスクを確認したい').questions.intent.criteria.task_board, original);
 });
 
 for (const input of ['', ' \n\t ', 'あ'.repeat(2001), null, 123, {}, []]) {
@@ -93,7 +95,7 @@ for (const input of ['', ' \n\t ', 'あ'.repeat(2001), null, 123, {}, []]) {
   });
 }
 
-for (const intent of wireIntents.slice(0, 4)) {
+for (const intent of wireIntents.slice(0, 3)) {
   test(`許可した画面に対応付ける: ${intent}`, () => {
     assert.deepEqual(parseLocalResponse(responseBody(intent)), { kind: 'screen', intent, ui: intent });
   });
@@ -102,7 +104,7 @@ for (const intent of wireIntents.slice(0, 4)) {
 for (const [wire, canonical] of [
   ['unsupported_feature', 'unsupported_feature'],
   ['unsupported_operation', 'unsupported_operation'],
-  ['unspecified_application', 'clarify'],
+  ['unspecified_request', 'clarify'],
 ] as const) {
   test(`案内を固定メッセージへ対応付ける: ${wire}`, () => {
     const result = parseLocalResponse(responseBody(wire));
@@ -111,45 +113,45 @@ for (const [wire, canonical] of [
     assert.equal(Object.hasOwn(result, 'ui'), false);
     if (result.kind === 'notice') {
       assert.ok(result.message.length > 0);
-      assert.doesNotMatch(result.message, /unspecified_application/);
+      assert.doesNotMatch(result.message, /unspecified_request/);
     }
   });
 }
 
-test('7候補の小数4桁への丸めと最大値の同率を許す', () => {
+test('6候補の小数4桁への丸めと最大値の同率を許す', () => {
   const rounded = responseBody();
-  rounded.answers.intent.confidence = 0.1429;
-  rounded.answers.intent.probabilities = Object.fromEntries(wireIntents.map((intent) => [intent, 0.1429]));
-  assert.equal(parseLocalResponse(rounded).intent, 'leave_request');
+  rounded.answers.intent.confidence = 0.1667;
+  rounded.answers.intent.probabilities = Object.fromEntries(wireIntents.map((intent) => [intent, 0.1667]));
+  assert.equal(parseLocalResponse(rounded).intent, 'task_board');
   const outsideTolerance = structuredClone(rounded);
-  outsideTolerance.answers.intent.probabilities.leave_request = 0.143;
+  outsideTolerance.answers.intent.probabilities.task_board = 0.1675;
   assert.throws(() => parseLocalResponse(outsideTolerance), isDecisionError('invalid_response'));
 });
 
 test('使用量はゼロと安全な整数の上限を許す', () => {
   const body = responseBody();
   body.usage = { input_tokens: 0, output_tokens: Number.MAX_SAFE_INTEGER };
-  assert.equal(parseLocalResponse(body).intent, 'leave_request');
+  assert.equal(parseLocalResponse(body).intent, 'task_board');
 });
 
 const corruptions: [string, (body: ReturnType<typeof responseBody>) => unknown][] = [
   ['別モデル', (body) => { body.model = 'jev-1.14.0'; return body; }],
   ['内部clarifyを直接返す', (body) => { body.answers.intent.choice = 'clarify'; return body; }],
   ['未知の候補', (body) => { body.answers.intent.choice = 'delete_everything'; return body; }],
-  ['配列の候補', (body) => { Reflect.set(body.answers.intent, 'choice', ['leave_request']); return body; }],
+  ['配列の候補', (body) => { Reflect.set(body.answers.intent, 'choice', ['task_board']); return body; }],
   ['Choice以外', (body) => { body.answers.intent.type = 'tool'; return body; }],
   ['負のconfidence', (body) => { body.answers.intent.confidence = -0.1; return body; }],
   ['1を超えるconfidence', (body) => { body.answers.intent.confidence = 1.1; return body; }],
   ['NaNのconfidence', (body) => { body.answers.intent.confidence = NaN; return body; }],
   ['文字列のconfidence', (body) => { Reflect.set(body.answers.intent, 'confidence', '0.7'); return body; }],
-  ['確率欠落', (body) => { delete body.answers.intent.probabilities.schedule_compare; return body; }],
+  ['確率欠落', (body) => { delete body.answers.intent.probabilities.whiteboard; return body; }],
   ['未知の確率', (body) => { body.answers.intent.probabilities.clarify = 0; return body; }],
-  ['負の確率', (body) => { body.answers.intent.probabilities.leave_request = -0.1; return body; }],
-  ['無限の確率', (body) => { body.answers.intent.probabilities.leave_request = Infinity; return body; }],
-  ['文字列の確率', (body) => { Reflect.set(body.answers.intent.probabilities, 'leave_request', '0.7'); return body; }],
-  ['確率の合計不足', (body) => { body.answers.intent.probabilities.leave_request = 0.6; return body; }],
-  ['確率の合計過多', (body) => { body.answers.intent.probabilities.leave_request = 0.8; return body; }],
-  ['最大確率以外の選択', (body) => { body.answers.intent.choice = 'schedule_compare'; return body; }],
+  ['負の確率', (body) => { body.answers.intent.probabilities.task_board = -0.1; return body; }],
+  ['無限の確率', (body) => { body.answers.intent.probabilities.task_board = Infinity; return body; }],
+  ['文字列の確率', (body) => { Reflect.set(body.answers.intent.probabilities, 'task_board', '0.7'); return body; }],
+  ['確率の合計不足', (body) => { body.answers.intent.probabilities.task_board = 0.6; return body; }],
+  ['確率の合計過多', (body) => { body.answers.intent.probabilities.task_board = 0.8; return body; }],
+  ['最大確率以外の選択', (body) => { body.answers.intent.choice = 'whiteboard'; return body; }],
   ['負の使用量', (body) => { body.usage.input_tokens = -1; return body; }],
   ['小数の使用量', (body) => { body.usage.output_tokens = 0.5; return body; }],
   ['文字列の使用量', (body) => { Reflect.set(body.usage, 'input_tokens', '12'); return body; }],
@@ -187,11 +189,11 @@ for (const baseUrl of ['http://127.0.0.1:8765', 'http://localhost:8766/', 'http:
       assert.equal(init?.method, 'POST');
       assert.equal(init?.redirect, 'error');
       assert.deepEqual(init?.headers, { 'Content-Type': 'application/json' });
-      assert.deepEqual(JSON.parse(init?.body as string), buildLocalRequest('予定を比べたい'));
+      assert.deepEqual(JSON.parse(init?.body as string), buildLocalRequest('ホワイトボードに描きたい'));
       assert.ok(init?.signal instanceof AbortSignal);
-      return Response.json(responseBody('schedule_compare'));
+      return Response.json(responseBody('whiteboard'));
     }) });
-    assert.deepEqual(await router(' 予定を比べたい '), { kind: 'screen', intent: 'schedule_compare', ui: 'schedule_compare' });
+    assert.deepEqual(await router(' ホワイトボードに描きたい '), { kind: 'screen', intent: 'whiteboard', ui: 'whiteboard' });
     assert.equal(called, true);
   });
 }
@@ -218,7 +220,7 @@ test('既定接続先を使い、上流例外の詳細を漏らさない', async
     requested = input;
     throw new Error('upstream-private-detail');
   }) });
-  await assert.rejects(router('有給を取りたい'), isDecisionError('unavailable'));
+  await assert.rejects(router('自分のタスクを確認したい'), isDecisionError('unavailable'));
   // fetch内のassertは例外がunavailableへ変換されて見逃されるため、完了後に接続先を検査する。
   assert.equal(requested, 'http://127.0.0.1:8765/v1/systemone');
 });
@@ -234,7 +236,7 @@ test('HTTPエラーは本文を読まず、通信を中止して固定エラー�
       json: async () => { bodyRead = true; throw new Error('upstream-private-detail'); },
     } as unknown as Response;
   }) });
-  await assert.rejects(router('有給を取りたい'), isDecisionError('unavailable'));
+  await assert.rejects(router('自分のタスクを確認したい'), isDecisionError('unavailable'));
   assert.equal(bodyRead, false);
   // 本文を読まない応答の接続を解放する。
   assert.equal(signal?.aborted, true);
@@ -245,12 +247,12 @@ test('JSON読取失敗の詳細を漏らさない', async () => {
     ok: true,
     json: async () => { throw new Error('upstream-private-detail'); },
   }) as unknown as Response) });
-  await assert.rejects(router('有給を取りたい'), isDecisionError('invalid_response'));
+  await assert.rejects(router('自分のタスクを確認したい'), isDecisionError('invalid_response'));
 });
 
 test('HTTP成功でも契約違反は画面へ渡さない', async () => {
   const router = createIntentRouter({ fetchImpl: fakeFetch(async () => Response.json({ ...responseBody(), ui: 'admin' })) });
-  await assert.rejects(router('有給を取りたい'), isDecisionError('invalid_response'));
+  await assert.rejects(router('自分のタスクを確認したい'), isDecisionError('invalid_response'));
 });
 
 test('fetchが停止しabortを無視しても期限で終了する', async () => {
@@ -259,7 +261,7 @@ test('fetchが停止しabortを無視しても期限で終了する', async () =
     signal = init?.signal;
     return new Promise<Response>(() => {});
   }) });
-  await assert.rejects(router('有給を取りたい'), isDecisionError('timeout'));
+  await assert.rejects(router('自分のタスクを確認したい'), isDecisionError('timeout'));
   assert.equal(signal?.aborted, true);
 });
 
@@ -273,7 +275,7 @@ test('ヘッダー受信後にJSON本文が停止しても期限で終了する'
       json: () => { bodyRead = true; return new Promise(() => {}); },
     } as unknown as Response;
   }) });
-  await assert.rejects(router('有給を取りたい'), isDecisionError('timeout'));
+  await assert.rejects(router('自分のタスクを確認したい'), isDecisionError('timeout'));
   assert.equal(bodyRead, true);
   assert.equal(signal?.aborted, true);
 });
@@ -285,7 +287,7 @@ test('完了した通信のタイマーは解除される', async (t) => {
     signal = init?.signal;
     return Response.json(responseBody());
   }) });
-  await router('有給を取りたい');
+  await router('自分のタスクを確認したい');
   t.mock.timers.tick(25_000);
   assert.equal(signal?.aborted, false);
 });
@@ -297,7 +299,7 @@ test('既定の期限は25秒で、本文読取も残り時間に含める', asy
     ok: true,
     json: () => { bodyRead = true; return new Promise(() => {}); },
   }) as unknown as Response) });
-  const pending = router('有給を取りたい');
+  const pending = router('自分のタスクを確認したい');
   // fetchが返した後の本文待機へ進める。
   await Promise.resolve();
   assert.equal(bodyRead, true);
@@ -317,10 +319,10 @@ test('推論サーバーが入力を切り詰めた応答は、判定として�
     signal = init?.signal ?? undefined;
     return Response.json(responseBody(), { headers: { 'x-local-jev-truncated': 'true' } });
   }) });
-  await assert.rejects(router('有給を取りたい'), isDecisionError('invalid_input'));
+  await assert.rejects(router('自分のタスクを確認したい'), isDecisionError('invalid_input'));
   assert.equal(signal?.aborted, true);
   // ヘッダーがfalseなら通常どおり判定を返す。
   const normal = createIntentRouter({ fetchImpl: fakeFetch(async () =>
     Response.json(responseBody(), { headers: { 'x-local-jev-truncated': 'false' } })) });
-  await normal('有給を取りたい');
+  await normal('自分のタスクを確認したい');
 });

@@ -26,18 +26,27 @@ const MESSAGES: Record<LogEvent, string> = {
   server_failed: 'アプリの起動・実行に失敗しました。',
   intent_request: '画面の振り分けを処理しました。',
   http_request: 'HTTPリクエストを処理しました。',
-  data_reset: '検証用申請データを初期状態へ戻しました。',
-  data_reset_failed: '検証用申請データを初期化できませんでした。',
+  data_reset: '検証用タスクデータを初期状態へ戻しました。',
+  data_reset_failed: '検証用タスクデータを初期化できませんでした。',
 };
 const METHODS = new Set(['GET', 'HEAD', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS', 'CONNECT', 'TRACE']);
 const ROUTES = new Set([
-  '/', '/legacy', '/app.js', '/app.css', '/api/intent', '/api/applications',
-  '/api/applications/leave', '/api/applications/expense', '/api/employees', '/api/schedules', 'other',
+  '/', '/legacy', '/app.js', '/app.css', '/assets/*', '/api/health', '/api/intent',
+  '/api/tasks/local', '/api/tasks/local/:id', '/api/tasks/github',
+  '/api/whiteboards', '/api/whiteboards/:id', '/excalidraw/*', 'other',
 ]);
+// IDやファイル名を含む経路は、値を落とした固定の経路名へまとめる。
+const PATTERNS: [RegExp, string][] = [
+  [/^\/api\/tasks\/local\/[^/]+$/, '/api/tasks/local/:id'],
+  [/^\/assets\/[^/]+$/, '/assets/*'],
+  [/^\/api\/whiteboards\/[^/]+$/, '/api/whiteboards/:id'],
+  [/^\/excalidraw\//, '/excalidraw/*'],
+];
 const ERROR_CODES = new Set([
   'invalid_input', 'invalid_content_type', 'body_too_large', 'invalid_host', 'invalid_origin',
   'unavailable', 'invalid_response', 'timeout', 'not_found', 'internal_error',
   'startup_failed', 'listen_failed', 'shutdown_failed', 'reset_failed',
+  'task_not_found', 'board_not_found', 'invalid_config', 'upstream_auth', 'upstream_unavailable', 'upstream_invalid', 'upstream_timeout',
 ]);
 const FIELD_CHECKS: Record<keyof LogFields, (value: unknown) => boolean> = {
   request_id: (value) => typeof value === 'string'
@@ -57,7 +66,8 @@ export function logLevel(value?: string): LogLevel {
 
 /** 未知のURLやクエリ文字列を、記録用の経路名へ持ち込まない。 */
 export function logRoute(path: string): string {
-  return ROUTES.has(path) ? path : 'other';
+  if (ROUTES.has(path) && !path.includes('*') && !path.includes(':')) return path;
+  return PATTERNS.find(([pattern]) => pattern.test(path))?.[1] ?? 'other';
 }
 
 function writeLine(line: string, level: LogLevel): void {

@@ -1,6 +1,6 @@
 {
   "files": {
-    "includes": ["src/**", "tests/**", "packages/core/src/**", "packages/core/tests/**", "scripts/**/*.mjs"],
+    "includes": ["src/**", "tests/**", "packages/core/src/**", "packages/core/tests/**", "packages/features/*/src/**", "packages/features/*/tests/**", "scripts/**/*.mjs"],
     "ignoreUnknown": true
   },
   "vcs": {

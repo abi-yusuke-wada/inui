@@ -1,14 +1,25 @@
 import assert from 'node:assert/strict';
-import { readFile } from 'node:fs/promises';
+import { readdir, readFile } from 'node:fs/promises';
 import test from 'node:test';
+import { fileURLToPath } from 'node:url';
+import { build } from 'esbuild';
 import { JSDOM, VirtualConsole } from 'jsdom';
 
 const publicDirectory = new URL('../../dist/public/', import.meta.url);
-const [html, bundle, css] = await Promise.all([
+const [html, entry, css] = await Promise.all([
   readFile(new URL('index.html', publicDirectory), 'utf8'),
   readFile(new URL('app.js', publicDirectory), 'utf8'),
   readFile(new URL('app.css', publicDirectory), 'utf8'),
 ]);
+// JSDOMはES moduleを実行できないため、配信するapp.jsと静的にimportするチャンクを1つのscriptへまとめる。
+// 業務画面の遅延読み込み（動的import）は初期表示では読まないため、外部のまま残す。
+const bundle = (await build({
+  entryPoints: [fileURLToPath(new URL('app.js', publicDirectory))], bundle: true, write: false,
+  format: 'iife', platform: 'browser', logLevel: 'silent',
+  plugins: [{ name: 'keep-lazy-chunks', setup(builder) {
+    builder.onResolve({ filter: /.*/ }, (args) => args.kind === 'dynamic-import' ? { path: args.path, external: true } : undefined);
+  } }],
+})).outputFiles[0].text;
 
 /** 固定時間の待機をせず、描画完了か期限まで短く確認する。 */
 async function waitFor(condition, timeoutMs = 2000) {
@@ -34,9 +45,31 @@ test('生成したHTMLは存在する同一オリジンのmodule・CSSと一つ�
     for (const resource of [scripts[0].src, stylesheets[0].href]) {
       assert.equal(new URL(resource).origin, dom.window.location.origin);
     }
-    assert.ok(bundle.trim().length > 0);
+    assert.ok(entry.trim().length > 0);
     assert.ok(css.trim().length > 0);
   } finally { dom.window.close(); }
+});
+
+test('app.jsとチャンクが参照するチャンクは、すべてassets/に出力されている', async () => {
+  const assets = new URL('assets/', publicDirectory);
+  const names = new Set(await readdir(assets));
+  const sources = [['app.js', entry], ...await Promise.all([...names].map(async (name) => [name, await readFile(new URL(name, assets), 'utf8')]))];
+  let references = 0;
+  for (const [name, source] of sources) {
+    for (const [, target] of source.matchAll(/(?:\bfrom\s*|\bimport\s*\(\s*)["'](?:\.\/assets\/|\.\/)([A-Za-z0-9_-]+\.js)["']/g)) {
+      references++;
+      assert.ok(names.has(target), `${name}が参照する${target}がありません。`);
+    }
+  }
+  assert.ok(references > 0);
+  // ホワイトボードのCSSとフォントは、外部のCDNではなくアプリから配信する。
+  const excalidrawCss = await readFile(new URL('excalidraw/index.css', publicDirectory), 'utf8');
+  assert.match(excalidrawCss, /url\(".\/fonts\/Assistant\/Assistant-Regular\.woff2"\)/);
+  await readFile(new URL('excalidraw/fonts/Assistant/Assistant-Regular.woff2', publicDirectory));
+  // 業務画面は遅延読み込みのチャンクとして分かれている。
+  for (const screen of ['MarkdownViewer', 'TaskBoard', 'Whiteboard', 'Canvas']) {
+    assert.ok([...names].some((name) => name.startsWith(screen + '-')), screen + 'のチャンクがありません。');
+  }
 });
 
 for (const pathname of ['/', '/legacy']) {
