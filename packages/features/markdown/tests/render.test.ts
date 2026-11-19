@@ -95,7 +95,22 @@ test('外部の画像やURLを参照する図は、Mermaidを読み込む前に�
     'flowchart LR\n  A@{ img : "//example.org/pixel.png" }',
     'flowchart LR\n  A --> B\n  classDef x fill:url(https://example.org/a.svg)',
     'flowchart LR\n  A["https://example.org"] --> B',
+    // 設定のCSS（YAMLのエスケープ）、CSSのエスケープ、文字参照で隠した url( や // も見つける。
+    '---\nconfig:\n  themeCSS: ".node rect { fill: \\u0075rl(https:\\u002f\\u002fexample.org/x) }"\n---\nflowchart LR\n  A --> B',
+    'flowchart LR\n  A --> B\n  classDef x fill:\\75 rl(https:\\2f\\2f example.org/a.svg)',
+    'flowchart LR\n  A --> B\n  style A fill:#117;rl(https:#47;#47;example.org/a.svg)',
+    '%%{init: {"themeCSS": "a { background: &#x75;rl(https:\\/\\/example.org/x) }"}}%%\nflowchart LR\n  A --> B',
   ]) {
     await assert.rejects(renderDiagram(code, 'test-diagram'), /external_reference/);
   }
+});
+
+test('外部参照の検査のため、YAML・CSSのエスケープと文字参照を元の文字に戻す', async () => {
+  const { decodeEscapes } = await import('../src/mermaid.ts');
+  assert.equal(decodeEscapes('\\u0075rl( \\x2f\\x2f \\u{1F600}'), 'url( // \u{1F600}');
+  assert.equal(decodeEscapes('\\75 rl( \\2f\\2f'), 'url( //');
+  assert.equal(decodeEscapes('#117;rl( &#x2F;&#47; &#1114112;'), 'url( // \ufffd');
+  assert.equal(decodeEscapes('a\\/b\\/'), 'a/b/');
+  // 通常の図の定義はそのまま残る。
+  assert.equal(decodeEscapes('flowchart LR\n  A[開始] --> B[終了]'), 'flowchart LR\n  A[開始] --> B[終了]');
 });
