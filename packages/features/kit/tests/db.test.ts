@@ -201,3 +201,17 @@ test('トランザクションの開始・確定・取り消しは、文とし�
   assert.deepEqual(await db.query('SELECT id FROM schema_migrations'), []);
   assert.deepEqual(await tables(db), ['notes', 'schema_migrations']);
 });
+
+test('先頭や末尾の空白・コメントが長くても、文の判定は入力の長さに比例する時間で終える', async (t) => {
+  const db = memoryDatabase(t);
+  const started = performance.now();
+  // 正規表現の後戻りが起きる形（長い空白・連続したコメント・閉じていないコメント）を並べる。
+  assert.deepEqual((await db.query(`${' '.repeat(200_000)}SELECT 1 AS one`)).map((row) => row.one), [1]);
+  assert.deepEqual((await db.query(`${'/**/'.repeat(50_000)}SELECT 2 AS two`)).map((row) => row.two), [2]);
+  assert.deepEqual((await db.query(`SELECT 3 AS three; ${'-- c\n'.repeat(50_000)}`)).map((row) => row.three), [3]);
+  await assert.rejects(db.query(`${' '.repeat(200_000)}x`));
+  // 閉じていないコメントは、SQLiteと同じく末尾までコメントとみなす（後ろのSELECTもコメントの中）。
+  assert.deepEqual((await db.query(`SELECT 4 AS four; ${'/*a'.repeat(50_000)} SELECT 5`)).map((row) => row.four), [4]);
+  await assert.rejects(db.run(`${'/**/ '.repeat(50_000)}COMMIT`), /batchに任せて/);
+  assert.ok(performance.now() - started < 2000);
+});

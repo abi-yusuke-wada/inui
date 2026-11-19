@@ -26,10 +26,31 @@ export interface Database {
   close(): Promise<void>;
 }
 
-// 準備した1文の後ろに残ってよいのは、空白とコメントだけ。
-const TRAILING = /--[^\n]*|\/\*[\s\S]*?\*\//g;
-// トランザクションの開始・確定・取り消しの文（先頭の空白とコメントは読み飛ばす）。
-const TRANSACTION_CONTROL = /^(?:\s+|--[^\n]*(?:\n|$)|\/\*[\s\S]*?\*\/)*(?:BEGIN|COMMIT|END|ROLLBACK|SAVEPOINT|RELEASE)\b/i;
+// トランザクションの開始・確定・取り消しの文。
+const TRANSACTION_CONTROL = /^(?:BEGIN|COMMIT|END|ROLLBACK|SAVEPOINT|RELEASE)\b/i;
+
+/**
+ * 空白とコメント（「--」から行末まで、「/*」から「*\/」まで）を読み飛ばした位置を返す。
+ * SQLiteと同じく、閉じていないコメントは末尾までとみなす。正規表現の後戻りで時間が延びないよう、
+ * 1文字ずつ進めて入力の長さに比例する時間で終える。
+ */
+function skipSpaceAndComments(sql: string, from = 0): number {
+  let index = from;
+  while (index < sql.length) {
+    if (/\s/.test(sql.charAt(index))) {
+      index++;
+    } else if (sql.startsWith('--', index)) {
+      const end = sql.indexOf('\n', index);
+      index = end < 0 ? sql.length : end + 1;
+    } else if (sql.startsWith('/*', index)) {
+      const end = sql.indexOf('*/', index + 2);
+      index = end < 0 ? sql.length : end + 2;
+    } else {
+      break;
+    }
+  }
+  return index;
+}
 
 /**
  * 1つの文だけを準備する。node:sqliteは最初の文だけを準備し、2つ目以降を黙って捨てるため、
@@ -37,10 +58,13 @@ const TRANSACTION_CONTROL = /^(?:\s+|--[^\n]*(?:\n|$)|\/\*[\s\S]*?\*\/)*(?:BEGIN
  * 文の中で確定・取り消しをさせない（途中で確定されると、まとめて確定する約束が守れないため）。
  */
 function prepareOne(db: DatabaseSync, sql: string): StatementSync {
-  if (TRANSACTION_CONTROL.test(sql)) throw new Error('トランザクションの開始・確定・取り消しはbatchに任せてください。');
+  if (TRANSACTION_CONTROL.test(sql.slice(skipSpaceAndComments(sql)))) {
+    throw new Error('トランザクションの開始・確定・取り消しはbatchに任せてください。');
+  }
   const statement = db.prepare(sql);
+  // 準備した1文の後ろに残ってよいのは、空白とコメントだけ。
   const start = sql.indexOf(statement.sourceSQL);
-  if (start < 0 || sql.slice(start + statement.sourceSQL.length).replace(TRAILING, '').trim() !== '') {
+  if (start < 0 || skipSpaceAndComments(sql, start + statement.sourceSQL.length) < sql.length) {
     throw new Error('SQLは1回に1文だけ渡してください。');
   }
   return statement;
