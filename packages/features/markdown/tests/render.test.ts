@@ -100,8 +100,22 @@ test('外部の画像やURLを参照する図は、Mermaidを読み込む前に�
     'flowchart LR\n  A --> B\n  classDef x fill:\\75 rl(https:\\2f\\2f example.org/a.svg)',
     'flowchart LR\n  A --> B\n  style A fill:#117;rl(https:#47;#47;example.org/a.svg)',
     '%%{init: {"themeCSS": "a { background: &#x75;rl(https:\\/\\/example.org/x) }"}}%%\nflowchart LR\n  A --> B',
+    // CSSの画像の関数や @import、スラッシュが1本・ないスキームも見つける。
+    "---\nconfig:\n  themeCSS: '* { background-image: image-set(\"https:/example.org/pixel.png\" 1x); }'\n---\nflowchart LR\n  A --> B",
+    'flowchart LR\n  A --> B\n  classDef x fill:-webkit-image-set("pixel.png" 1x)',
+    'flowchart LR\n  A --> B\n  classDef x fill:"https:example.org/a.svg"',
+    'flowchart LR\n  A --> B\n  classDef x fill:"ht\\\ntps:example.org/a.svg"',
   ]) {
     await assert.rejects(renderDiagram(code, 'test-diagram'), /external_reference/);
+  }
+});
+
+test('Mermaidの図の側からは、CSSへ入る設定（themeCSS等）を変えられない', async () => {
+  const { MERMAID_CONFIG } = await import('../src/mermaid.ts');
+  assert.equal(MERMAID_CONFIG.securityLevel, 'strict');
+  for (const key of ['secure', 'securityLevel', 'startOnLoad', 'maxTextSize', 'suppressErrorRendering', 'maxEdges',
+    'themeCSS', 'themeVariables', 'fontFamily', 'altFontFamily']) {
+    assert.ok(MERMAID_CONFIG.secure?.includes(key), key);
   }
 });
 
@@ -111,6 +125,7 @@ test('外部参照の検査のため、YAML・CSSのエスケープと文字参�
   assert.equal(decodeEscapes('\\75 rl( \\2f\\2f'), 'url( //');
   assert.equal(decodeEscapes('#117;rl( &#x2F;&#47; &#1114112;'), 'url( // \ufffd');
   assert.equal(decodeEscapes('a\\/b\\/'), 'a/b/');
+  assert.equal(decodeEscapes('ht\\\ntps: ht\\\r\ntps:'), 'https: https:');
   // 通常の図の定義はそのまま残る。
   assert.equal(decodeEscapes('flowchart LR\n  A[開始] --> B[終了]'), 'flowchart LR\n  A[開始] --> B[終了]');
 });

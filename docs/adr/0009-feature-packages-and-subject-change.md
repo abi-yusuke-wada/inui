@@ -44,7 +44,7 @@ ADR-0008で実装した休暇申請・交通費精算・申請状況の確認は
 - GitHubは、自分が担当のIssue、自分が作ったPR、レビューを依頼されたPRを検索APIで読み取る。Backlogは、自分が担当の未完了の課題を読み取る（2026-11-18に削除）。どちらも読み取り専用で、取得結果は保存しない。リダイレクトに従わず、10秒で打ち切る。応答は項目・リンク先（`https://github.com/`、`https://<スペース>.backlog.jp|com/view/`）・制御文字を検証し、失敗は固定のコードと案内文へ置き換える。
 - 認証情報は、利用者が環境変数`INUI_GITHUB_TOKEN`・`INUI_BACKLOG_SPACE`・`INUI_BACKLOG_API_KEY`で与えた場合だけ使う。`make app-dev`の起動スクリプトは、この3つだけをアプリのプロセスへ渡し、推論サーバーには渡さない（Backlogの削除後は`INUI_GITHUB_TOKEN`だけ）。既存の`GH_TOKEN`・`GITHUB_TOKEN`は引き継がない。値はログ・エラー・応答へ含めない。BacklogのAPIキーはAPIの仕様でクエリに入るため、URLを記録しない。
 - 画面が失敗の種類を区別できるよう、BFFはエラー応答に固定のコードを`X-Error-Code`ヘッダーとして付ける。画面はエラー本文を読まない（ADR-0008の方針を維持）。
-- Markdownのファイルはブラウザ内だけで読み、サーバーへ送らない。markdown-itで生のHTMLを無効にし、DOMPurifyで無害化してから表示する。画像は外部への通信を起こさないよう表示しない。Mermaidは`securityLevel: strict`で描画し、生成したSVGも無害化する（ラベルを作る`foreignObject`の中のHTMLは許可する）。画像（`img:`）・URL・`url()`を参照する図は、描画の途中で画像の読み込みが始まり外部へ通信するため、描画せずに定義を表示する（2026-11-18、CodeRabbitの指摘で追加）。
+- Markdownのファイルはブラウザ内だけで読み、サーバーへ送らない。markdown-itで生のHTMLを無効にし、DOMPurifyで無害化してから表示する。画像は外部への通信を起こさないよう表示しない。Mermaidは`securityLevel: strict`で描画し、生成したSVGも無害化する（ラベルを作る`foreignObject`の中のHTMLは許可する）。画像（`img:`）・URL・`url()`等を参照する図は、描画の途中で画像の読み込みが始まり外部へ通信するため、描画せずに定義を表示する。URLはスキームで見つけ、YAML・CSSのエスケープや文字参照を元に戻した文字列も検査する。図の側（frontmatter・`%%{init}%%`）からCSSへ入る設定（`themeCSS`・`themeVariables`・`fontFamily`）は、Mermaidの`secure`で変えられないようにする（2026-11-18〜19、CodeRabbitの指摘で追加）。
 - 依存の取得は従来どおりNixのdevShellのpnpmで行い、lockfileで版を固定する。依存定義の変更をネットワーク経由でlockへ反映する`make app-lock-update`を追加した。`pnpm-workspace.yaml`の`minimumReleaseAge`で、公開から14日未満の版を解決しない。PR #25で導入済みの8件（hono 4.13.17等）は、その版に限り除外する。
 - worktreeでも本体のチェックアウトと同じpnpmストア・メタデータキャッシュ（`<本体>/.local-poc/`）と、実NLIのモデル（`<本体>/.local-jev/`、`make app-model-check`）を使う。ストアからはハードリンクで配置されるため、パッケージの実体は重複しない。
 
