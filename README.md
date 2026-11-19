@@ -25,7 +25,7 @@ inuiの問題提起は「LLMにどんなUIを生成させるか」ではあり�
 
 ## MVPの方向性
 
-利用者（システムエンジニア）が普段使う、Markdownの表示・タスク（GitHubのIssue・PRと自分のタスク）・ホワイトボードを対象として小さく実装し、E2Eの動作と旧形式との比較を確認します（[Issue #10](https://github.com/abi-yusuke-wada/inui/issues/10)で申請・ワークフローから入れ替えました。題材は案としてレビュー中です）。
+利用者（システムエンジニア）が普段使う、Markdownの表示・タスク（GitHubのIssue・PRと自分のタスク）・ホワイトボードを対象として小さく実装し、E2Eの動作と旧形式との比較を確認します（[Issue #10](https://github.com/abi-yusuke-wada/inui/issues/10)で申請・ワークフローから入れ替え、[PR #26](https://github.com/abi-yusuke-wada/inui/pull/26)で合意しました）。
 自然言語から3画面へ振り分けます。ファイルの選択、タスクの追加、ボードの保存は画面上で明示的に操作します。公式Jev、入力からの値の自動補完、製品MCPは、部署展開と費用に関する社内承認後へ延期します（[ADR-0006](docs/adr/0006-local-model-for-mvp.md)、[ADR-0008](docs/adr/0008-local-poc-workflows.md)、[ADR-0009](docs/adr/0009-feature-packages-and-subject-change.md)）。
 範囲と完了条件は [MVP.md](MVP.md) にまとめます。
 
