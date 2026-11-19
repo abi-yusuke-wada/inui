@@ -2,7 +2,7 @@
 
 [Issue #1](https://github.com/abi-yusuke-wada/inui/issues/1) で合意し、[Issue #11](https://github.com/abi-yusuke-wada/inui/issues/11) で研究の問い・方針・題材を見直した内容をまとめる。実装はIssue #4、検証結果の整理・部内共有はIssue #5で扱う。
 
-> **題材の入れ替え（案・2026-11-16）**: [Issue #10](https://github.com/abi-yusuke-wada/inui/issues/10) で、題材を申請・ワークフローから、利用者（システムエンジニア）が普段使う「Markdownの表示」「タスク（GitHubのIssue・PRと自分のタスク）」「ホワイトボード」へ入れ替えた。休暇申請・交通費精算・申請状況の確認は画面・API・Intentごと削除した。PR #25で実装した複数人の予定比較も、利用者は社内の予定をグループウェアで管理しており、連携して参照するのは現実的でないため、2026-11-18に画面・API・Intentごと削除した。同日、タスク画面のBacklogの課題の読み取りも、利用者の判断で外した。本書の題材・対象範囲・入力例・完了条件は、Issue #10のPRのレビューで合意するまで案とする。申請を題材にした13入力の分類結果（Issue #16）は履歴として残す。構成の判断は[ADR-0009](docs/adr/0009-feature-packages-and-subject-change.md)に記録する。
+> **題材の入れ替え（2026-11-16、2026-11-19に合意）**: [Issue #10](https://github.com/abi-yusuke-wada/inui/issues/10) で、題材を申請・ワークフローから、利用者（システムエンジニア）が普段使う「Markdownの表示」「タスク（GitHubのIssue・PRと自分のタスク）」「ホワイトボード」へ入れ替えた。休暇申請・交通費精算・申請状況の確認は画面・API・Intentごと削除した。PR #25で実装した複数人の予定比較も、利用者は社内の予定をグループウェアで管理しており、連携して参照するのは現実的でないため、2026-11-18に画面・API・Intentごと削除した。同日、タスク画面のBacklogの課題の読み取りも、利用者の判断で外した。本書の題材・対象範囲・入力例・完了条件は、[PR #26](https://github.com/abi-yusuke-wada/inui/pull/26)のマージ（2026-11-19）で合意した。申請を題材にした13入力の分類結果（Issue #16）は履歴として残す。構成の判断は[ADR-0009](docs/adr/0009-feature-packages-and-subject-change.md)に記録する。
 
 ## 研究の問い
 
@@ -149,6 +149,6 @@ inuiと旧形式を同じ作業で比較し、結果を記録して [Issue #5](h
 
 ## 本書の合意
 
-Issue #1で範囲と完了条件を合意し、Issue #11で研究の問い・JEV優先の方針・題材・旧形式との比較を見直した。Issue #10で題材を文書・タスク・ホワイトボードへ入れ替えた（案。PRのレビューで合意する）。本書の対象・対象外、検証データ、入力と期待結果、比較の方法、検証手順・判定基準をレビューし、合意することで、Issue #11のうちMVP.mdに関する完了条件を満たす。PoCの実装・動作確認や計測の実施は含めない。
+Issue #1で範囲と完了条件を合意し、Issue #11で研究の問い・JEV優先の方針・題材・旧形式との比較を見直した。Issue #10で題材を文書・タスク・ホワイトボードへ入れ替え、PR #26のマージ（2026-11-19）で合意した。本書の対象・対象外、検証データ、入力と期待結果、比較の方法、検証手順・判定基準をレビューし、合意することで、Issue #11のうちMVP.mdに関する完了条件を満たす。PoCの実装・動作確認や計測の実施は含めない。
 
 技術構成の採用判断・理由は [ADR-0001](docs/adr/0001-mvp-hosting-and-storage.md)、開発環境は [ADR-0002](docs/adr/0002-development-environment.md)、コアとPoCアプリの分離は [ADR-0003](docs/adr/0003-separate-core-from-poc-app.md)、LLM不使用は [ADR-0004](docs/adr/0004-jev-first-intent-routing.md)、ローカルモデルでMVPを先行する方針は [ADR-0006](docs/adr/0006-local-model-for-mvp.md)、機能パッケージと題材の入れ替えは [ADR-0009](docs/adr/0009-feature-packages-and-subject-change.md) を参照する。

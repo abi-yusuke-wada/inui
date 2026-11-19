@@ -2,7 +2,8 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import { execFileSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
-import { runLocal, serviceEnv, checkService, localJevDir } from '../../scripts/poc-local.mjs';
+import { runLocal, serviceEnv, checkService, localJevDir, warmUpLocalJev } from '../../scripts/poc-local.mjs';
+import { buildLocalRequest } from '../../packages/core/src/index.ts';
 const BUILD = 'a'.repeat(64);
 
 const PRIVATE_DETAIL = 'test-only-private-failure';
@@ -22,21 +23,25 @@ function harness(overrides = {}) {
   const saved = [];
   const logs = [];
   const report = successfulReport();
+  const order = [];
   let probeCalls = 0;
+  let warmCalls = 0;
   const options = {
     check: async () => true,
     launch: (service) => {
       launched.push(service);
       return { exited: new Promise(() => {}), stop: async () => { stopped.push(service); } };
     },
-    probe: async () => { probeCalls += 1; return report; },
+    probe: async () => { probeCalls += 1; order.push('probe'); return report; },
+    // 実際の推論サーバーへは通信しない。
+    warm: async () => { warmCalls += 1; order.push('warm'); },
     save: async (value) => { saved.push(value); },
     sleep: async () => assert.fail('起動確認が即時成功するケースでは待機しない'),
     log: (line) => { logs.push(line); },
     installSignals: false, port: 8766,
     ...overrides,
   };
-  return { options, launched, stopped, saved, logs, report, probeCalls: () => probeCalls };
+  return { options, launched, stopped, saved, logs, report, order, probeCalls: () => probeCalls, warmCalls: () => warmCalls };
 }
 
 test('両サービスが起動済みなら再利用し、19件smokeを保存して既存プロセスを停止しない', async () => {
@@ -49,6 +54,8 @@ test('両サービスが起動済みなら再利用し、19件smokeを保存し�
   assert.equal(h.probeCalls(), 1);
   assert.deepEqual(h.saved, [h.report]);
   assert.ok(h.logs.some((line) => line.includes('19/19')));
+  // 起動済みの推論サーバーは、準備の判定を経ている見込みが高いため、起動を遅くしない。
+  assert.equal(h.warmCalls(), 0);
 });
 
 test('不足する2サービスだけを起動し、再確認後のsmoke完了時に自分の子を両方停止する', async () => {
@@ -63,6 +70,47 @@ test('不足する2サービスだけを起動し、再確認後のsmoke完了�
   assert.deepEqual(h.stopped, ['local-jev', 'app']);
   assert.deepEqual([...checks], [['local-jev', 2], ['app', 2]]);
   assert.deepEqual(h.saved, [h.report]);
+  // 推論サーバーを起動したときは、案内と検証の前に、準備の判定を1回だけ行う。
+  assert.deepEqual(h.order, ['warm', 'probe']);
+  const ready = h.logs.findIndex((line) => line.includes('準備の判定が終わりました'));
+  assert.ok(ready >= 0 && ready < h.logs.findIndex((line) => line.includes('自然言語UI:')));
+});
+
+test('準備の判定に失敗しても起動は続け、最初の判定が遅くなり得ることを知らせる', async () => {
+  const checks = new Map();
+  const h = harness({
+    check: async (service) => {
+      const count = (checks.get(service) ?? 0) + 1;
+      checks.set(service, count);
+      return service === 'app' || count > 1;
+    },
+    warm: async () => { throw new Error(PRIVATE_DETAIL); },
+  });
+  assert.equal(await runLocal('smoke', h.options), 0);
+  assert.deepEqual(h.launched, ['local-jev']);
+  assert.equal(h.probeCalls(), 1);
+  assert.ok(h.logs.includes('推論サーバーの準備の判定に失敗しました。最初の判定に時間がかかる場合があります。'));
+  assert.equal(h.logs.join('\n').includes(PRIVATE_DETAIL), false);
+});
+
+test('準備の判定はinuiと同じ形の問いを推論サーバーへ送り、応答をコアと同じ規則で検証する', async () => {
+  const intents = ['markdown_view', 'task_board', 'whiteboard', 'unsupported_feature', 'unsupported_operation', 'unspecified_request'];
+  const valid = {
+    model: 'nli-deberta-large', usage: { input_tokens: 10, output_tokens: 1 },
+    answers: { intent: { type: 'choice', choice: 'task_board', confidence: 0.7,
+      probabilities: Object.fromEntries(intents.map((intent) => [intent, intent === 'task_board' ? 0.7 : 0.06])) } },
+  };
+  const calls = [];
+  await warmUpLocalJev({ fetchImpl: async (url, init) => { calls.push({ url, init }); return Response.json(valid); } });
+  assert.equal(calls.length, 1);
+  assert.equal(calls[0]?.url, 'http://127.0.0.1:8765/v1/systemone');
+  assert.equal(calls[0]?.init.method, 'POST');
+  assert.equal(calls[0]?.init.redirect, 'error');
+  assert.ok(calls[0]?.init.signal instanceof AbortSignal);
+  assert.deepEqual(JSON.parse(calls[0]?.init.body), buildLocalRequest('自分のタスクを確認したい'));
+  // HTTPの失敗や、契約にない応答は失敗として扱う（起動側では案内だけを出して続ける）。
+  await assert.rejects(warmUpLocalJev({ fetchImpl: async () => new Response(null, { status: 503 }) }));
+  await assert.rejects(warmUpLocalJev({ fetchImpl: async () => Response.json({ ...valid, Tool: 'delete' }) }));
 });
 
 test('2つ目の起動確認やprobeが失敗しても、自分の全サービスを片付けて終了1を返す', async () => {
