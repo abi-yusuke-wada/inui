@@ -44,7 +44,7 @@ test('自分が作った未完了のPRを、リポジトリごとの検索を1�
   assert.equal(calls[0]?.url, 'https://api.github.com/graphql');
   assert.equal(calls[0]?.init?.method, 'POST');
   assert.equal(calls[0]?.init?.redirect, 'error');
-  assert.equal((calls[0]?.init?.headers as Record<string, string>).Authorization, `Bearer ${TOKEN}`);
+  assert.equal((calls[0]?.init?.headers as Record<string, string> | undefined)?.Authorization, `Bearer ${TOKEN}`);
   const request = JSON.parse(String(calls[0]?.init?.body));
   assert.deepEqual(request.variables, {
     q0: 'repo:example/inui is:pr is:open author:@me archived:false', q1: 'repo:example/notes is:pr is:open author:@me archived:false',
