@@ -38,7 +38,8 @@ test('worktreeごとのブランチ・変更・最近のコミットを読み、
   });
   assert.deepEqual(main?.commits.map((commit) => [commit.subject, commit.committedAt]),
     [['ADRを書く', '2026-11-17T09:00:00+09:00'], ['最初のコミット', '2026-11-16T09:00:00+09:00']]);
-  assert.match(main?.commits[0]?.sha ?? '', /^[0-9a-f]{40}$/);
+  // GIT_DEFAULT_HASH=sha256 の環境ではSHA-256のIDになる。
+  assert.match(main?.commits[0]?.sha ?? '', /^(?:[0-9a-f]{40}|[0-9a-f]{64})$/);
   assert.equal(feature?.commits[0]?.subject, '別のworktreeの作業');
   assert.equal(status.lastActivityAt, '2026-11-18T09:00:00+09:00');
 });
@@ -235,4 +236,56 @@ test('originのURLからは、GitHubの所有者と名前だけを取り出す',
     'https://github.com/example/inui/extra', 'https://github.com/ex ample/inui', '/root/develop/inui']) {
     assert.equal(parseGitHubRemote(url), undefined, url);
   }
+});
+
+test('未追跡のディレクトリの中のファイルも1件ずつ数え、新しく作った引き継ぎメモを未コミットとして読む', async (t) => {
+  const repo = createRepository(t);
+  repo.commit('最初のコミット', { 'a.txt': 'a\n' });
+  // docs/ ごと未追跡（新しく作った引き継ぎメモ）と、ファイルが3つある未追跡のディレクトリ。
+  repo.write(HANDOFF_PATH, '# 新しいメモ\n');
+  for (const name of ['1', '2', '3']) repo.write(`notes/${name}.md`, name);
+  const status = await readRepository(git, { name: 'repo', path: repo.dir });
+  const changes = status.worktrees[0]?.changes;
+  assert.equal(changes?.untracked, 4);
+  assert.deepEqual(changes?.files.map((file) => file.path).sort(), [HANDOFF_PATH, 'notes/1.md', 'notes/2.md', 'notes/3.md']);
+  assert.equal(status.handoff?.uncommitted, true);
+  assert.equal(status.handoff?.markdown, '# 新しいメモ\n');
+});
+
+test('確かめた後に docs がworktreeの外へのリンクに差し替えられても、外の本文は読まない', async (t) => {
+  const root = temporaryDirectory(t);
+  const worktree = join(root, 'wt');
+  mkdirSync(join(worktree, 'docs'), { recursive: true });
+  writeFileSync(join(worktree, HANDOFF_PATH), '# worktreeのメモ\n');
+  mkdirSync(join(root, 'outside'));
+  writeFileSync(join(root, 'outside', 'HANDOFF.md'), '# worktreeの外の本文\n');
+  // メモを確かめた後の git log の間に、docs を外へのリンクに差し替える。
+  const fake: GitRunner = async (_cwd, args) => {
+    if (args[0] === 'worktree') return `worktree ${worktree}\nHEAD ${'a'.repeat(40)}\nbranch refs/heads/main\n`;
+    if (args[0] === 'status') return '# branch.oid (initial)\0# branch.head main\0';
+    if (args[0] === 'log') {
+      rmSync(join(worktree, 'docs'), { recursive: true });
+      symlinkSync(join(root, 'outside'), join(worktree, 'docs'));
+      return '2026-11-19T09:00:00+09:00\n';
+    }
+    throw new GitError('git_failed');
+  };
+  const status = await readRepository(fake, { name: 'wt', path: worktree });
+  assert.equal(status.handoff, undefined);
+});
+
+test('パスの途中に改行があるworktreeは、切れたパスを読まずに読めないものとして返す', async (t) => {
+  const root = temporaryDirectory(t);
+  const statusCalls: string[] = [];
+  // git 2.34 には -z がなく、改行を含むパスは続きが知らない行として現れる。
+  const list = `worktree ${root}/main\nHEAD ${'a'.repeat(40)}\nbranch refs/heads/main\n\n`
+    + `worktree ${root}/wt\nnext\nHEAD ${'b'.repeat(40)}\nbranch refs/heads/feat/x\n`;
+  const fake: GitRunner = async (cwd, args) => {
+    if (args[0] === 'worktree') return list;
+    if (args[0] === 'status') { statusCalls.push(cwd); return '# branch.oid (initial)\0# branch.head main\0'; }
+    throw new GitError('git_failed');
+  };
+  const status = await readRepository(fake, { name: 'repo', path: root });
+  assert.deepEqual(status.worktrees.map((item) => [item.path, item.error]), [[`${root}/main`, undefined], [`${root}/wt`, 'git_failed']]);
+  assert.deepEqual(statusCalls, [`${root}/main`]);
 });

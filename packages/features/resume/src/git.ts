@@ -18,7 +18,8 @@ const MAX_SUBJECT_LENGTH = 200;
 /** 引き継ぎメモの場所（AGENTS.mdの決まり）と、読む大きさの上限。 */
 export const HANDOFF_PATH = 'docs/HANDOFF.md';
 export const MAX_HANDOFF_BYTES = 64 * 1024;
-const SHA = /^[0-9a-f]{40,64}$/;
+// SHA-1（40桁）とSHA-256（64桁）のコミットID。
+const SHA = /^(?:[0-9a-f]{40}|[0-9a-f]{64})$/;
 const TIMESTAMP = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?(?:Z|[+-]\d{2}:\d{2})$/;
 // originのURLからGitHubの所有者と名前だけを取り出す。URLに認証情報が含まれていても、それは使わない。
 const GITHUB_REMOTE = /^(?:https:\/\/(?:[^@/\s]+@)?github\.com\/|git@github\.com:|ssh:\/\/git@github\.com\/)([A-Za-z0-9_.-]{1,100})\/([A-Za-z0-9_.-]{1,100}?)(?:\.git)?\/?$/;
@@ -99,7 +100,13 @@ interface WorktreeEntry {
   branch?: string;
   bare: boolean;
   prunable: boolean;
+  /** 知らない行が続いた（パスの途中に改行があった）ため、パスを正しく読めていない。 */
+  invalid: boolean;
 }
+
+// worktreeのパスの後に続く属性の行。NUL区切りの出力（-z）はgit 2.36からで、2.34では使えないため、
+// パスの途中に改行があると続きが知らない行として現れる。その場合は、切れたパスを読まない。
+const WORKTREE_ATTRIBUTE = /^(?:HEAD [0-9a-f]+|branch .+|bare|detached|locked(?: .*)?|prunable(?: .*)?)$/;
 
 /** `git worktree list --porcelain` の出力を読む。最初が本体のworktree。 */
 export function parseWorktrees(output: string): WorktreeEntry[] {
@@ -107,9 +114,10 @@ export function parseWorktrees(output: string): WorktreeEntry[] {
   for (const block of output.split('\n\n')) {
     const [first, ...rest] = block.split('\n').filter((line) => line.length > 0);
     if (!first?.startsWith('worktree ')) continue;
-    const entry: WorktreeEntry = { path: first.slice('worktree '.length), bare: false, prunable: false };
+    const entry: WorktreeEntry = { path: first.slice('worktree '.length), bare: false, prunable: false, invalid: false };
     for (const line of rest) {
-      if (line.startsWith('branch refs/heads/')) entry.branch = line.slice('branch refs/heads/'.length);
+      if (!WORKTREE_ATTRIBUTE.test(line)) entry.invalid = true;
+      else if (line.startsWith('branch refs/heads/')) entry.branch = line.slice('branch refs/heads/'.length);
       else if (line === 'bare') entry.bare = true;
       else if (line === 'prunable' || line.startsWith('prunable ')) entry.prunable = true;
     }
@@ -201,10 +209,14 @@ async function readWorktree(git: GitRunner, entry: WorktreeEntry): Promise<Workt
     status: { path: entry.path, ...(entry.branch ? { branch: entry.branch } : {}), error, changes: emptyChanges(), commits: [] },
     handoffChanged: false,
   });
+  // パスを正しく読めていないworktreeでは、gitを動かさない。
+  if (entry.invalid) return failed('git_failed');
   // worktreeのディレクトリが消えている。
   if (entry.prunable) return failed('not_found');
   try {
-    const status = parseStatus(await git(entry.path, ['status', '--porcelain=v2', '--branch', '-z', '--ignore-submodules=all']));
+    // 未追跡のディレクトリも中のファイルごとに数え、新しく作った引き継ぎメモを見落とさない。
+    const status = parseStatus(await git(entry.path,
+      ['status', '--porcelain=v2', '--branch', '-z', '--untracked-files=all', '--ignore-submodules=all']));
     const commits = status.initial ? [] : parseLog(await git(entry.path, ['log', `-n${MAX_COMMITS}`, '--format=%H%x1f%cI%x1f%s', '-z']));
     return {
       status: {
@@ -218,32 +230,45 @@ async function readWorktree(git: GitRunner, entry: WorktreeEntry): Promise<Workt
   }
 }
 
+/** 確かめた引き継ぎメモ。開いたときに同じファイルかを比べるため、デバイスとiノードの番号を持つ。 */
+interface HandoffFile {
+  path: string;
+  mtime: Date;
+  dev: bigint;
+  ino: bigint;
+}
+
 /**
  * worktreeの中の引き継ぎメモを返す。シンボリックリンクや、リンクでworktreeの外を指す場所にあるものは読まない。
  */
-async function handoffFile(worktree: string): Promise<{ path: string; mtime: Date } | undefined> {
+async function handoffFile(worktree: string): Promise<HandoffFile | undefined> {
   const path = join(worktree, HANDOFF_PATH);
   try {
-    const info = await lstat(path);
+    const info = await lstat(path, { bigint: true });
     if (!info.isFile()) return undefined;
     const [root, real] = await Promise.all([realpath(worktree), realpath(path)]);
     if (!real.startsWith(root + sep)) return undefined;
-    return { path, mtime: info.mtime };
+    return { path, mtime: info.mtime, dev: info.dev, ino: info.ino };
   } catch {
     return undefined;
   }
 }
 
-/** 上限までを読み、上限で切った位置が文字の途中なら壊れた末尾を除く。 */
-async function readLimited(path: string): Promise<{ markdown: string; truncated: boolean }> {
-  // 確かめた後にリンクへ差し替えられても、たどらない。
-  const handle = await open(path, constants.O_RDONLY | constants.O_NOFOLLOW);
+/**
+ * 上限までを読み、上限で切った位置が文字の途中なら壊れた末尾を除く。確かめた後に途中のディレクトリ（docs等）が
+ * リンクへ差し替えられると別のファイルを開くことになるため、開いたファイルが確かめたものと違えば読まない。
+ */
+async function readLimited(file: HandoffFile): Promise<{ markdown: string; truncated: boolean } | undefined> {
+  // 末尾のリンクはたどらない。
+  const handle = await open(file.path, constants.O_RDONLY | constants.O_NOFOLLOW);
   try {
+    const info = await handle.stat({ bigint: true });
+    if (info.dev !== file.dev || info.ino !== file.ino) return undefined;
     const buffer = Buffer.alloc(MAX_HANDOFF_BYTES + 1);
     const { bytesRead } = await handle.read(buffer, 0, buffer.length, 0);
     const truncated = bytesRead > MAX_HANDOFF_BYTES;
     const text = new TextDecoder().decode(buffer.subarray(0, Math.min(bytesRead, MAX_HANDOFF_BYTES)));
-    return { markdown: truncated ? text.replace(/�+$/, '') : text, truncated };
+    return { markdown: truncated ? text.replace(/\uFFFD+$/, '') : text, truncated };
   } finally {
     await handle.close();
   }
@@ -254,7 +279,7 @@ async function readLimited(path: string): Promise<{ markdown: string; truncated:
  * なければ最後にコミットした日時で比べ、同じなら本体のworktreeを優先する。
  */
 async function readHandoff(git: GitRunner, worktrees: readonly WorktreeResult[]): Promise<Handoff | undefined> {
-  const candidates: { status: WorktreeStatus; path: string; updatedAt: string; uncommitted: boolean }[] = [];
+  const candidates: { status: WorktreeStatus; file: HandoffFile; updatedAt: string; uncommitted: boolean }[] = [];
   for (const { status, handoffChanged } of worktrees) {
     if (status.error) continue;
     const file = await handoffFile(status.path);
@@ -264,12 +289,14 @@ async function readHandoff(git: GitRunner, worktrees: readonly WorktreeResult[])
       const committed = (await git(status.path, ['log', '-1', '--format=%cI', '--', HANDOFF_PATH]).catch(() => '')).trim();
       if (TIMESTAMP.test(committed)) updatedAt = committed;
     }
-    candidates.push({ status, path: file.path, updatedAt, uncommitted: handoffChanged });
+    candidates.push({ status, file, updatedAt, uncommitted: handoffChanged });
   }
   const latest = candidates.sort((a, b) => Date.parse(b.updatedAt) - Date.parse(a.updatedAt))[0];
   if (!latest) return undefined;
   try {
-    const { markdown, truncated } = await readLimited(latest.path);
+    const content = await readLimited(latest.file);
+    if (!content) return undefined;
+    const { markdown, truncated } = content;
     return {
       worktreePath: latest.status.path, ...(latest.status.branch ? { branch: latest.status.branch } : {}), path: HANDOFF_PATH,
       updatedAt: latest.updatedAt, uncommitted: latest.uncommitted, markdown, truncated,
