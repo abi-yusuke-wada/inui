@@ -1,0 +1,16 @@
+{
+  "name": "@inui/feature-resume",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    "./server": "./src/server.ts",
+    "./types": "./src/types.ts"
+  },
+  "dependencies": {
+    "@inui/feature-kit": "workspace:*"
+  },
+  "peerDependencies": {
+    "hono": "4.13.17"
+  }
+}
