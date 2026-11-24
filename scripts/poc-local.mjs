@@ -4,7 +4,7 @@ import { mkdir, rename, writeFile } from 'node:fs/promises';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { APP_NAME, appPort, appOrigin, buildId } from '../src/local-config.ts';
 import { logLevel } from '../src/logger.ts';
-import { LOCAL_MODEL } from '../packages/core/src/index.ts';
+import { LOCAL_MODEL, buildLocalRequest, parseLocalResponse } from '../packages/core/src/index.ts';
 import { probeHttp } from './poc-probe.mjs';
 
 const ROOT = fileURLToPath(new URL('../', import.meta.url));
@@ -85,6 +85,25 @@ export async function checkService(service, fetchImpl = globalThis.fetch, port, 
   return true;
 }
 
+// 準備の判定の期限。PCが混んでいると起動直後の判定に30秒以上かかった実測があるため、余裕を持たせる。
+const WARM_UP_TIMEOUT_MS = 120_000;
+
+/**
+ * 推論サーバーを起動した直後の最初の判定は、2件目以降より遅い（実測で約2倍。PCが混んでいると25秒の期限を超え得る）。
+ * 推論サーバー自身の準備（warm-up）は短い英語の問いだけなので、inuiと同じ形（日本語の入力と6候補）の判定を1回流しておく。
+ * 応答はコアと同じ検証を通し、内容は使わない。
+ */
+export async function warmUpLocalJev({ fetchImpl = globalThis.fetch, signal } = {}) {
+  const timeout = AbortSignal.timeout(WARM_UP_TIMEOUT_MS);
+  const response = await fetchImpl('http://127.0.0.1:8765/v1/systemone', {
+    method: 'POST', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(buildLocalRequest('自分のタスクを確認したい')),
+    redirect: 'error', signal: signal ? AbortSignal.any([signal, timeout]) : timeout,
+  });
+  if (!response.ok) throw new LocalError('推論サーバーの準備の判定に失敗しました。');
+  parseLocalResponse(await response.json());
+}
+
 /** PIDは自分が生成した子だけ保持し、そのプロセス群だけを終了する。 */
 export function launchService(service, port) {
   const command = service === 'app' ? process.execPath : `${LOCAL_JEV_DIR}/venv/bin/local-jev`;
@@ -137,7 +156,7 @@ async function saveReport(report) {
 
 /** 起動済みは再利用し、不足分の起動・検証・自分の子の片付けをまとめる。 */
 export async function runLocal(mode, {
-  check = checkService, launch = launchService, probe = probeHttp, save = saveReport,
+  check = checkService, launch = launchService, probe = probeHttp, save = saveReport, warm = warmUpLocalJev,
   sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms)),
   now = Date.now, log = console.error, timeoutMs = 180_000, installSignals = true, port,
 } = {}) {
@@ -146,6 +165,7 @@ export async function runLocal(mode, {
   try { selectedPort = appPort(port === undefined ? undefined : { INUI_POC_PORT: String(port) }); }
   catch { log('INUI_POC_PORTには1024〜65535の整数を指定してください。'); return 1; }
   const owned = [];
+  const launched = new Set();
   const shutdown = new AbortController();
   let stopped;
   const stopRequested = new Promise((_, reject) => { stopped = () => { shutdown.abort(); reject(new Stopped()); }; });
@@ -162,6 +182,7 @@ export async function runLocal(mode, {
       if (await race(check(service, globalThis.fetch, selectedPort))) { log(`${LABELS[service]}: 起動済みを利用します。`); continue; }
       log(`${LABELS[service]}を起動します。`);
       owned.push(launch(service, selectedPort));
+      launched.add(service);
       const started = now();
       let lastMessage = started;
       while (!(await race(check(service, globalThis.fetch, selectedPort)))) {
@@ -170,6 +191,15 @@ export async function runLocal(mode, {
         await race(sleep(500));
       }
       log(`${LABELS[service]}: 起動しました。`);
+    }
+    // 推論サーバーを起動した場合だけ、案内の前に準備の判定を1回行う（再利用時は判定を経ている見込みが高く、起動を遅くしない）。
+    // 失敗しても起動は続け、最初の判定が遅くなり得ることだけを知らせる。停止の要求や子の終了は、通常どおり扱う。
+    if (launched.has('local-jev')) {
+      log('推論サーバーの準備として、判定を1回行います（起動直後の最初の判定は時間がかかるため）。');
+      const started = now();
+      const warmed = await race(warm({ signal: shutdown.signal }).then(() => true, () => false));
+      log(warmed ? `推論サーバー: 準備の判定が終わりました（${Math.round((now() - started) / 1000)}秒）。`
+        : '推論サーバーの準備の判定に失敗しました。最初の判定に時間がかかる場合があります。');
     }
     const origin = appOrigin(selectedPort);
     log(`自然言語UI: ${origin}/  比較用UI: ${origin}/legacy`);
