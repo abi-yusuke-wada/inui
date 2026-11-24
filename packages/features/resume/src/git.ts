@@ -204,7 +204,16 @@ interface WorktreeResult {
   handoffChanged: boolean;
 }
 
-async function readWorktree(git: GitRunner, entry: WorktreeEntry): Promise<WorktreeResult> {
+/** そのディレクトリが属するリポジトリの本体（共通のgitディレクトリ）を、リンクを解いた絶対パスで返す。 */
+async function commonDir(git: GitRunner, path: string): Promise<string> {
+  return realpath((await git(path, ['rev-parse', '--path-format=absolute', '--git-common-dir'])).trim());
+}
+
+/**
+ * worktreeを読む。git 2.34の一覧はパスをエスケープしないため、パスの途中の改行で、別の場所を
+ * 指すように読めてしまうことがある。読む前に、そのディレクトリが登録したリポジトリのworktreeかを確かめる。
+ */
+async function readWorktree(git: GitRunner, entry: WorktreeEntry, repositoryCommonDir: string): Promise<WorktreeResult> {
   const failed = (error: GitErrorCode): WorktreeResult => ({
     status: { path: entry.path, ...(entry.branch ? { branch: entry.branch } : {}), error, changes: emptyChanges(), commits: [] },
     handoffChanged: false,
@@ -214,10 +223,13 @@ async function readWorktree(git: GitRunner, entry: WorktreeEntry): Promise<Workt
   // worktreeのディレクトリが消えている。
   if (entry.prunable) return failed('not_found');
   try {
+    if (await commonDir(git, entry.path) !== repositoryCommonDir) return failed('not_repository');
     // 未追跡のディレクトリも中のファイルごとに数え、新しく作った引き継ぎメモを見落とさない。
     const status = parseStatus(await git(entry.path,
       ['status', '--porcelain=v2', '--branch', '-z', '--untracked-files=all', '--ignore-submodules=all']));
-    const commits = status.initial ? [] : parseLog(await git(entry.path, ['log', `-n${MAX_COMMITS}`, '--format=%H%x1f%cI%x1f%s', '-z']));
+    // リポジトリの設定（i18n.logOutputEncoding）に関わらず、UTF-8で受け取る。
+    const commits = status.initial ? [] : parseLog(await git(entry.path,
+      ['log', `-n${MAX_COMMITS}`, '--encoding=UTF-8', '--format=%H%x1f%cI%x1f%s', '-z']));
     return {
       status: {
         path: entry.path, ...(status.branch ? { branch: status.branch } : {}), ...(status.upstream ? { upstream: status.upstream } : {}),
@@ -285,11 +297,14 @@ async function readHandoff(git: GitRunner, worktrees: readonly WorktreeResult[])
     const file = await handoffFile(status.path);
     if (!file) continue;
     let updatedAt = file.mtime.toISOString();
+    let uncommitted = handoffChanged;
     if (!handoffChanged) {
       const committed = (await git(status.path, ['log', '-1', '--format=%cI', '--', HANDOFF_PATH]).catch(() => '')).trim();
+      // コミットの履歴がなければ、ignore対象などで status に出ない、まだコミットしていないメモとみなす。
       if (TIMESTAMP.test(committed)) updatedAt = committed;
+      else uncommitted = true;
     }
-    candidates.push({ status, file, updatedAt, uncommitted: handoffChanged });
+    candidates.push({ status, file, updatedAt, uncommitted });
   }
   const latest = candidates.sort((a, b) => Date.parse(b.updatedAt) - Date.parse(a.updatedAt))[0];
   if (!latest) return undefined;
@@ -315,14 +330,16 @@ export async function readRepository(git: GitRunner, repository: Repository): Pr
     return { ...base, error: 'not_found' };
   }
   let entries: WorktreeEntry[];
+  let repositoryCommonDir: string;
   try {
+    repositoryCommonDir = await commonDir(git, repository.path);
     entries = parseWorktrees(await git(repository.path, ['worktree', 'list', '--porcelain']));
   } catch (error) {
     return { ...base, error: codeOf(error) };
   }
   // 作業ディレクトリのない本体（bare）は表示しない。
   const usable = entries.filter((entry) => !entry.bare);
-  const results = await Promise.all(usable.slice(0, MAX_WORKTREES).map((entry) => readWorktree(git, entry)));
+  const results = await Promise.all(usable.slice(0, MAX_WORKTREES).map((entry) => readWorktree(git, entry, repositoryCommonDir)));
   const worktrees = results.map((result) => result.status);
   const github = await git(repository.path, ['config', '--get', 'remote.origin.url']).then(parseGitHubRemote, () => undefined);
   const lastActivityAt = worktrees.map((worktree) => worktree.commits[0]?.committedAt).filter((value) => value !== undefined)

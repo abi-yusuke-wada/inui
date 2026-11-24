@@ -201,11 +201,14 @@ test('worktreeの数の上限を超えた分は、数だけを返す', async (t)
   const root = temporaryDirectory(t);
   const list = Array.from({ length: MAX_WORKTREES + 2 }, (_, index) => `worktree ${root}/wt${index}\nHEAD ${'a'.repeat(40)}\nbranch refs/heads/b${index}\n`).join('\n');
   const fake: GitRunner = async (_cwd, args) => {
+    // どのworktreeも、同じリポジトリの本体（root）に属すると答える。
+    if (args[0] === 'rev-parse') return `${root}\n`;
     if (args[0] === 'worktree') return list;
     if (args[0] === 'status') return '# branch.oid (initial)\0# branch.head b0\0';
     throw new GitError('git_failed');
   };
   const status = await readRepository(fake, { name: 'repo', path: root });
+  assert.deepEqual(status.worktrees.map((item) => item.error), Array.from({ length: MAX_WORKTREES }, () => undefined));
   assert.equal(status.worktrees.length, MAX_WORKTREES);
   assert.equal(status.omittedWorktrees, 2);
 });
@@ -261,6 +264,7 @@ test('確かめた後に docs がworktreeの外へのリンクに差し替えら
   writeFileSync(join(root, 'outside', 'HANDOFF.md'), '# worktreeの外の本文\n');
   // メモを確かめた後の git log の間に、docs を外へのリンクに差し替える。
   const fake: GitRunner = async (_cwd, args) => {
+    if (args[0] === 'rev-parse') return `${worktree}\n`;
     if (args[0] === 'worktree') return `worktree ${worktree}\nHEAD ${'a'.repeat(40)}\nbranch refs/heads/main\n`;
     if (args[0] === 'status') return '# branch.oid (initial)\0# branch.head main\0';
     if (args[0] === 'log') {
@@ -271,21 +275,67 @@ test('確かめた後に docs がworktreeの外へのリンクに差し替えら
     throw new GitError('git_failed');
   };
   const status = await readRepository(fake, { name: 'wt', path: worktree });
+  // リポジトリとworktreeは読めていて、メモだけを読まない。
+  assert.deepEqual(status.worktrees.map((item) => [item.path, item.error]), [[worktree, undefined]]);
   assert.equal(status.handoff, undefined);
 });
 
-test('パスの途中に改行があるworktreeは、切れたパスを読まずに読めないものとして返す', async (t) => {
+test('パスの途中に改行や空行があるworktreeは、切れたパスや別の場所を読まない', async (t) => {
   const root = temporaryDirectory(t);
+  mkdirSync(join(root, 'main'));
   const statusCalls: string[] = [];
-  // git 2.34 には -z がなく、改行を含むパスは続きが知らない行として現れる。
+  // git 2.34 には -z がなく、改行を含むパスの続きは別の行に、空行を含むパスの続きは別のworktreeに見える。
   const list = `worktree ${root}/main\nHEAD ${'a'.repeat(40)}\nbranch refs/heads/main\n\n`
-    + `worktree ${root}/wt\nnext\nHEAD ${'b'.repeat(40)}\nbranch refs/heads/feat/x\n`;
+    + `worktree ${root}/wt\nnext\nHEAD ${'b'.repeat(40)}\nbranch refs/heads/feat/x\n\n`
+    + `worktree ${root}/a\n\nworktree ${root}/elsewhere\nHEAD ${'c'.repeat(40)}\nbranch refs/heads/feat/y\n`;
   const fake: GitRunner = async (cwd, args) => {
+    // 本体だけがこのリポジトリに属し、切れたパスや別の場所は別のリポジトリ（または存在しない）と答える。
+    if (args[0] === 'rev-parse') {
+      if (cwd === root || cwd === `${root}/main`) return `${root}/main\n`;
+      throw new GitError('not_repository');
+    }
     if (args[0] === 'worktree') return list;
     if (args[0] === 'status') { statusCalls.push(cwd); return '# branch.oid (initial)\0# branch.head main\0'; }
     throw new GitError('git_failed');
   };
   const status = await readRepository(fake, { name: 'repo', path: root });
-  assert.deepEqual(status.worktrees.map((item) => [item.path, item.error]), [[`${root}/main`, undefined], [`${root}/wt`, 'git_failed']]);
+  assert.deepEqual(status.worktrees.map((item) => [item.path, item.error]), [
+    [`${root}/main`, undefined], [`${root}/wt`, 'git_failed'], [`${root}/a`, 'not_repository'], [`${root}/elsewhere`, 'not_repository'],
+  ]);
   assert.deepEqual(statusCalls, [`${root}/main`]);
+});
+
+test('パスに改行と属性の名前を含むworktreeがあっても、切れたパスにある別のリポジトリは読まない', async (t) => {
+  const repo = createRepository(t);
+  repo.commit('最初のコミット', { 'a.txt': 'a\n' });
+  // 一覧では「worktree …/wt」と「locked」の2行に見える。
+  const tricky = join(repo.root, 'wt\nlocked');
+  repo.git('worktree', 'add', '-q', '-b', 'feat/x', tricky);
+  // 切れたパス（…/wt）には、別のリポジトリを置く。
+  const other = join(repo.root, 'wt');
+  mkdirSync(other);
+  execFileSync('git', ['-C', other, 'init', '-q', '-b', 'main'], { env: SETUP_ENV });
+  execFileSync('git', ['-C', other, 'commit', '-q', '--allow-empty', '-m', '別のリポジトリ'], { env: SETUP_ENV });
+  const status = await readRepository(git, { name: 'repo', path: repo.dir });
+  assert.deepEqual(status.worktrees.map((item) => [item.path, item.error]), [[repo.dir, undefined], [other, 'not_repository']]);
+  assert.ok(!JSON.stringify(status).includes('別のリポジトリ'));
+});
+
+test('リポジトリの設定に関わらず、コミットの件名をUTF-8で読む', async (t) => {
+  const repo = createRepository(t);
+  // Latin-1で表せる文字だけにする（表せない文字があると、gitは変換をあきらめてUTF-8のまま出す）。
+  repo.commit('café crème', { 'a.txt': 'a\n' });
+  repo.git('config', 'i18n.logOutputEncoding', 'ISO-8859-1');
+  const status = await readRepository(git, { name: 'repo', path: repo.dir });
+  assert.equal(status.worktrees[0]?.commits[0]?.subject, 'café crème');
+});
+
+test('ignore対象で status に出ない新しい引き継ぎメモも、未コミットとして読む', async (t) => {
+  const repo = createRepository(t);
+  repo.commit('メモをignoreする', { '.gitignore': `${HANDOFF_PATH}\n` });
+  repo.write(HANDOFF_PATH, '# ignoreされたメモ\n');
+  const status = await readRepository(git, { name: 'repo', path: repo.dir });
+  assert.deepEqual(status.worktrees[0]?.changes.files, []);
+  assert.equal(status.handoff?.uncommitted, true);
+  assert.equal(status.handoff?.markdown, '# ignoreされたメモ\n');
 });
