@@ -12,6 +12,10 @@ import { commitIn, createRepository, SETUP_ENV, temporaryDirectory } from './rep
 
 const git = createGitRunner();
 
+/** 偽のgitの rev-parse の応答。本体の確認には本体だけ、worktreeの確認には本体と最上位（cwd）を返す。 */
+const revParse = (common: string, cwd: string, args: readonly string[]) =>
+  args.includes('--show-toplevel') ? `${common}\n${cwd}\n` : `${common}\n`;
+
 test('worktreeごとのブランチ・変更・最近のコミットを読み、最も新しいコミットの日時を最終作業日時にする', async (t) => {
   const repo = createRepository(t);
   repo.commit('最初のコミット', { 'a.txt': 'a\n' }, '2026-11-16T09:00:00+09:00');
@@ -200,9 +204,10 @@ test('gitの実行は時間で打ち切り、同時に動かす数を制限す�
 test('worktreeの数の上限を超えた分は、数だけを返す', async (t) => {
   const root = temporaryDirectory(t);
   const list = Array.from({ length: MAX_WORKTREES + 2 }, (_, index) => `worktree ${root}/wt${index}\nHEAD ${'a'.repeat(40)}\nbranch refs/heads/b${index}\n`).join('\n');
-  const fake: GitRunner = async (_cwd, args) => {
-    // どのworktreeも、同じリポジトリの本体（root）に属すると答える。
-    if (args[0] === 'rev-parse') return `${root}\n`;
+  for (let index = 0; index < MAX_WORKTREES + 2; index++) mkdirSync(join(root, `wt${index}`));
+  const fake: GitRunner = async (cwd, args) => {
+    // どのworktreeも、同じリポジトリの本体（root）に属する最上位のディレクトリだと答える。
+    if (args[0] === 'rev-parse') return revParse(root, cwd, args);
     if (args[0] === 'worktree') return list;
     if (args[0] === 'status') return '# branch.oid (initial)\0# branch.head b0\0';
     throw new GitError('git_failed');
@@ -263,8 +268,8 @@ test('確かめた後に docs がworktreeの外へのリンクに差し替えら
   mkdirSync(join(root, 'outside'));
   writeFileSync(join(root, 'outside', 'HANDOFF.md'), '# worktreeの外の本文\n');
   // メモを確かめた後の git log の間に、docs を外へのリンクに差し替える。
-  const fake: GitRunner = async (_cwd, args) => {
-    if (args[0] === 'rev-parse') return `${worktree}\n`;
+  const fake: GitRunner = async (cwd, args) => {
+    if (args[0] === 'rev-parse') return revParse(worktree, cwd, args);
     if (args[0] === 'worktree') return `worktree ${worktree}\nHEAD ${'a'.repeat(40)}\nbranch refs/heads/main\n`;
     if (args[0] === 'status') return '# branch.oid (initial)\0# branch.head main\0';
     if (args[0] === 'log') {
@@ -291,7 +296,7 @@ test('パスの途中に改行や空行があるworktreeは、切れたパスや
   const fake: GitRunner = async (cwd, args) => {
     // 本体だけがこのリポジトリに属し、切れたパスや別の場所は別のリポジトリ（または存在しない）と答える。
     if (args[0] === 'rev-parse') {
-      if (cwd === root || cwd === `${root}/main`) return `${root}/main\n`;
+      if (cwd === root || cwd === `${root}/main`) return revParse(`${root}/main`, cwd, args);
       throw new GitError('not_repository');
     }
     if (args[0] === 'worktree') return list;
@@ -319,6 +324,19 @@ test('パスに改行と属性の名前を含むworktreeがあっても、切れ
   const status = await readRepository(git, { name: 'repo', path: repo.dir });
   assert.deepEqual(status.worktrees.map((item) => [item.path, item.error]), [[repo.dir, undefined], [other, 'not_repository']]);
   assert.ok(!JSON.stringify(status).includes('別のリポジトリ'));
+});
+
+test('パスに改行を含むworktreeが切れて同じリポジトリのサブディレクトリを指しても、そこを読まない', async (t) => {
+  const repo = createRepository(t);
+  repo.commit('最初のコミット', { 'sub/a.txt': 'a\n' });
+  // 一覧では「worktree …/repo/sub」と「locked」の2行に見え、切れたパスは本体のworktreeの中のディレクトリになる。
+  repo.git('worktree', 'add', '-q', '-b', 'feat/x', join(repo.dir, 'sub\nlocked'));
+  repo.write('b.txt', 'b\n');
+  const status = await readRepository(git, { name: 'repo', path: repo.dir });
+  const sub = join(repo.dir, 'sub');
+  assert.deepEqual(status.worktrees.map((item) => [item.path, item.error]), [[repo.dir, undefined], [sub, 'not_repository']]);
+  // 本体の変更を、切れたパスの変更として返さない。
+  assert.deepEqual(status.worktrees[1]?.changes.files, []);
 });
 
 test('リポジトリの設定に関わらず、コミットの件名をUTF-8で読む', async (t) => {

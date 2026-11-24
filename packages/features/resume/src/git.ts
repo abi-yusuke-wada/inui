@@ -206,12 +206,24 @@ interface WorktreeResult {
 
 /** そのディレクトリが属するリポジトリの本体（共通のgitディレクトリ）を、リンクを解いた絶対パスで返す。 */
 async function commonDir(git: GitRunner, path: string): Promise<string> {
-  return realpath((await git(path, ['rev-parse', '--path-format=absolute', '--git-common-dir'])).trim());
+  return realpath((await git(path, ['rev-parse', '--path-format=absolute', '--git-common-dir'])).replace(/\n$/, ''));
+}
+
+/**
+ * そのディレクトリが、指定したリポジトリ本体に属するworktreeの最上位かを確かめる。
+ * worktreeの中のサブディレクトリでも本体は同じになるため、最上位のディレクトリも比べる。
+ * パスに改行があると出力の行がずれるが、その場合は一致しないため読まない側に倒れる。
+ */
+async function isWorktreeOf(git: GitRunner, path: string, repositoryCommonDir: string): Promise<boolean> {
+  const [common = '', top = ''] = (await git(path, ['rev-parse', '--path-format=absolute', '--git-common-dir', '--show-toplevel']))
+    .replace(/\n$/, '').split('\n');
+  const [realCommon, realTop, realPath] = await Promise.all([realpath(common), realpath(top), realpath(path)]);
+  return realCommon === repositoryCommonDir && realTop === realPath;
 }
 
 /**
  * worktreeを読む。git 2.34の一覧はパスをエスケープしないため、パスの途中の改行で、別の場所を
- * 指すように読めてしまうことがある。読む前に、そのディレクトリが登録したリポジトリのworktreeかを確かめる。
+ * 指すように読めてしまうことがある。読む前に、そのディレクトリが登録したリポジトリのworktreeの最上位かを確かめる。
  */
 async function readWorktree(git: GitRunner, entry: WorktreeEntry, repositoryCommonDir: string): Promise<WorktreeResult> {
   const failed = (error: GitErrorCode): WorktreeResult => ({
@@ -223,7 +235,7 @@ async function readWorktree(git: GitRunner, entry: WorktreeEntry, repositoryComm
   // worktreeのディレクトリが消えている。
   if (entry.prunable) return failed('not_found');
   try {
-    if (await commonDir(git, entry.path) !== repositoryCommonDir) return failed('not_repository');
+    if (!(await isWorktreeOf(git, entry.path, repositoryCommonDir))) return failed('not_repository');
     // 未追跡のディレクトリも中のファイルごとに数え、新しく作った引き継ぎメモを見落とさない。
     const status = parseStatus(await git(entry.path,
       ['status', '--porcelain=v2', '--branch', '-z', '--untracked-files=all', '--ignore-submodules=all']));
