@@ -58,6 +58,8 @@ function errorCode(error: ExecFileException, stderr: string): GitErrorCode {
  * gitを読み取り専用で動かす。
  * - シェルを使わず、引数を配列で渡す。
  * - 表示のためだけに外部のプログラムが動く設定（fsmonitor、署名の検証）を止め、インデックスも書き換えない。
+ * - 通信を止める。部分クローン（partial clone）で足りないオブジェクトを自動で取りに行き、保存することがないようにする
+ *   （git 2.34 には GIT_NO_LAZY_FETCH がないため、すべてのプロトコルを禁止する。足りないオブジェクトが要る読み取りは失敗する）。
  * - 1回の実行の時間・出力量と、同時に動かす数に上限を設ける。
  */
 export function createGitRunner({ path = process.env.PATH ?? '', timeoutMs = TIMEOUT_MS, concurrency = CONCURRENCY }: {
@@ -79,7 +81,8 @@ export function createGitRunner({ path = process.env.PATH ?? '', timeoutMs = TIM
     else await new Promise<void>((resolve) => { waiting.push(resolve); });
     try {
       return await new Promise<string>((resolve, reject) => {
-        execFile('git', ['--no-pager', '-C', cwd, '-c', 'core.fsmonitor=false', '-c', 'log.showSignature=false', ...args],
+        execFile('git', ['--no-pager', '-C', cwd, '-c', 'core.fsmonitor=false', '-c', 'log.showSignature=false',
+          '-c', 'protocol.allow=never', ...args],
           { env, timeout: timeoutMs, maxBuffer: MAX_OUTPUT_BYTES, encoding: 'utf8', windowsHide: true },
           (error, stdout, stderr) => {
             if (error) reject(new GitError(errorCode(error, stderr)));
@@ -202,6 +205,8 @@ export function parseGitHubRemote(url: string): { owner: string; name: string } 
 interface WorktreeResult {
   status: WorktreeStatus;
   handoffChanged: boolean;
+  /** まだコミットがない。 */
+  initial: boolean;
 }
 
 /** そのディレクトリが属するリポジトリの本体（共通のgitディレクトリ）を、リンクを解いた絶対パスで返す。 */
@@ -232,6 +237,7 @@ async function readWorktree(git: GitRunner, entry: WorktreeEntry, repositoryComm
   const failed = (error: GitErrorCode): WorktreeResult => ({
     status: { path: entry.path, ...(entry.branch ? { branch: entry.branch } : {}), error, changes: emptyChanges(), commits: [] },
     handoffChanged: false,
+    initial: false,
   });
   // パスを正しく読めていないworktreeでは、gitを動かさない。
   if (entry.invalid) return failed('git_failed');
@@ -251,6 +257,7 @@ async function readWorktree(git: GitRunner, entry: WorktreeEntry, repositoryComm
         changes: status.changes, commits,
       },
       handoffChanged: status.handoffChanged,
+      initial: status.initial,
     };
   } catch (error) {
     return failed(codeOf(error));
@@ -304,20 +311,28 @@ async function readLimited(file: HandoffFile): Promise<{ markdown: string; trunc
 /**
  * worktreeのうち、最も新しく更新された引き継ぎメモを読む。未コミットの変更があればファイルの更新日時、
  * なければ最後にコミットした日時で比べ、同じなら本体のworktreeを優先する。
+ * 履歴を読めなかったメモは、未コミットか古いものかを決められないため選ばない。
  */
 async function readHandoff(git: GitRunner, worktrees: readonly WorktreeResult[]): Promise<Handoff | undefined> {
   const candidates: { status: WorktreeStatus; file: HandoffFile; updatedAt: string; uncommitted: boolean }[] = [];
-  for (const { status, handoffChanged } of worktrees) {
+  for (const { status, handoffChanged, initial } of worktrees) {
     if (status.error) continue;
     const file = await handoffFile(status.path);
     if (!file) continue;
     let updatedAt = file.mtime.toISOString();
-    let uncommitted = handoffChanged;
-    if (!handoffChanged) {
-      const committed = (await git(status.path, ['log', '-1', '--format=%cI', '--', HANDOFF_PATH]).catch(() => '')).trim();
+    // まだコミットがなければ、どのメモも未コミット。
+    let uncommitted = handoffChanged || initial;
+    if (!uncommitted) {
+      let committed: string;
+      try {
+        committed = (await git(status.path, ['log', '-1', '--format=%cI', '--', HANDOFF_PATH])).trim();
+      } catch {
+        continue;
+      }
       // コミットの履歴がなければ、ignore対象などで status に出ない、まだコミットしていないメモとみなす。
-      if (TIMESTAMP.test(committed)) updatedAt = committed;
-      else uncommitted = true;
+      if (committed === '') uncommitted = true;
+      else if (TIMESTAMP.test(committed)) updatedAt = committed;
+      else continue;
     }
     candidates.push({ status, file, updatedAt, uncommitted });
   }

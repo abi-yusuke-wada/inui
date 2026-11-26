@@ -1,6 +1,8 @@
 import assert from 'node:assert/strict';
 import { execFileSync } from 'node:child_process';
-import { chmodSync, existsSync, mkdirSync, readFileSync, rmSync, statSync, symlinkSync, utimesSync, writeFileSync } from 'node:fs';
+import {
+  chmodSync, existsSync, mkdirSync, readdirSync, readFileSync, rmSync, statSync, symlinkSync, utimesSync, writeFileSync,
+} from 'node:fs';
 import { dirname, join } from 'node:path';
 import test from 'node:test';
 import {
@@ -271,12 +273,13 @@ test('確かめた後に docs がworktreeの外へのリンクに差し替えら
   const fake: GitRunner = async (cwd, args) => {
     if (args[0] === 'rev-parse') return revParse(worktree, cwd, args);
     if (args[0] === 'worktree') return `worktree ${worktree}\nHEAD ${'a'.repeat(40)}\nbranch refs/heads/main\n`;
-    if (args[0] === 'status') return '# branch.oid (initial)\0# branch.head main\0';
-    if (args[0] === 'log') {
+    if (args[0] === 'status') return `# branch.oid ${'a'.repeat(40)}\0# branch.head main\0`;
+    if (args[0] === 'log' && args.includes(HANDOFF_PATH)) {
       rmSync(join(worktree, 'docs'), { recursive: true });
       symlinkSync(join(root, 'outside'), join(worktree, 'docs'));
       return '2026-11-19T09:00:00+09:00\n';
     }
+    if (args[0] === 'log') return '';
     throw new GitError('git_failed');
   };
   const status = await readRepository(fake, { name: 'wt', path: worktree });
@@ -375,4 +378,48 @@ test('ignore対象で status に出ない新しい引き継ぎメモも、未コ
   assert.deepEqual(status.worktrees[0]?.changes.files, []);
   assert.equal(status.handoff?.uncommitted, true);
   assert.equal(status.handoff?.markdown, '# ignoreされたメモ\n');
+});
+
+test('引き継ぎメモの履歴を読めなかったworktreeは、未コミットとして扱わず、メモの候補にしない', async (t) => {
+  const root = temporaryDirectory(t);
+  for (const [name, memo] of [['main', '# 本体のメモ\n'], ['wt', '# 古いメモ\n']] as const) {
+    mkdirSync(join(root, name, 'docs'), { recursive: true });
+    writeFileSync(join(root, name, HANDOFF_PATH), memo);
+  }
+  const sha = 'a'.repeat(40);
+  const fake: GitRunner = async (cwd, args) => {
+    if (args[0] === 'rev-parse') return revParse(`${root}/main`, cwd, args);
+    if (args[0] === 'worktree') {
+      return `worktree ${root}/main\nHEAD ${sha}\nbranch refs/heads/main\n\nworktree ${root}/wt\nHEAD ${sha}\nbranch refs/heads/feat/x\n`;
+    }
+    if (args[0] === 'status') return `# branch.oid ${sha}\0# branch.head main\0`;
+    if (args[0] === 'log' && args.includes(HANDOFF_PATH)) {
+      // 本体のメモは過去にコミットしたもの。worktreeのメモ（今日checkoutした古いもの）は、履歴の読み取りが時間切れになる。
+      if (cwd === `${root}/main`) return '2026-11-01T09:00:00+09:00\n';
+      throw new GitError('timeout');
+    }
+    if (args[0] === 'log') return '';
+    throw new GitError('git_failed');
+  };
+  const status = await readRepository(fake, { name: 'repo', path: `${root}/main` });
+  assert.equal(status.handoff?.worktreePath, `${root}/main`);
+  assert.equal(status.handoff?.uncommitted, false);
+  assert.equal(status.handoff?.markdown, '# 本体のメモ\n');
+});
+
+test('部分クローンで足りないオブジェクトがあっても取りに行かず（通信せず）、リポジトリに書き込まない', async (t) => {
+  const source = createRepository(t);
+  source.commit('メモを書く', { [HANDOFF_PATH]: '# 最初のメモ\n' });
+  source.commit('別のファイルを足す', { 'a.txt': 'a\n' });
+  source.git('config', 'uploadpack.allowFilter', 'true');
+  // treeを持たない部分クローン。最新のコミットのtreeだけはcheckoutで取得し、メモの履歴をたどるのに要る古いtreeは持たない。
+  const clone = join(source.root, 'clone');
+  execFileSync('git', ['clone', '-q', '--filter=tree:0', `file://${source.dir}`, clone], { env: SETUP_ENV });
+  const packs = () => readdirSync(join(clone, '.git', 'objects', 'pack')).sort();
+  const before = packs();
+  const status = await readRepository(git, { name: 'clone', path: clone });
+  assert.deepEqual(packs(), before);
+  assert.equal(status.worktrees[0]?.error, undefined);
+  // 履歴を読めないメモは選ばない。
+  assert.equal(status.handoff, undefined);
 });
