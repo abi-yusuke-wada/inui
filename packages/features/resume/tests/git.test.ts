@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { execFileSync } from 'node:child_process';
 import { chmodSync, existsSync, mkdirSync, readFileSync, rmSync, statSync, symlinkSync, utimesSync, writeFileSync } from 'node:fs';
-import { join } from 'node:path';
+import { dirname, join } from 'node:path';
 import test from 'node:test';
 import {
   createGitRunner, GitError, gitEnv, HANDOFF_PATH, MAX_FILES, MAX_HANDOFF_BYTES, MAX_WORKTREES, parseGitHubRemote, parseStatus,
@@ -337,6 +337,25 @@ test('パスに改行を含むworktreeが切れて同じリポジトリのサブ
   assert.deepEqual(status.worktrees.map((item) => [item.path, item.error]), [[repo.dir, undefined], [sub, 'not_repository']]);
   // 本体の変更を、切れたパスの変更として返さない。
   assert.deepEqual(status.worktrees[1]?.changes.files, []);
+});
+
+test('切れたパスにある別のリポジトリの本体のパスに改行があっても、出力の行のずれで登録したリポジトリと取り違えない', async (t) => {
+  const repo = createRepository(t);
+  repo.commit('最初のコミット', { 'a.txt': 'a\n' });
+  // 一覧では「worktree …/wt」と「locked」の2行に見える。
+  repo.git('worktree', 'add', '-q', '-b', 'feat/x', join(repo.root, 'wt\nlocked'));
+  // 切れたパス（…/wt）に、本体のパスが「…/link」と「…/wt」の2行に見える別のリポジトリを置く。
+  // …/link は登録したリポジトリの .git へのリンクにし、rev-parse の出力の先頭2行だけを比べると一致する形にする。
+  const other = join(repo.root, 'wt');
+  const link = join(repo.root, 'link');
+  symlinkSync(join(repo.dir, '.git'), link);
+  const otherGitDir = `${link}\n${other}`;
+  mkdirSync(dirname(otherGitDir), { recursive: true });
+  execFileSync('git', ['init', '-q', '-b', 'main', '--separate-git-dir', otherGitDir, other], { env: SETUP_ENV });
+  execFileSync('git', ['-C', other, 'commit', '-q', '--allow-empty', '-m', '別のリポジトリ'], { env: SETUP_ENV });
+  const status = await readRepository(git, { name: 'repo', path: repo.dir });
+  assert.deepEqual(status.worktrees.map((item) => [item.path, item.error]), [[repo.dir, undefined], [other, 'not_repository']]);
+  assert.ok(!JSON.stringify(status).includes('別のリポジトリ'));
 });
 
 test('リポジトリの設定に関わらず、コミットの件名をUTF-8で読む', async (t) => {

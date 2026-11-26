@@ -212,11 +212,14 @@ async function commonDir(git: GitRunner, path: string): Promise<string> {
 /**
  * そのディレクトリが、指定したリポジトリ本体に属するworktreeの最上位かを確かめる。
  * worktreeの中のサブディレクトリでも本体は同じになるため、最上位のディレクトリも比べる。
- * パスに改行があると出力の行がずれるが、その場合は一致しないため読まない側に倒れる。
+ * rev-parse はパスをエスケープしないため、本体か最上位のパスに改行があると出力の行がずれ、
+ * 先頭の行だけでは別の場所と取り違えることがある。ちょうど2行でない出力は、比べずに読まない側に倒す。
  */
 async function isWorktreeOf(git: GitRunner, path: string, repositoryCommonDir: string): Promise<boolean> {
-  const [common = '', top = ''] = (await git(path, ['rev-parse', '--path-format=absolute', '--git-common-dir', '--show-toplevel']))
+  const lines = (await git(path, ['rev-parse', '--path-format=absolute', '--git-common-dir', '--show-toplevel']))
     .replace(/\n$/, '').split('\n');
+  const [common = '', top = ''] = lines;
+  if (lines.length !== 2 || common === '' || top === '') return false;
   const [realCommon, realTop, realPath] = await Promise.all([realpath(common), realpath(top), realpath(path)]);
   return realCommon === repositoryCommonDir && realTop === realPath;
 }
