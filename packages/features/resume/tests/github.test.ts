@@ -72,6 +72,40 @@ test('チェックがないPRはnone、権限不足などで一部が読めな�
   assert.equal((await fetchPullRequests(TOKEN, repositories, { fetchImpl: partial.fetchImpl })).get('example/inui')?.pullRequests[0]?.checks, 'unknown');
 });
 
+test('エラーの場所がPRの中を指していれば、そのPRのチェックだけをunknownにする', async () => {
+  const { fetchImpl } = fakeFetch(() => Response.json({
+    data: { r0: search([pull(1), pull(2)]), r1: search([pull(3, {}, 'example', 'notes')]) },
+    errors: [{ type: 'FORBIDDEN', path: ['r0', 'nodes', 0, 'commits', 'nodes', 0, 'commit', 'statusCheckRollup'], message: SECRET_BODY }],
+  }));
+  const pulls = await fetchPullRequests(TOKEN, [{ owner: 'example', name: 'inui' }, { owner: 'example', name: 'notes' }], { fetchImpl });
+  assert.deepEqual(pulls.get('example/inui')?.pullRequests.map((item) => [item.number, item.checks]), [[2, 'none'], [1, 'unknown']]);
+  assert.deepEqual(pulls.get('example/notes')?.pullRequests.map((item) => [item.number, item.checks]), [[3, 'none']]);
+});
+
+test('最新のコミットを読む権限がなくPRごと読めなかった場合は、CIの状態を読まずに読み直してPRの一覧を残す', async () => {
+  const withoutCommits = (number: number, owner?: string, name?: string) => ({ ...pull(number, {}, owner, name), commits: undefined });
+  const { fetchImpl, calls } = fakeFetch((init) => {
+    // 省略できない commits のエラーは、PRごとnullにする。
+    if (String(init?.body).includes('commits')) {
+      return Response.json({
+        data: { r0: search([null]), r1: search([pull(2, rollup('SUCCESS'), 'example', 'notes')]) },
+        errors: [{ type: 'FORBIDDEN', path: ['r0', 'nodes', 0, 'commits'], message: SECRET_BODY }],
+      });
+    }
+    return Response.json({ data: { r0: search([withoutCommits(1)]), r1: search([withoutCommits(2, 'example', 'notes')]) } });
+  });
+  const pulls = await fetchPullRequests(TOKEN, [{ owner: 'example', name: 'inui' }, { owner: 'example', name: 'notes' }], { fetchImpl });
+  assert.equal(calls.length, 2);
+  assert.ok(!JSON.parse(String(calls[1]?.init?.body)).query.includes('commits'));
+  assert.deepEqual(pulls.get('example/inui')?.pullRequests.map((item) => [item.number, item.checks]), [[1, 'unknown']]);
+  assert.deepEqual(pulls.get('example/notes')?.pullRequests.map((item) => [item.number, item.checks]), [[2, 'unknown']]);
+  // エラーのない応答でPRがnullなら、読み直さずに不正な応答として扱う。
+  const broken = fakeFetch(() => Response.json({ data: { r0: search([null]) } }));
+  await assert.rejects(fetchPullRequests(TOKEN, [{ owner: 'example', name: 'inui' }], { fetchImpl: broken.fetchImpl }),
+    (error) => error instanceof UpstreamError && error.code === 'upstream_invalid');
+  assert.equal(broken.calls.length, 1);
+});
+
 test('連携先の失敗や不正な応答は固定のコードへ置き換え、本文や例外を持ち込まない', async () => {
   const repositories = [{ owner: 'example', name: 'inui' }];
   const cases: [() => Response | Promise<Response>, string][] = [

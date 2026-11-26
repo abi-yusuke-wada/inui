@@ -352,7 +352,8 @@ export async function readRepository(git: GitRunner, repository: Repository): Pr
   } catch (error) {
     return { ...base, error: codeOf(error) };
   }
-  // 作業ディレクトリのない本体（bare）は表示しない。
+  // 作業ディレクトリのない本体（bare）は表示しない。gitを動かす数を抑えるため、読むのも表示する上限までとし、
+  // 引き継ぎメモもその中から選ぶ（ADR-0011）。
   const usable = entries.filter((entry) => !entry.bare);
   const results = await Promise.all(usable.slice(0, MAX_WORKTREES).map((entry) => readWorktree(git, entry, repositoryCommonDir)));
   const worktrees = results.map((result) => result.status);

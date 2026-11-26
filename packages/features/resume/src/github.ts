@@ -41,8 +41,11 @@ function isText(value: unknown, max: number): value is string {
 /** 照合に使うキー。GitHubの所有者・リポジトリ名は大文字と小文字を区別しない。 */
 export const repositoryKey = ({ owner, name }: GitHubRepository): string => `${owner}/${name}`.toLowerCase();
 
-/** 検索結果の1件を検証し、表示に必要な項目だけを取り出す。 */
-function toPullRequest(node: unknown, repository: GitHubRepository, partial: boolean): PullRequestStatus {
+/**
+ * 検索結果の1件を検証し、表示に必要な項目だけを取り出す。
+ * checksUnknown は、そのPRのCIの状態が読めなかった可能性がある（エラーがあった、またはCIの状態を読まなかった）ことを表す。
+ */
+function toPullRequest(node: unknown, repository: GitHubRepository, checksUnknown: boolean): PullRequestStatus {
   if (!isRecord(node) || !Number.isSafeInteger(node.number) || (node.number as number) < 1 || !isText(node.title, 500)
       || typeof node.url !== 'string' || !isText(node.headRefName, 255) || typeof node.isDraft !== 'boolean'
       || typeof node.updatedAt !== 'string' || !TIMESTAMP.test(node.updatedAt)
@@ -61,7 +64,7 @@ function toPullRequest(node: unknown, repository: GitHubRepository, partial: boo
     checks = CHECKS[rollup.state as keyof typeof CHECKS];
   } else {
     // チェックがないPRはnullになる。トークンの権限が足りない場合もnullとエラーが返るため、区別できないものはunknownにする。
-    checks = partial ? 'unknown' : 'none';
+    checks = checksUnknown ? 'unknown' : 'none';
   }
   return {
     number: node.number as number, title: node.title, url: node.url, branch: node.headRefName, draft: node.isDraft,
@@ -104,6 +107,24 @@ async function postGraphQL(token: string, query: string, variables: Record<strin
   }
 }
 
+/**
+ * GraphQLのエラーの場所（path）から、読めなかった欄を含むPRを `r0/3`（検索の別名/何件目か）の形で求める。
+ * 場所がPRの中を指さないエラーが1つでもあれば、どのPRかを決められないため all にする。
+ */
+function affectedPullRequests(errors: readonly unknown[]): { all: boolean; pulls: Set<string> } {
+  const affected = { all: false, pulls: new Set<string>() };
+  for (const error of errors) {
+    const path = isRecord(error) ? error.path : undefined;
+    if (Array.isArray(path) && typeof path[0] === 'string' && /^r\d+$/.test(path[0]) && path[1] === 'nodes'
+        && Number.isSafeInteger(path[2])) {
+      affected.pulls.add(`${path[0]}/${path[2] as number}`);
+    } else {
+      affected.all = true;
+    }
+  }
+  return affected;
+}
+
 /** 1つのリポジトリで読めたPRと、上限を超えて表示しなかった件数。 */
 export interface PullRequestList {
   pullRequests: PullRequestStatus[];
@@ -113,6 +134,8 @@ export interface PullRequestList {
 /**
  * 自分が作った未完了のPRを、リポジトリごとに読む（キーはrepositoryKey）。トークンはヘッダーにだけ使い、結果は保存しない。
  * リポジトリごとの検索を、別名を付けて1回の要求にまとめる。上限を超えた分は、件数だけを返す。
+ * CIの状態を読む最新のコミット（commits）は省略できない欄のため、権限が足りずに読めないと、エラーでPRごとnullになる。
+ * その場合は、CIの状態を読まずにもう1回だけ要求し、PRの一覧を残してCIの状態をunknownにする。
  */
 export async function fetchPullRequests(token: string, repositories: readonly GitHubRepository[],
   options: UpstreamOptions = {}): Promise<Map<string, PullRequestList>> {
@@ -131,27 +154,39 @@ export async function fetchPullRequests(token: string, repositories: readonly Gi
     throw new UpstreamError('upstream_invalid');
   }
   const variables: Record<string, string> = {};
-  const fields = targets.map((repository, index) => {
-    variables[`q${index}`] = `repo:${repository.owner}/${repository.name} is:pr is:open author:@me archived:false`;
-    return `r${index}: search(query: $q${index}, type: ISSUE, first: ${MAX_PULLS}) { issueCount nodes { ... on PullRequest {
-      number title url headRefName isDraft reviewDecision updatedAt
-      commits(last: 1) { nodes { commit { statusCheckRollup { state } } } } } } }`;
-  });
-  const query = `query(${targets.map((_, index) => `$q${index}: String!`).join(', ')}) { ${fields.join('\n')} }`;
-  const body = await postGraphQL(token, query, variables, options);
-  if (!isRecord(body) || !isRecord(body.data)) {
-    throw new UpstreamError('upstream_invalid');
-  }
-  const partial = Array.isArray(body.errors) && body.errors.length > 0;
   for (const [index, repository] of targets.entries()) {
-    const search = body.data[`r${index}`];
+    variables[`q${index}`] = `repo:${repository.owner}/${repository.name} is:pr is:open author:@me archived:false`;
+  }
+  const request = async (withChecks: boolean) => {
+    const fields = targets.map((_, index) => `r${index}: search(query: $q${index}, type: ISSUE, first: ${MAX_PULLS}) { issueCount nodes { ... on PullRequest {
+      number title url headRefName isDraft reviewDecision updatedAt
+      ${withChecks ? 'commits(last: 1) { nodes { commit { statusCheckRollup { state } } } }' : ''} } } }`);
+    const query = `query(${targets.map((_, index) => `$q${index}: String!`).join(', ')}) { ${fields.join('\n')} }`;
+    const body = await postGraphQL(token, query, variables, options);
+    if (!isRecord(body) || !isRecord(body.data)) {
+      throw new UpstreamError('upstream_invalid');
+    }
+    return { data: body.data, errors: Array.isArray(body.errors) ? body.errors as unknown[] : [] };
+  };
+  let response = await request(true);
+  let withChecks = true;
+  const lostPullRequest = (search: unknown) => isRecord(search) && Array.isArray(search.nodes) && search.nodes.some((node) => !isRecord(node));
+  if (response.errors.length > 0 && targets.some((_, index) => lostPullRequest(response.data[`r${index}`]))) {
+    response = await request(false);
+    withChecks = false;
+  }
+  const { data, errors } = response;
+  const affected = affectedPullRequests(errors);
+  for (const [index, repository] of targets.entries()) {
+    const search = data[`r${index}`];
     // issueCountは条件に合う全件数で、nodesは上限までの分。件数が矛盾する応答は受け付けない。
     if (!isRecord(search) || !Array.isArray(search.nodes) || search.nodes.length > MAX_PULLS
         || !Number.isSafeInteger(search.issueCount) || (search.issueCount as number) < search.nodes.length) {
       throw new UpstreamError('upstream_invalid');
     }
     result.set(repositoryKey(repository), {
-      pullRequests: search.nodes.map((node) => toPullRequest(node, repository, partial))
+      pullRequests: search.nodes.map((node, position) =>
+        toPullRequest(node, repository, !withChecks || affected.all || affected.pulls.has(`r${index}/${position}`)))
         .sort((a, b) => Date.parse(b.updatedAt) - Date.parse(a.updatedAt)),
       omitted: (search.issueCount as number) - search.nodes.length,
     });
