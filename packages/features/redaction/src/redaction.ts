@@ -78,20 +78,33 @@ const fixedPatterns = [
 const credentialLabel = /(?:\b(?:[a-z_][a-z0-9_]*_)?(?:api[ _-]?key|token|password)\b|トークン|パスワード)[ \t　]*[:：=][ \t　]*/giu;
 const bareCredential = /^[^\s"'<>、。]+/u;
 
-function readCredentialValue(text: string, start: number, valueStarts: ReadonlySet<number>): string | undefined {
+function findClosingQuotes(text: string, valueStarts: number[]) {
+  const closings = new Map<number, number>();
+  // 後ろの値から決め、途中の引用符が「閉じる次の値」を開くものかを判定できるようにする。
+  for (const start of [...valueStarts].sort((a, b) => b - a)) {
+    const quote = text[start];
+    if (quote !== '"' && quote !== "'") continue;
+    for (let end = start + 1; end < text.length; end++) {
+      if (text[end] === '\\') {
+        end++;
+        continue;
+      }
+      if (text[end] !== quote) continue;
+      // 閉じる次の値を開く引用符なら、今の値は閉じていない。
+      // 次の値が閉じない引用符は、今の値の閉じ引用符として値全体を伏せる。
+      if (!closings.has(end)) closings.set(start, end);
+      break;
+    }
+  }
+  return closings;
+}
+
+function readCredentialValue(text: string, start: number, closings: ReadonlyMap<number, number>): string | undefined {
   const quote = text[start];
   if (quote !== '"' && quote !== "'") return bareCredential.exec(text.slice(start))?.[0];
 
-  for (let end = start + 1; end < text.length; end++) {
-    if (text[end] === '\\') {
-      end++;
-      continue;
-    }
-    if (text[end] !== quote) continue;
-    // 次の認証情報の値を開く引用符まで来た場合は、今の値は閉じていない。
-    if (valueStarts.has(end)) break;
-    return text.slice(start + 1, end);
-  }
+  const end = closings.get(start);
+  if (end !== undefined) return text.slice(start + 1, end);
 
   // 閉じ引用符がなければ、現在の行の残りを伏せる。
   const lineEnd = text.indexOf('\n', start + 1);
@@ -115,9 +128,10 @@ export function analyzeRedaction(source: string, format: SourceFormat, additiona
   for (const { pattern, replacement } of fixedPatterns) {
     for (const [term] of markdown.matchAll(pattern)) addCandidate(term, replacement);
   }
-  const credentialStarts = new Set(Array.from(markdown.matchAll(credentialLabel), (match) => match.index + match[0].length));
+  const credentialStarts = Array.from(markdown.matchAll(credentialLabel), (match) => match.index + match[0].length);
+  const closings = findClosingQuotes(markdown, credentialStarts);
   for (const start of credentialStarts) {
-    const term = readCredentialValue(markdown, start, credentialStarts);
+    const term = readCredentialValue(markdown, start, closings);
     if (term) addCandidate(term, '[認証情報]');
   }
   return { markdown, candidates };

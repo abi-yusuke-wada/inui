@@ -73,6 +73,14 @@ test('閉じていない認証情報の次に別の代入がある場合は各�
     'TOKEN="[認証情報]\nPASSWORD="[認証情報]"');
 });
 
+test('値の中のラベルに続く引用符で値が閉じない場合は、そこまでを一つの値として伏せる', () => {
+  const source = 'TOKEN="example line one\nexample line two PASSWORD="\n補足: 公開用の説明';
+  const result = analyzeRedaction(source, 'backlog', '');
+  assert.deepEqual(result.candidates, [{ terms: ['example line one\nexample line two PASSWORD='], replacement: '[認証情報]' }]);
+  assert.equal(redact(result.markdown, result.candidates).map(({ text }) => text).join(''),
+    'TOKEN="[認証情報]"\n補足: 公開用の説明');
+});
+
 test('異なる位置から始まる候補が連続して重なっても全体を伏せる', () => {
   const source = '前: 青空銀行決済基盤本番、青空銀行決済基盤本番、後';
   const result = analyzeRedaction(source, 'backlog', '青空銀行\n銀行決済基盤\n基盤本番');
