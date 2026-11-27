@@ -178,7 +178,8 @@ test('表示のためだけに外部のプログラムを動かす設定を止�
 });
 
 test('gitへはPATHだけを引き継ぎ、呼び出し元のGitの環境変数や利用者全体の設定を使わない', () => {
-  assert.deepEqual(gitEnv('/usr/bin'), { PATH: '/usr/bin', LC_ALL: 'C', GIT_OPTIONAL_LOCKS: '0', GIT_TERMINAL_PROMPT: '0' });
+  assert.deepEqual(gitEnv('/usr/bin'),
+    { PATH: '/usr/bin', LC_ALL: 'C', GIT_OPTIONAL_LOCKS: '0', GIT_TERMINAL_PROMPT: '0', GIT_ALLOW_PROTOCOL: '' });
 });
 
 test('gitの実行は時間で打ち切り、同時に動かす数を制限する', async (t) => {
@@ -415,6 +416,8 @@ test('部分クローンで足りないオブジェクトがあっても取り�
   // treeを持たない部分クローン。最新のコミットのtreeだけはcheckoutで取得し、メモの履歴をたどるのに要る古いtreeは持たない。
   const clone = join(source.root, 'clone');
   execFileSync('git', ['clone', '-q', '--filter=tree:0', `file://${source.dir}`, clone], { env: SETUP_ENV });
+  // リポジトリの設定でプロトコルごとに許可していても（protocol.allow より優先される）、通信しない。
+  execFileSync('git', ['-C', clone, 'config', 'protocol.file.allow', 'always'], { env: SETUP_ENV });
   const packs = () => readdirSync(join(clone, '.git', 'objects', 'pack')).sort();
   const before = packs();
   const status = await readRepository(git, { name: 'clone', path: clone });

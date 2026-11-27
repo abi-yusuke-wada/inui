@@ -40,9 +40,13 @@ export type GitRunner = (cwd: string, args: readonly string[]) => Promise<string
 /**
  * gitへ渡す環境変数。呼び出し元の変数（GIT_DIR・GIT_CONFIG_*・HOME等）でリポジトリや設定を
  * 差し替えられないよう、PATHだけを引き継ぐ。HOMEも渡さないため、利用者全体の設定（~/.gitconfig）は読まない。
+ * GIT_ALLOW_PROTOCOL を空にして、すべてのプロトコルを禁止する。部分クローン（partial clone）で足りないオブジェクトを
+ * 自動で取りに行き、保存することがないようにするため。git 2.34 には GIT_NO_LAZY_FETCH（2.44から）がなく、
+ * protocol.allow=never はリポジトリの設定の protocol.<名前>.allow に負けるため、設定より優先されるこの変数を使う。
+ * 足りないオブジェクトが要る読み取りは失敗する。
  */
 export function gitEnv(path: string): Record<string, string> {
-  return { PATH: path, LC_ALL: 'C', GIT_OPTIONAL_LOCKS: '0', GIT_TERMINAL_PROMPT: '0' };
+  return { PATH: path, LC_ALL: 'C', GIT_OPTIONAL_LOCKS: '0', GIT_TERMINAL_PROMPT: '0', GIT_ALLOW_PROTOCOL: '' };
 }
 
 function errorCode(error: ExecFileException, stderr: string): GitErrorCode {
@@ -58,8 +62,7 @@ function errorCode(error: ExecFileException, stderr: string): GitErrorCode {
  * gitを読み取り専用で動かす。
  * - シェルを使わず、引数を配列で渡す。
  * - 表示のためだけに外部のプログラムが動く設定（fsmonitor、署名の検証）を止め、インデックスも書き換えない。
- * - 通信を止める。部分クローン（partial clone）で足りないオブジェクトを自動で取りに行き、保存することがないようにする
- *   （git 2.34 には GIT_NO_LAZY_FETCH がないため、すべてのプロトコルを禁止する。足りないオブジェクトが要る読み取りは失敗する）。
+ * - 通信を止める（gitEnv の GIT_ALLOW_PROTOCOL）。部分クローンで足りないオブジェクトを取りに行かない。
  * - 1回の実行の時間・出力量と、同時に動かす数に上限を設ける。
  */
 export function createGitRunner({ path = process.env.PATH ?? '', timeoutMs = TIMEOUT_MS, concurrency = CONCURRENCY }: {
@@ -81,8 +84,7 @@ export function createGitRunner({ path = process.env.PATH ?? '', timeoutMs = TIM
     else await new Promise<void>((resolve) => { waiting.push(resolve); });
     try {
       return await new Promise<string>((resolve, reject) => {
-        execFile('git', ['--no-pager', '-C', cwd, '-c', 'core.fsmonitor=false', '-c', 'log.showSignature=false',
-          '-c', 'protocol.allow=never', ...args],
+        execFile('git', ['--no-pager', '-C', cwd, '-c', 'core.fsmonitor=false', '-c', 'log.showSignature=false', ...args],
           { env, timeout: timeoutMs, maxBuffer: MAX_OUTPUT_BYTES, encoding: 'utf8', windowsHide: true },
           (error, stdout, stderr) => {
             if (error) reject(new GitError(errorCode(error, stderr)));

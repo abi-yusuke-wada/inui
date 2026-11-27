@@ -45,7 +45,7 @@
   - シェルを使わず、引数を配列で渡す。使うのは `rev-parse`、`worktree list`、`status`、`log`、`config --get remote.origin.url` だけとする。
   - 環境変数はPATHだけを引き継ぎ、呼び出し元の `GIT_DIR`・`GIT_CONFIG_*`・`HOME` 等は渡さない。このため、利用者全体の設定（`~/.gitconfig`）は読まない。
   - 表示のためだけに外部のプログラムが動く設定を止める（`core.fsmonitor=false`、`log.showSignature=false`）。`GIT_OPTIONAL_LOCKS=0` で、`status` がインデックスを書き換えないようにする。サブモジュールの状態は読まない。
-  - 通信しない（`protocol.allow=never`）。部分クローン（partial clone）では、足りないオブジェクトをgitが自動で取りに行き、リポジトリへ保存するため。git 2.34 には、これだけを止める `GIT_NO_LAZY_FETCH`（2.44から）がないため、すべてのプロトコルを禁止する。足りないオブジェクトが要る読み取りは失敗として扱う。
+  - 通信しない（環境変数 `GIT_ALLOW_PROTOCOL` を空にして、すべてのプロトコルを禁止する）。部分クローン（partial clone）では、足りないオブジェクトをgitが自動で取りに行き、リポジトリへ保存するため。git 2.34 には、これだけを止める `GIT_NO_LAZY_FETCH`（2.44から）がない。`protocol.allow=never` はリポジトリの設定の `protocol.<名前>.allow` に負けるため、設定より優先されるこの変数を使う。足りないオブジェクトが要る読み取りは失敗として扱う。
   - 1回の実行は5秒・出力1MBまでとし、同時に動かすのは8つまでにする。
   - 失敗の理由は、固定のコード（`not_found`、`not_repository`、`unsafe_repository`、`timeout`、`git_failed`）だけを返し、パスや標準エラーの本文は返さない。
 - 1つのリポジトリで表示するのは、worktree 8つ、worktreeごとに変更のあるファイル30件と最近のコミット5件までとし、超えた分は数だけを返す。1回の要求で動かすgitの数を抑えるため、worktreeは読むのもこの8つまでとする。
