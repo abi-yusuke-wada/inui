@@ -1,7 +1,8 @@
 import assert from 'node:assert/strict';
 import { execFileSync } from 'node:child_process';
 import {
-  chmodSync, existsSync, linkSync, mkdirSync, readdirSync, readFileSync, rmSync, statSync, symlinkSync, utimesSync, writeFileSync,
+  chmodSync, closeSync, constants, existsSync, linkSync, mkdirSync, openSync, readdirSync, readFileSync, rmSync, statSync,
+  symlinkSync, utimesSync, writeFileSync,
 } from 'node:fs';
 import { dirname, join } from 'node:path';
 import test from 'node:test';
@@ -313,6 +314,44 @@ test('iノードが同じでも、worktreeの外を指すリンクを経て開�
   const status = await readRepository(fake, { name: 'wt', path: worktree });
   assert.deepEqual(status.worktrees.map((item) => [item.path, item.error]), [[worktree, undefined]]);
   assert.equal(status.handoff, undefined);
+});
+
+test('確かめた後にメモがFIFOへ差し替えられても、開くところで止まらず、メモを読まない', { skip: process.platform === 'win32' }, async (t) => {
+  const root = temporaryDirectory(t);
+  const worktree = join(root, 'wt');
+  const fifo = join(worktree, HANDOFF_PATH);
+  mkdirSync(join(worktree, 'docs'), { recursive: true });
+  writeFileSync(fifo, '# worktreeのメモ\n');
+  const fake: GitRunner = async (cwd, args) => {
+    if (args[0] === 'rev-parse') return revParse(worktree, cwd, args);
+    if (args[0] === 'worktree') return `worktree ${worktree}\nHEAD ${'a'.repeat(40)}\nbranch refs/heads/main\n`;
+    if (args[0] === 'status') return `# branch.oid ${'a'.repeat(40)}\0# branch.head main\0`;
+    if (args[0] === 'log' && args.includes(HANDOFF_PATH)) {
+      rmSync(fifo);
+      execFileSync('mkfifo', [fifo]);
+      return '2026-11-19T09:00:00+09:00\n';
+    }
+    if (args[0] === 'log') return '';
+    throw new GitError('git_failed');
+  };
+  // 書き手が現れるまで開くところで止まった場合は、書き手として開いて止まりを解き、テストを終わらせる。
+  let blocked = false;
+  const timer = setTimeout(() => {
+    blocked = true;
+    try {
+      closeSync(openSync(fifo, constants.O_WRONLY | constants.O_NONBLOCK));
+    } catch {
+      // 読み手がいなければ開けない。止まっていないため、そのままでよい。
+    }
+  }, 5_000);
+  try {
+    const status = await readRepository(fake, { name: 'wt', path: worktree });
+    assert.equal(blocked, false);
+    assert.deepEqual(status.worktrees.map((item) => [item.path, item.error]), [[worktree, undefined]]);
+    assert.equal(status.handoff, undefined);
+  } finally {
+    clearTimeout(timer);
+  }
 });
 
 test('パスの途中に改行や空行があるworktreeは、切れたパスや別の場所を読まない', async (t) => {

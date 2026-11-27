@@ -301,13 +301,15 @@ async function handoffFile(worktree: string): Promise<HandoffFile | undefined> {
  * 差し替え続けられた場合）は区別できない。Linuxでは、開いたファイルそのものの場所（/proc/self/fd）が
  * worktreeの中かも確かめる。Node.jsには openat がなく、ほかのOSでは開いたファイルから場所を得られないため、
  * iノードの比較までとする（ADR-0011）。
+ * 確かめた後にFIFOへ差し替えられると、読むために開くだけで書き手が現れるまで止まるため、待たずに開き、
+ * 通常のファイルでなければ読まない（通常のファイルの読み取りは O_NONBLOCK の影響を受けない）。
  */
 async function readLimited(file: HandoffFile): Promise<{ markdown: string; truncated: boolean } | undefined> {
   // 末尾のリンクはたどらない。
-  const handle = await open(file.path, constants.O_RDONLY | constants.O_NOFOLLOW);
+  const handle = await open(file.path, constants.O_RDONLY | constants.O_NOFOLLOW | constants.O_NONBLOCK);
   try {
     const info = await handle.stat({ bigint: true });
-    if (info.dev !== file.dev || info.ino !== file.ino) return undefined;
+    if (!info.isFile() || info.dev !== file.dev || info.ino !== file.ino) return undefined;
     if (process.platform === 'linux' && !(await readlink(`/proc/self/fd/${handle.fd}`)).startsWith(file.root + sep)) {
       return undefined;
     }
