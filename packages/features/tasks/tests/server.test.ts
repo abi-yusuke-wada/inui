@@ -73,11 +73,14 @@ test('設定値の形式を検証し、値そのものは保持・応答しな�
   assert.equal(calls.length, 0);
 });
 
-test('GitHubは自分に関係する未完了のIssue・PRを3条件で検索し、重複をまとめる', async (t) => {
+test('GitHubは自分に関係する未完了のIssue・PRを5条件で検索し、重複をまとめる', async (t) => {
   const { fetchImpl, calls } = fakeFetch((url) => {
     const query = url.searchParams.get('q') ?? '';
     if (query.includes('assignee:@me')) return search([issue(1), issue(2)]);
-    if (query.includes('author:@me')) return search([pull(3)]);
+    // CIが失敗した自分のPRは、自分が作ったPRの検索にも出てくる。
+    if (query.includes('status:failure')) return search([pull(5)]);
+    if (query.includes('author:@me')) return search([pull(3), pull(5)]);
+    if (query.includes('mentions:@me')) return search([issue(2), issue(6)]);
     return search([pull(3), pull(4)]);
   });
   const response = await (await app(t, { github: { token: GITHUB_TOKEN }, invalid: [] }, fetchImpl))('/api/tasks/github');
@@ -85,12 +88,22 @@ test('GitHubは自分に関係する未完了のIssue・PRを3条件で検索し
   const body = await response.json();
   assert.equal(body.configured, true);
   assert.deepEqual(body.tasks.map((task: { key: string }) => task.key),
-    ['example/inui#4', 'example/inui#3', 'example/inui#2', 'example/inui#1']);
-  const three = body.tasks.find((task: { key: string }) => task.key === 'example/inui#3');
-  assert.equal(three.kind, 'pull_request');
-  assert.deepEqual(three.reasons, ['authored', 'review_requested']);
+    ['example/inui#6', 'example/inui#5', 'example/inui#4', 'example/inui#3', 'example/inui#2', 'example/inui#1']);
+  const reasons = (key: string) => body.tasks.find((task: { key: string }) => task.key === key).reasons;
+  assert.equal(body.tasks.find((task: { key: string }) => task.key === 'example/inui#3').kind, 'pull_request');
+  // 理由は検索の条件の順に並べる。
+  assert.deepEqual(reasons('example/inui#3'), ['authored', 'review_requested']);
+  assert.deepEqual(reasons('example/inui#5'), ['authored', 'ci_failed']);
+  assert.deepEqual(reasons('example/inui#2'), ['assigned', 'mentioned']);
+  assert.deepEqual(reasons('example/inui#6'), ['mentioned']);
   assert.equal(body.omitted, 0);
-  assert.equal(calls.length, 3);
+  assert.deepEqual(calls.map((call) => call.url.searchParams.get('q')), [
+    'is:open is:issue assignee:@me archived:false',
+    'is:open is:pr author:@me archived:false',
+    'is:open is:pr author:@me status:failure archived:false',
+    'is:open is:pr review-requested:@me archived:false',
+    'is:open mentions:@me archived:false',
+  ]);
   for (const call of calls) {
     assert.equal(call.url.origin + call.url.pathname, 'https://api.github.com/search/issues');
     assert.match(call.url.searchParams.get('q') ?? '', /^is:open /);
@@ -129,13 +142,16 @@ test('条件ごとの上限を超えた件数は、表示しなかった件数�
   const { fetchImpl } = fakeFetch((url) => {
     const query = url.searchParams.get('q') ?? '';
     if (query.includes('assignee:@me')) return search([issue(1)], 130);
+    if (query.includes('status:failure')) return search([pull(2)], 1);
     if (query.includes('author:@me')) return search([pull(2)], 1);
+    if (query.includes('mentions:@me')) return search([issue(1)], 3);
     return search([], 5);
   });
   const get = await app(t, { github: { token: GITHUB_TOKEN }, invalid: [] }, fetchImpl);
   const body = await (await get('/api/tasks/github')).json();
   assert.equal(body.tasks.length, 2);
-  assert.equal(body.omitted, 129 + 5);
+  // 同じIssue・PRが複数の条件に当てはまっても、条件ごとの件数を重ねて数える（上限の目安）。
+  assert.equal(body.omitted, 129 + 5 + 2);
 });
 
 test('連携先が応答しない場合は期限で打ち切る', async (t) => {

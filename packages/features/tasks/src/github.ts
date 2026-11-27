@@ -9,7 +9,11 @@ const PER_QUERY = 100;
 const QUERIES: readonly (readonly [GitHubReason, string])[] = [
   ['assigned', 'is:open is:issue assignee:@me archived:false'],
   ['authored', 'is:open is:pr author:@me archived:false'],
+  // 最新のコミットのCIが失敗している自分のPR。PRごとにCIの状態を読み直さず、検索の条件で絞る。
+  ['ci_failed', 'is:open is:pr author:@me status:failure archived:false'],
   ['review_requested', 'is:open is:pr review-requested:@me archived:false'],
+  // 自分へのメンションを含む未完了のIssue・PR。既読かどうかは区別できない。
+  ['mentioned', 'is:open mentions:@me archived:false'],
 ];
 const REPOSITORY_URL = /^https:\/\/api\.github\.com\/repos\/([A-Za-z0-9_.-]{1,100})\/([A-Za-z0-9_.-]{1,100})$/;
 const HTML_URL = /^https:\/\/github\.com\/[A-Za-z0-9_.-]{1,100}\/[A-Za-z0-9_.-]{1,100}\/(?:issues|pull)\/\d{1,10}$/;
@@ -37,7 +41,7 @@ function toTask(item: unknown, reason: GitHubReason): ExternalTask {
 }
 
 /**
- * 担当のIssue・自分が作ったPR・レビューを依頼されたPRを読み取る。
+ * 担当のIssue・自分が作ったPR（CIが失敗したものには印を付ける）・レビューを依頼されたPR・自分へのメンションを読み取る。
  * トークンはヘッダーにだけ使い、結果は保存しない。各条件の件数が上限を超えた分は、omittedとして件数だけを返す。
  */
 export async function fetchGitHubTasks(token: string, options: UpstreamOptions = {}): Promise<{ tasks: ExternalTask[]; omitted: number }> {

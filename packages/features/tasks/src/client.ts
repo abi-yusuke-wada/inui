@@ -1,9 +1,9 @@
 import { ApiError, isRecord } from '@inui/feature-kit/web';
-import { MAX_TITLE_LENGTH, TASK_STATUSES } from './types.ts';
+import { GITHUB_REASONS, MAX_TITLE_LENGTH, TASK_STATUSES } from './types.ts';
 import type { ExternalResult, ExternalTask, LocalTask } from './types.ts';
 
-export type { ExternalResult, ExternalTask, LocalTask, TaskStatus } from './types.ts';
-export { MAX_TITLE_LENGTH, TASK_STATUSES } from './types.ts';
+export type { ExternalResult, ExternalTask, GitHubReason, LocalTask, TaskStatus } from './types.ts';
+export { GITHUB_REASONS, MAX_TITLE_LENGTH, TASK_STATUSES } from './types.ts';
 
 const isLocalTask = (value: unknown): value is LocalTask => isRecord(value)
   && typeof value.id === 'string' && value.id.length > 0
@@ -35,7 +35,7 @@ export function parseExternal(value: unknown): ExternalResult {
     && typeof task.key === 'string' && typeof task.title === 'string' && typeof task.updatedAt === 'string'
     && typeof task.url === 'string' && GITHUB_URL.test(task.url)
     && (task.reasons === undefined || (Array.isArray(task.reasons) && task.reasons.every((reason) =>
-      ['assigned', 'authored', 'review_requested'].includes(reason as string)))))) {
+      (GITHUB_REASONS as readonly unknown[]).includes(reason)))))) {
     throw new ApiError('invalid');
   }
   return { configured: true, tasks: tasks as unknown as ExternalTask[], omitted: value.omitted as number };

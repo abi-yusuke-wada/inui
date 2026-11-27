@@ -3,9 +3,11 @@ import type { FormEvent } from 'react';
 import { ApiError, errorMessage, fetchJson } from '@inui/feature-kit/web';
 import { Feedback, Loading, useLatestRequest } from '@inui/feature-kit/react';
 import { MAX_TITLE_LENGTH, parseExternal, parseLocalTask, parseLocalTasks } from './client.ts';
-import type { ExternalResult, LocalTask, TaskStatus } from './client.ts';
+import type { ExternalResult, GitHubReason, LocalTask, TaskStatus } from './client.ts';
 
-const REASON_NAMES = { assigned: '担当', authored: '自分のPR', review_requested: 'レビュー依頼' } as const;
+const REASON_NAMES = {
+  assigned: '担当', authored: '自分のPR', ci_failed: 'CI失敗', review_requested: 'レビュー依頼', mentioned: 'メンション',
+} as const satisfies Record<GitHubReason, string>;
 
 /** GitHubの失敗は、コードに応じて設定の確認か再試行を案内する。 */
 function githubError(error: unknown): string {
@@ -195,7 +197,7 @@ function Kanban({ tasks, busy, onMove, onRemove }: {
   </div>;
 }
 
-/** 自分が担当のIssue、自分が作ったPR、レビューを依頼されたPRを、リンクとして並べる。 */
+/** 自分が担当のIssue、自分が作ったPR、レビューを依頼されたPR、自分へのメンションを、リンクとして並べる。 */
 function GitHubTasks() {
   const [result, setResult] = useState<ExternalResult>();
   const [loading, setLoading] = useState(false);
@@ -220,7 +222,7 @@ function GitHubTasks() {
   return <section className="task-column" aria-labelledby="github-tasks-title">
     <p className="eyebrow">GITHUB</p>
     <h3 id="github-tasks-title">GitHub<span className="status-pill task-readonly">参照のみ</span></h3>
-    <p className="task-source-note">自分が担当のIssue、自分が作ったPR、レビューを依頼されたPR</p>
+    <p className="task-source-note">自分が担当のIssue、自分が作ったPR（CIが失敗したものに印）、レビューを依頼されたPR、自分へのメンション</p>
     {result?.configured && <button className="text-button" type="button" disabled={loading} onClick={() => { void load(); }}>再読み込み</button>}
     {loading && <Loading message="GitHubから読み込んでいます…" />}
     {error && <Feedback message={error} onRetry={() => { void load(); }} />}
@@ -230,7 +232,7 @@ function GitHubTasks() {
     </div>}
     {result?.configured && result.tasks.length === 0 && result.omitted === 0 && <div className="empty-state" role="status"><p>該当するチケットはありません。</p></div>}
     {result?.configured && result.omitted > 0 && <p className="task-source-note" role="status">
-      件数が多いため、{result.omitted}件を表示していません（条件ごとに更新が新しい100件まで表示）。GitHubで確認してください。
+      件数が多いため、最大{result.omitted}件を表示していません（条件ごとに更新が新しい100件まで表示）。GitHubで確認してください。
     </p>}
     {result?.configured && result.tasks.length > 0 && <ul className="task-list">
       {result.tasks.map((task) => <li key={task.id} className="task-item task-external">
@@ -240,7 +242,8 @@ function GitHubTasks() {
         </a>
         <p className="task-meta">
           {task.kind === 'pull_request' && <span className="status-pill">PR</span>}
-          {task.reasons?.map((reason) => <span key={reason} className="status-pill">{REASON_NAMES[reason]}</span>)}
+          {task.reasons?.map((reason) => <span key={reason}
+            className={reason === 'ci_failed' ? 'status-pill task-alert' : 'status-pill'}>{REASON_NAMES[reason]}</span>)}
         </p>
       </li>)}
     </ul>}
