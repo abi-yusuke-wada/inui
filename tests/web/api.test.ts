@@ -27,11 +27,13 @@ test('許可した3画面だけを開き、画面への引数や削除した画�
   }
 });
 
-test('HTTPエラー本文を取得・表示用エラーへ含めず、保存POSTを自動再試行しない', async () => {
+test('HTTPエラーの未完了の本文受信を中止し、保存POSTを自動再試行しない', async () => {
   let calls = 0;
   let readBody = false;
+  let signal: AbortSignal | null | undefined;
   const fake = async (_url: string | URL | Request, options?: RequestInit) => {
     calls++;
+    signal = options?.signal;
     assert.equal(options?.method, 'POST');
     assert.equal(options?.credentials, 'same-origin');
     assert.equal(options?.redirect, 'error');
@@ -48,6 +50,7 @@ test('HTTPエラー本文を取得・表示用エラーへ含めず、保存POST
     assert.equal(error.message.includes('秘密'), false);
     return true;
   });
+  assert.equal(signal?.aborted, true);
   // 固定形式（英小文字と_、40文字まで）でないコードは採用しない。ヘッダーに入れられるASCIIの値で、HTTPの失敗として確かめる。
   for (const code of ['secret <b>', 'Upstream_Auth', 'a'.repeat(41)]) {
     await assert.rejects(fetchJson('/api/tasks/github', { fetchImpl: async () => ({
