@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { execFileSync } from 'node:child_process';
 import {
-  chmodSync, existsSync, mkdirSync, readdirSync, readFileSync, rmSync, statSync, symlinkSync, utimesSync, writeFileSync,
+  chmodSync, existsSync, linkSync, mkdirSync, readdirSync, readFileSync, rmSync, statSync, symlinkSync, utimesSync, writeFileSync,
 } from 'node:fs';
 import { dirname, join } from 'node:path';
 import test from 'node:test';
@@ -285,6 +285,32 @@ test('確かめた後に docs がworktreeの外へのリンクに差し替えら
   };
   const status = await readRepository(fake, { name: 'wt', path: worktree });
   // リポジトリとworktreeは読めていて、メモだけを読まない。
+  assert.deepEqual(status.worktrees.map((item) => [item.path, item.error]), [[worktree, undefined]]);
+  assert.equal(status.handoff, undefined);
+});
+
+test('iノードが同じでも、worktreeの外を指すリンクを経て開いたファイルは読まない（Linux）', { skip: process.platform !== 'linux' }, async (t) => {
+  const root = temporaryDirectory(t);
+  const worktree = join(root, 'wt');
+  mkdirSync(join(worktree, 'docs'), { recursive: true });
+  writeFileSync(join(worktree, HANDOFF_PATH), '# worktreeのメモ\n');
+  // 外にも同じファイル（同じiノード）を置き、確かめた後に docs を外へのリンクに差し替える。
+  // 開くファイルのiノードは確かめたものと同じになるため、iノードの比較だけでは外の場所から開いたことが分からない。
+  mkdirSync(join(root, 'outside'));
+  linkSync(join(worktree, HANDOFF_PATH), join(root, 'outside', 'HANDOFF.md'));
+  const fake: GitRunner = async (cwd, args) => {
+    if (args[0] === 'rev-parse') return revParse(worktree, cwd, args);
+    if (args[0] === 'worktree') return `worktree ${worktree}\nHEAD ${'a'.repeat(40)}\nbranch refs/heads/main\n`;
+    if (args[0] === 'status') return `# branch.oid ${'a'.repeat(40)}\0# branch.head main\0`;
+    if (args[0] === 'log' && args.includes(HANDOFF_PATH)) {
+      rmSync(join(worktree, 'docs'), { recursive: true });
+      symlinkSync(join(root, 'outside'), join(worktree, 'docs'));
+      return '2026-11-19T09:00:00+09:00\n';
+    }
+    if (args[0] === 'log') return '';
+    throw new GitError('git_failed');
+  };
+  const status = await readRepository(fake, { name: 'wt', path: worktree });
   assert.deepEqual(status.worktrees.map((item) => [item.path, item.error]), [[worktree, undefined]]);
   assert.equal(status.handoff, undefined);
 });

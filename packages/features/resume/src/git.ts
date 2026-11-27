@@ -1,7 +1,7 @@
 import { execFile } from 'node:child_process';
 import type { ExecFileException } from 'node:child_process';
 import { constants } from 'node:fs';
-import { lstat, open, realpath, stat } from 'node:fs/promises';
+import { lstat, open, readlink, realpath, stat } from 'node:fs/promises';
 import { join, sep } from 'node:path';
 import type { Repository } from './config.ts';
 import type { ChangeSummary, CommitSummary, GitErrorCode, Handoff, RepositoryStatus, WorktreeStatus } from './types.ts';
@@ -266,9 +266,13 @@ async function readWorktree(git: GitRunner, entry: WorktreeEntry, repositoryComm
   }
 }
 
-/** 確かめた引き継ぎメモ。開いたときに同じファイルかを比べるため、デバイスとiノードの番号を持つ。 */
+/**
+ * 確かめた引き継ぎメモ。開いたときに同じファイルかを比べるため、デバイスとiノードの番号を持つ。
+ * 開いたファイルの場所を比べるため、worktreeの実際の場所（リンクを解いたもの）も持つ。
+ */
 interface HandoffFile {
   path: string;
+  root: string;
   mtime: Date;
   dev: bigint;
   ino: bigint;
@@ -284,7 +288,7 @@ async function handoffFile(worktree: string): Promise<HandoffFile | undefined> {
     if (!info.isFile()) return undefined;
     const [root, real] = await Promise.all([realpath(worktree), realpath(path)]);
     if (!real.startsWith(root + sep)) return undefined;
-    return { path, mtime: info.mtime, dev: info.dev, ino: info.ino };
+    return { path, root, mtime: info.mtime, dev: info.dev, ino: info.ino };
   } catch {
     return undefined;
   }
@@ -293,6 +297,10 @@ async function handoffFile(worktree: string): Promise<HandoffFile | undefined> {
 /**
  * 上限までを読み、上限で切った位置が文字の途中なら壊れた末尾を除く。確かめた後に途中のディレクトリ（docs等）が
  * リンクへ差し替えられると別のファイルを開くことになるため、開いたファイルが確かめたものと違えば読まない。
+ * iノードが同じでも、外を指すリンクを経て開いた場合（外にあるハードリンクや、確かめる処理の間にリンクを
+ * 差し替え続けられた場合）は区別できない。Linuxでは、開いたファイルそのものの場所（/proc/self/fd）が
+ * worktreeの中かも確かめる。Node.jsには openat がなく、ほかのOSでは開いたファイルから場所を得られないため、
+ * iノードの比較までとする（ADR-0011）。
  */
 async function readLimited(file: HandoffFile): Promise<{ markdown: string; truncated: boolean } | undefined> {
   // 末尾のリンクはたどらない。
@@ -300,6 +308,9 @@ async function readLimited(file: HandoffFile): Promise<{ markdown: string; trunc
   try {
     const info = await handle.stat({ bigint: true });
     if (info.dev !== file.dev || info.ino !== file.ino) return undefined;
+    if (process.platform === 'linux' && !(await readlink(`/proc/self/fd/${handle.fd}`)).startsWith(file.root + sep)) {
+      return undefined;
+    }
     const buffer = Buffer.alloc(MAX_HANDOFF_BYTES + 1);
     const { bytesRead } = await handle.read(buffer, 0, buffer.length, 0);
     const truncated = bytesRead > MAX_HANDOFF_BYTES;
