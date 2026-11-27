@@ -72,15 +72,17 @@ test('作業ブランチ以外や、現在のブランチと異なるブラン�
   } finally { onMain.cleanup(); }
 });
 
+const PUSH_CONFIG_CASES = [
+  ['remote.origin.push', 'refs/heads/feat/sample:refs/heads/main'],
+  ['remote.origin.pushurl', 'https://example.invalid/other.git'],
+  ['remote.origin.mirror', 'true'],
+  ['push.followTags', 'true'],
+  ['url.https://example.invalid/.insteadOf', 'https://github.com/'],
+  ['url.https://example.invalid/.pushInsteadOf', 'https://github.com/'],
+];
+
 test('push先やURLを書き換えるGitの設定があれば承認を求める', () => {
-  for (const [key, value] of [
-    ['remote.origin.push', 'refs/heads/feat/sample:refs/heads/main'],
-    ['remote.origin.pushurl', 'https://example.invalid/other.git'],
-    ['remote.origin.mirror', 'true'],
-    ['push.followTags', 'true'],
-    ['url.https://example.invalid/.insteadOf', 'https://github.com/'],
-    ['url.https://example.invalid/.pushInsteadOf', 'https://github.com/'],
-  ]) {
+  for (const [key, value] of PUSH_CONFIG_CASES) {
     const repo = repository();
     try {
       repo.git('config', key, value);
@@ -99,6 +101,23 @@ test('push先やURLを書き換えるGitの設定があれば承認を求める'
     multi.git('config', '--add', 'remote.origin.url', ORIGIN);
     assert.equal(decide('git push origin feat/sample', multi.dir), 'ask');
   } finally { multi.cleanup(); }
+});
+
+test('グローバル設定のpush先やURLの書き換えも個別に承認を求める', () => {
+  const repo = repository();
+  const globalConfig = join(repo.dir, 'global-config');
+  const env = { ...GIT_ENV, GIT_CONFIG_GLOBAL: globalConfig };
+  const command = 'git push origin feat/sample';
+  try {
+    writeFileSync(globalConfig, '');
+    assert.equal(decide(command, repo.dir, 'Bash', env), 'allow');
+    for (const [key, value] of PUSH_CONFIG_CASES) {
+      // 実際の設定を使わず、一度に1つの項目だけをグローバル設定へ入れる。
+      writeFileSync(globalConfig, '');
+      repo.git('config', '--file', globalConfig, key, value);
+      assert.equal(decide(command, repo.dir, 'Bash', env), 'ask', key);
+    }
+  } finally { repo.cleanup(); }
 });
 
 test('GIT_CONFIGでgit configの参照先だけが切り替わる場合は承認を求める', () => {
