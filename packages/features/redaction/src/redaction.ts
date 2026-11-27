@@ -19,7 +19,7 @@ function formatSource(source: string, format: SourceFormat) {
     }
     return { markdown: text, names };
   }
-  const blocks = text.split(/\n(?:[ \t　]*\n)+/u);
+  const blocks = text.split(/\n(?:[^\S\n]*\n)+/u);
   const markdown = blocks.map((block) => {
     const [firstLine = '', ...body] = block.split('\n');
     const name = firstLine.trim();
@@ -70,23 +70,31 @@ const fixedPatterns = [
   { pattern: /\b[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}\b/gi, replacement: '[メール]' },
   { pattern: /https?:\/\/[^\s<>"'）)】、。]+/giu, replacement: '[URL]' },
   { pattern: /\b0\d{1,4}-\d{1,4}-\d{3,4}\b/g, replacement: '[電話番号]' },
-  {
-    pattern: /(?:api[ _-]?key|\btoken\b|トークン|パスワード)[ \t　]*[:：=][ \t　]*["']?([^\s"'<>、。]+)/giu,
-    replacement: '[認証情報]',
-  },
 ];
+
+// 閉じ引用符までを値とし、引用符が閉じていなければその行の残りを伏せる。
+const credentialPattern = /(?:api[ _-]?key|\btoken\b|トークン|パスワード)[ \t　]*[:：=][ \t　]*(?:(["'])((?:\\[^\n]|(?!\1)[^\\\n])*)\1|["']([^\n]*)|([^\s"'<>、。]+))/giu;
 
 export function analyzeRedaction(source: string, format: SourceFormat, additionalTerms: string) {
   const { markdown, names } = formatSource(source, format);
   const candidates = identifyPeople(markdown, names);
-  const registered = new Set(additionalTerms.split(/\r?\n/u).map((term) => term.trim()).filter(Boolean));
-  for (const term of registered) {
-    if (markdown.includes(term)) candidates.push({ terms: [term], replacement: '[伏せ字]' });
+  const detected = new Set(candidates.flatMap(({ terms }) => terms));
+  function addCandidate(term: string, replacement: string) {
+    if (detected.has(term)) return;
+    detected.add(term);
+    candidates.push({ terms: [term], replacement });
+  }
+
+  for (const line of additionalTerms.split(/\r?\n/u)) {
+    const term = line.trim();
+    if (term && markdown.includes(term)) addCandidate(term, '[伏せ字]');
   }
   for (const { pattern, replacement } of fixedPatterns) {
-    const terms = new Set<string>();
-    for (const match of markdown.matchAll(pattern)) terms.add(match[1] ?? match[0]);
-    for (const term of terms) candidates.push({ terms: [term], replacement });
+    for (const [term] of markdown.matchAll(pattern)) addCandidate(term, replacement);
+  }
+  for (const [, , quoted, unclosed, bare] of markdown.matchAll(credentialPattern)) {
+    const term = quoted ?? unclosed ?? bare;
+    if (term) addCandidate(term, '[認証情報]');
   }
   return { markdown, candidates };
 }
@@ -95,21 +103,38 @@ export function redact(markdown: string, candidates: Candidate[]) {
   const replacements = new Map<string, string>();
   for (const { terms, replacement } of candidates) {
     for (const term of terms) {
-      if (!replacements.has(term)) replacements.set(term, replacement);
+      if (term && !replacements.has(term)) replacements.set(term, replacement);
     }
   }
-  if (replacements.size === 0) return [{ text: markdown, redacted: false }];
 
-  // 同じ位置から始まる語が重なる場合は長い方を優先する。
-  const alternatives = [...replacements.keys()].sort((a, b) => b.length - a.length)
-    .map((term) => term.replace(/[.*+?^$(){}|[\]\\]/g, '\\$&'));
+  // 同じ位置では、最も長い語の範囲と置き換え先を使う。
+  const starts = new Map<number, { end: number; replacement: string }>();
+  for (const [term, replacement] of [...replacements].sort(([a], [b]) => b.length - a.length)) {
+    for (let start = markdown.indexOf(term); start !== -1; start = markdown.indexOf(term, start + 1)) {
+      if (!starts.has(start)) starts.set(start, { end: start + term.length, replacement });
+    }
+  }
+  if (starts.size === 0) return [{ text: markdown, redacted: false }];
+
   const fragments: { text: string; redacted: boolean }[] = [];
   let cursor = 0;
-  for (const match of markdown.matchAll(new RegExp(alternatives.join('|'), 'gu'))) {
-    const term = match[0];
-    if (cursor < match.index) fragments.push({ text: markdown.slice(cursor, match.index), redacted: false });
-    fragments.push({ text: replacements.get(term) ?? term, redacted: true });
-    cursor = match.index + term.length;
+  let start = 0;
+  while (start < markdown.length) {
+    const match = starts.get(start);
+    if (!match) {
+      start++;
+      continue;
+    }
+
+    // 開始位置の違う候補も、重なっている範囲を連結してから一度だけ伏せる。
+    let end = match.end;
+    for (let index = start + 1; index < end; index++) {
+      end = Math.max(end, starts.get(index)?.end ?? end);
+    }
+    if (cursor < start) fragments.push({ text: markdown.slice(cursor, start), redacted: false });
+    fragments.push({ text: match.replacement, redacted: true });
+    cursor = end;
+    start = end;
   }
   if (cursor < markdown.length) fragments.push({ text: markdown.slice(cursor), redacted: false });
   return fragments;
