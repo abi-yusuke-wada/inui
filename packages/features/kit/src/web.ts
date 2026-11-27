@@ -76,8 +76,11 @@ export async function fetchJson(
     } catch {
       throw new ApiError(timedOut ? 'timeout' : controller.signal.aborted ? 'aborted' : 'network');
     }
-    // エラー本文は読まず、表示用の情報に使わない。
-    if (!response.ok) throw new ApiError('http', response.status, errorCode(response));
+    if (!response.ok) {
+      // エラー本文は読まず、ヘッダーの受信後に続くダウンロードも止める。
+      controller.abort();
+      throw new ApiError('http', response.status, errorCode(response));
+    }
     try {
       return await response.json();
     } catch {
