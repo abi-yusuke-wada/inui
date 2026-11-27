@@ -81,6 +81,25 @@ make app-dev
 
 `make app-dev`・`app-smoke`は、この変数だけをアプリのプロセスへ渡し、推論サーバーには渡さない。`GH_TOKEN`・`GITHUB_TOKEN`は使わない。自分が担当のIssue・自分が作ったPR・レビューを依頼されたPRを読み取り、inuiからは更新しない。Backlogの連携は2026-11-18に削除したため、`INUI_BACKLOG_SPACE`・`INUI_BACKLOG_API_KEY`を設定していても使わない。
 
+## 作業の再開画面のリポジトリ（任意）
+
+作業の再開画面（[Issue #33](https://github.com/abi-yusuke-wada/inui/issues/33)）は、今は業務APIの`GET /api/resume`だけを用意している（画面とIntentは、モックアップが決まってから追加する）。読むリポジトリは、アプリの起動前に次の環境変数で指定する。未設定のときは、未登録であることだけを返す。
+
+| 環境変数 | 内容 |
+| --- | --- |
+| `INUI_REPOSITORIES` | 読むリポジトリの絶対パス（カンマ区切り、10件まで）。1つでも形式が誤っていれば、どれも読まない |
+
+```sh
+export INUI_REPOSITORIES=/root/develop/inui
+make app-dev
+# 別のシェルで、APIの応答を確認する
+curl -s http://127.0.0.1:8766/api/resume
+```
+
+リポジトリごとに、worktreeのブランチ・未コミットの変更・最近のコミット5件と、最も新しく更新された`docs/HANDOFF.md`を返す。`INUI_GITHUB_TOKEN`を設定していれば、自分が作った未完了のPRと、そのレビュー・CIの状態も返す。CIの結果を読む権限がトークンにない場合は、CIの状態が「不明」または「チェックなし」になる。
+
+gitは読み取り専用のコマンドだけを、PATH以外の環境変数を渡さずに実行し、fsmonitorや署名の検証のような外部のプログラムを動かす設定を止める。インデックスも書き換えず、部分クローンで足りないオブジェクトを取りに行く通信もしない。判断の理由は[ADR-0011](adr/0011-resume-reads-local-git.md)に記録する。
+
 ## タスクとMarkdownの確認
 
 `自分のタスクを確認したい`でタスク画面、`Markdownを見やすく表示したい`でMarkdownの表示を開く。2つ目以降の用件は、右下のボタンから入力欄を開いて入力する。

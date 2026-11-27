@@ -20,6 +20,9 @@ importers:
       '@inui/feature-markdown':
         specifier: workspace:*
         version: link:packages/features/markdown
+      '@inui/feature-resume':
+        specifier: workspace:*
+        version: link:packages/features/resume
       '@inui/feature-tasks':
         specifier: workspace:*
         version: link:packages/features/tasks
@@ -86,6 +89,15 @@ importers:
       react:
         specifier: 19.3.1
         version: 19.3.1
+
+  packages/features/resume:
+    dependencies:
+      '@inui/feature-kit':
+        specifier: workspace:*
+        version: link:../kit
+      hono:
+        specifier: 4.13.17
+        version: 4.13.17
 
   packages/features/tasks:
     dependencies:
