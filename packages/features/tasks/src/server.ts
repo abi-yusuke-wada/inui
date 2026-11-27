@@ -5,8 +5,8 @@ import type { TaskStore } from './store.ts';
 import type { TaskSources } from './config.ts';
 import { MAX_TITLE_LENGTH, TASK_STATUSES } from './types.ts';
 import type { ExternalResult, ExternalTask, LocalTask } from './types.ts';
-import { UpstreamError } from './upstream.ts';
-import type { UpstreamOptions } from './upstream.ts';
+import { UpstreamError } from '@inui/feature-kit/upstream';
+import type { UpstreamOptions } from '@inui/feature-kit/upstream';
 
 export { readTaskSources } from './config.ts';
 export type { TaskSources } from './config.ts';

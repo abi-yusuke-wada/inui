@@ -1,41 +1,21 @@
-import type { PullRequestStatus, UpstreamErrorCode } from './types.ts';
+import { isRecord } from '@inui/feature-kit/server';
+import { isText, isTimestamp, requestJson, UpstreamError } from '@inui/feature-kit/upstream';
+import type { UpstreamOptions } from '@inui/feature-kit/upstream';
+import type { PullRequestStatus } from './types.ts';
+
+export { UpstreamError } from '@inui/feature-kit/upstream';
+export type { UpstreamOptions } from '@inui/feature-kit/upstream';
 
 const ENDPOINT = 'https://api.github.com/graphql';
 /** 1つのリポジトリで読む、自分が作った未完了のPRの数。 */
 const MAX_PULLS = 20;
-const DEFAULT_TIMEOUT_MS = 10_000;
 const NAME = /^[A-Za-z0-9_.-]{1,100}$/;
-const TIMESTAMP = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?(?:Z|[+-]\d{2}:\d{2})$/;
 const REVIEW = { APPROVED: 'approved', CHANGES_REQUESTED: 'changes_requested', REVIEW_REQUIRED: 'review_required' } as const;
 const CHECKS = { SUCCESS: 'success', FAILURE: 'failure', ERROR: 'failure', PENDING: 'pending', EXPECTED: 'pending' } as const;
-
-/** GitHubの失敗。URL・応答本文・例外の内容は保持しない。 */
-export class UpstreamError extends Error {
-  readonly code: UpstreamErrorCode;
-  constructor(code: UpstreamErrorCode) {
-    super(code);
-    this.name = 'UpstreamError';
-    this.code = code;
-  }
-}
-
-export interface UpstreamOptions {
-  fetchImpl?: typeof fetch;
-  timeoutMs?: number;
-}
 
 export interface GitHubRepository {
   owner: string;
   name: string;
-}
-
-const isRecord = (value: unknown): value is Record<string, unknown> =>
-  value !== null && typeof value === 'object' && !Array.isArray(value);
-
-/** 表示する文字列の長さを制限し、制御文字を含むものは受け付けない。 */
-function isText(value: unknown, max: number): value is string {
-  // biome-ignore lint/suspicious/noControlCharactersInRegex: 連携先の文字列に含まれる制御文字を拒否するため。
-  return typeof value === 'string' && value.length >= 1 && value.length <= max && !/[\u0000-\u001f\u007f]/.test(value);
 }
 
 /** 照合に使うキー。GitHubの所有者・リポジトリ名は大文字と小文字を区別しない。 */
@@ -48,7 +28,7 @@ export const repositoryKey = ({ owner, name }: GitHubRepository): string => `${o
 function toPullRequest(node: unknown, repository: GitHubRepository, checksUnknown: boolean): PullRequestStatus {
   if (!isRecord(node) || !Number.isSafeInteger(node.number) || (node.number as number) < 1 || !isText(node.title, 500)
       || typeof node.url !== 'string' || !isText(node.headRefName, 255) || typeof node.isDraft !== 'boolean'
-      || typeof node.updatedAt !== 'string' || !TIMESTAMP.test(node.updatedAt)
+      || !isTimestamp(node.updatedAt)
       || (node.reviewDecision !== null && !Object.hasOwn(REVIEW, node.reviewDecision as string))) {
     throw new UpstreamError('upstream_invalid');
   }
@@ -73,38 +53,15 @@ function toPullRequest(node: unknown, repository: GitHubRepository, checksUnknow
   };
 }
 
-/** GraphQLの要求を1回だけ送る。リダイレクトに従わず、本文の受信まで期限を設ける。 */
-async function postGraphQL(token: string, query: string, variables: Record<string, string>,
-  { fetchImpl = globalThis.fetch, timeoutMs = DEFAULT_TIMEOUT_MS }: UpstreamOptions): Promise<unknown> {
-  const controller = new AbortController();
-  let timedOut = false;
-  const timer = setTimeout(() => { timedOut = true; controller.abort(); }, timeoutMs);
-  try {
-    let response: Response;
-    try {
-      response = await fetchImpl(ENDPOINT, {
-        method: 'POST', redirect: 'error', signal: controller.signal, body: JSON.stringify({ query, variables }),
-        headers: {
-          Accept: 'application/vnd.github+json', Authorization: `Bearer ${token}`, 'Content-Type': 'application/json',
-          'User-Agent': 'inui-local-poc',
-        },
-      });
-    } catch {
-      throw new UpstreamError(timedOut ? 'upstream_timeout' : 'upstream_unavailable');
-    }
-    if (!response.ok) {
-      // 本文は読まずに接続を解放する。
-      controller.abort();
-      throw new UpstreamError(response.status === 401 || response.status === 403 ? 'upstream_auth' : 'upstream_unavailable');
-    }
-    try {
-      return await response.json();
-    } catch {
-      throw new UpstreamError(timedOut ? 'upstream_timeout' : 'upstream_invalid');
-    }
-  } finally {
-    clearTimeout(timer);
-  }
+/** GraphQLの要求を1回だけ送る。 */
+function postGraphQL(token: string, query: string, variables: Record<string, string>, options: UpstreamOptions): Promise<unknown> {
+  return requestJson(ENDPOINT, {
+    method: 'POST', body: JSON.stringify({ query, variables }),
+    headers: {
+      Accept: 'application/vnd.github+json', Authorization: `Bearer ${token}`, 'Content-Type': 'application/json',
+      'User-Agent': 'inui-local-poc',
+    },
+  }, options);
 }
 
 /**

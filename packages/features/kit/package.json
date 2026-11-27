@@ -7,7 +7,8 @@
     "./server": "./src/server.ts",
     "./db": "./src/db.ts",
     "./web": "./src/web.ts",
-    "./react": "./src/react.tsx"
+    "./react": "./src/react.tsx",
+    "./upstream": "./src/upstream.ts"
   },
   "peerDependencies": {
     "hono": "4.13.17",

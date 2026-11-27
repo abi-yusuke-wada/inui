@@ -1,5 +1,6 @@
-import { getJson, isRecord, isText, isTimestamp, UpstreamError } from './upstream.ts';
-import type { UpstreamOptions } from './upstream.ts';
+import { isRecord } from '@inui/feature-kit/server';
+import { isText, isTimestamp, requestJson, UpstreamError } from '@inui/feature-kit/upstream';
+import type { UpstreamOptions } from '@inui/feature-kit/upstream';
 import type { ExternalTask, GitHubReason } from './types.ts';
 
 const API = 'https://api.github.com';
@@ -49,7 +50,7 @@ export async function fetchGitHubTasks(token: string, options: UpstreamOptions =
   };
   const results = await Promise.all(QUERIES.map(async ([reason, query]) => {
     const params = new URLSearchParams({ q: query, sort: 'updated', order: 'desc', per_page: String(PER_QUERY) });
-    const body = await getJson(`${API}/search/issues?${params.toString()}`, headers, options);
+    const body = await requestJson(`${API}/search/issues?${params.toString()}`, { method: 'GET', headers }, options);
     if (!isRecord(body) || !Array.isArray(body.items) || body.items.length > PER_QUERY
         || typeof body.incomplete_results !== 'boolean'
         || !Number.isSafeInteger(body.total_count) || (body.total_count as number) < body.items.length) {
