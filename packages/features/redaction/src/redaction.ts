@@ -7,6 +7,7 @@ type Candidate = {
 
 const namePattern = /^[\p{Script=Han}\p{Script=Katakana}々]{2,12}(?:[ \t　]+[\p{Script=Han}\p{Script=Katakana}々]{1,12})?$/u;
 const commonTitles = new Set(['利用者', '担当者', '管理者', '関係者', '参加者', '社員', '先生']);
+const headingSuffix = /(?:事項|概要|詳細|手順|状況|結果|補足|備考|議題|課題)$/u;
 const structuredFields = /^(?:担当者|投稿者|作成者|コメント者)[ \t　]*[:：][ \t　]*(.+)$/gmu;
 
 function formatSource(source: string, format: SourceFormat) {
@@ -23,6 +24,8 @@ function formatSource(source: string, format: SourceFormat) {
   const markdown = blocks.map((block) => {
     const [firstLine = '', ...body] = block.split('\n');
     const name = firstLine.trim();
+    // 貼り付けた本文中の見出しを、空行だけを根拠に発言者にしない。
+    if (format === 'teams-group' && headingSuffix.test(name)) return block;
     if (format === 'teams-group' && body.length > 0 && namePattern.test(name)) {
       names.push(name);
       return '**' + name + '**\n\n' + body.join('\n');
@@ -72,8 +75,28 @@ const fixedPatterns = [
   { pattern: /\b0\d{1,4}-\d{1,4}-\d{3,4}\b/g, replacement: '[電話番号]' },
 ];
 
-// 閉じ引用符までを値とし、引用符が閉じていなければその行の残りを伏せる。
-const credentialPattern = /(?:api[ _-]?key|\btoken\b|トークン|パスワード)[ \t　]*[:：=][ \t　]*(?:(["'])((?:\\[^\n]|(?!\1)[^\\\n])*)\1|["']([^\n]*)|([^\s"'<>、。]+))/giu;
+const credentialLabel = /(?:\b(?:[a-z_][a-z0-9_]*_)?(?:api[ _-]?key|token|password)\b|トークン|パスワード)[ \t　]*[:：=][ \t　]*/giu;
+const bareCredential = /^[^\s"'<>、。]+/u;
+
+function readCredentialValue(text: string, start: number, valueStarts: ReadonlySet<number>): string | undefined {
+  const quote = text[start];
+  if (quote !== '"' && quote !== "'") return bareCredential.exec(text.slice(start))?.[0];
+
+  for (let end = start + 1; end < text.length; end++) {
+    if (text[end] === '\\') {
+      end++;
+      continue;
+    }
+    if (text[end] !== quote) continue;
+    // 次の認証情報の値を開く引用符まで来た場合は、今の値は閉じていない。
+    if (valueStarts.has(end)) break;
+    return text.slice(start + 1, end);
+  }
+
+  // 閉じ引用符がなければ、現在の行の残りを伏せる。
+  const lineEnd = text.indexOf('\n', start + 1);
+  return text.slice(start + 1, lineEnd === -1 ? undefined : lineEnd);
+}
 
 export function analyzeRedaction(source: string, format: SourceFormat, additionalTerms: string) {
   const { markdown, names } = formatSource(source, format);
@@ -92,8 +115,9 @@ export function analyzeRedaction(source: string, format: SourceFormat, additiona
   for (const { pattern, replacement } of fixedPatterns) {
     for (const [term] of markdown.matchAll(pattern)) addCandidate(term, replacement);
   }
-  for (const [, , quoted, unclosed, bare] of markdown.matchAll(credentialPattern)) {
-    const term = quoted ?? unclosed ?? bare;
+  const credentialStarts = new Set(Array.from(markdown.matchAll(credentialLabel), (match) => match.index + match[0].length));
+  for (const start of credentialStarts) {
+    const term = readCredentialValue(markdown, start, credentialStarts);
     if (term) addCandidate(term, '[認証情報]');
   }
   return { markdown, candidates };

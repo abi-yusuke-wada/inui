@@ -51,6 +51,28 @@ test('引用符内の空白とエスケープを含む認証情報を値全体�
     'パスワード: "[認証情報]"\ntoken = \'[認証情報]\'\nAPI key: "[認証情報]\n補足: 公開用の説明');
 });
 
+test('複数行の認証情報は閉じ引用符までを一つの値として伏せる', () => {
+  const source = 'パスワード: "example line 1\nexample line 2"\n補足: 公開用の説明';
+  const result = analyzeRedaction(source, 'backlog', '');
+  assert.deepEqual(result.candidates, [{ terms: ['example line 1\nexample line 2'], replacement: '[認証情報]' }]);
+  assert.equal(redact(result.markdown, result.candidates).map(({ text }) => text).join(''),
+    'パスワード: "[認証情報]"\n補足: 公開用の説明');
+});
+
+test('英語のラベルと接頭辞付きの環境変数名から認証情報を検出する', () => {
+  const source = 'INUI_GITHUB_TOKEN=example-token\nPASSWORD=example-passphrase\nSERVICE_API_KEY="example key"';
+  const result = analyzeRedaction(source, 'backlog', '');
+  assert.equal(redact(result.markdown, result.candidates).map(({ text }) => text).join(''),
+    'INUI_GITHUB_TOKEN=[認証情報]\nPASSWORD=[認証情報]\nSERVICE_API_KEY="[認証情報]"');
+});
+
+test('閉じていない認証情報の次に別の代入がある場合は各行の値を伏せる', () => {
+  const source = 'TOKEN="unclosed example\nPASSWORD="another example"';
+  const result = analyzeRedaction(source, 'backlog', '');
+  assert.equal(redact(result.markdown, result.candidates).map(({ text }) => text).join(''),
+    'TOKEN="[認証情報]\nPASSWORD="[認証情報]"');
+});
+
 test('異なる位置から始まる候補が連続して重なっても全体を伏せる', () => {
   const source = '前: 青空銀行決済基盤本番、青空銀行決済基盤本番、後';
   const result = analyzeRedaction(source, 'backlog', '青空銀行\n銀行決済基盤\n基盤本番');
@@ -75,6 +97,19 @@ test('ノーブレークスペースだけの区切り行でもTeamsの発言者
   const result = analyzeRedaction(source, 'teams-group', '');
   assert.equal(redact(result.markdown, result.candidates).map(({ text }) => text).join(''),
     '**Aさん**\n\n確認しました。\n\n**Bさん**\n\n対応します。');
+});
+
+test('Teamsの発言中の見出しを本文に残し、次の発言者は伏せる', () => {
+  const source = [
+    '山田花子\n確認事項は次のとおりです。',
+    '確認事項\n見直しが必要です。',
+    '対応手順\n手順を見直します。',
+    '佐藤太郎\n内容を確認しました。',
+  ].join('\n\n');
+  const result = analyzeRedaction(source, 'teams-group', '');
+  assert.deepEqual(result.candidates.map(({ terms }) => terms), [['山田花子'], ['佐藤太郎']]);
+  assert.equal(redact(result.markdown, result.candidates).map(({ text }) => text).join(''),
+    '**Aさん**\n\n確認事項は次のとおりです。\n\n確認事項\n見直しが必要です。\n\n対応手順\n手順を見直します。\n\n**Bさん**\n\n内容を確認しました。');
 });
 
 test('手動登録と自動検出が同じ語なら一つの候補にまとめ、解除を出力に反映する', () => {
