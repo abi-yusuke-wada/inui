@@ -3,6 +3,11 @@
   "permissions": {
     "defaultMode": "default",
     "blockWritesOutsideWorkingDirectories": true,
+    "allow": [
+      "Bash(gh *)",
+      "Bash(git add *)",
+      "Bash(git commit *)"
+    ],
     "deny": [
       "Read(./.env)",
       "Read(./.env.*)",
@@ -75,10 +80,22 @@
       "Bash(gh api *-X PATCH repos/*/inui)",
       "Bash(gh api *-X PATCH repos/*/inui *)",
       "Bash(gh api *--method PATCH repos/*/inui)",
-      "Bash(gh api *--method PATCH repos/*/inui *)"
+      "Bash(gh api *--method PATCH repos/*/inui *)",
+      "Bash(gh *@/proc*)",
+      "Bash(git add *--pathspec-from-file*)",
+      "Bash(git commit *--pathspec-from-file*)",
+      "Bash(git commit *--template*)",
+      "Bash(git commit * -t *)",
+      "Bash(git commit *.env*)",
+      "Bash(git commit *~*)",
+      "Bash(git commit *..*)",
+      "Bash(git commit */root*)",
+      "Bash(git commit */home*)",
+      "Bash(git commit */etc*)",
+      "Bash(git commit */mnt*)",
+      "Bash(git commit */proc*)"
     ],
     "ask": [
-      "Bash(gh *)",
       "Bash(git config *)",
       "Bash(git -c * push*)",
       "Bash(git -C * push*)",
@@ -92,7 +109,9 @@
     "failIfUnavailable": true,
     "excludedCommands": [
       "gh *",
-      "git push *"
+      "git push *",
+      "git add *",
+      "git commit *"
     ],
     "credentials": {
       "envVars": [
