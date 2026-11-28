@@ -152,11 +152,12 @@ CIの状態の読み方は、次の2案を比べた。
 
 - 決定:
   - 検索の条件に、`is:open is:pr author:@me status:failure archived:false`（理由 `ci_failed`、札「CI失敗」）と、`is:open mentions:@me archived:false`（理由 `mentioned`、札「メンション」）を加える。CIが失敗したPRは自分が作ったPRの検索にも出てくるため、同じ行に札が加わる。「CI失敗」の札は、エラーの案内と同じ色にする。
+  - GitHub Appのユーザーアクセストークン（`ghu_`）では、IssueとPRをまとめて検索するとHTTP 422になる。メンションの検索を `is:issue` と `is:pull-request` に分け、それぞれの結果に同じ理由 `mentioned` を付ける。 [GitHub REST APIの検索仕様](https://docs.github.com/en/rest/search/search#search-issues-and-pull-requests)
   - 理由の一覧は `GITHUB_REASONS` の1か所で定義し、業務APIの型、画面での応答の検証、札の名前で共有する。札は検索の条件の順に並べる。
   - 上限を超えて表示しなかった件数（`omitted`）は、従来どおり条件ごとの合計とする。条件が重なるようになったため、画面では「最大N件を表示していません」と案内する。
   - コアの候補の説明と、MVP.mdの入力例は変えない。
 - 影響:
-  - 1回の表示でGitHubの検索APIを5回呼ぶ。検索APIは認証済みで1分に30回までのため、1分に6回以上開き直すと上限にかかる。上限にかかったときのHTTP 403は、今は認証の失敗（`upstream_auth`）として案内される。
+  - 1回の表示でGitHubの検索APIを5回呼ぶ。GitHub Appのユーザーアクセストークンでは6回呼ぶ。認証済みの検索APIは1分に30回までで、短時間に繰り返し開くと上限にかかる。上限にかかったときのHTTP 403は、今は認証の失敗（`upstream_auth`）として案内される。
   - `status:failure` がGitHub ActionsのCI（チェック）の結果を反映するか、fine-grained tokenで `mentions:@me` を含めて検索できるかは、実際のトークンで確かめていない。
   - メンションは、以前にメンションされて今も未完了のものを含む。既読かどうかは区別しない。
   - 実NLI（固定revision、Engine直接呼び出し、2026-11-27）で新しい言い回し4件を分類した。「CIが落ちたプルリクを確認したい」（1位0.210）と「自分宛てのメンションを確認したい」（1位0.247）はタスク画面になった。「テストが失敗しているPRを見たい」は対象外の操作（0.202。タスク画面は3位の0.168）、「GitHubでメンションされたものを一覧で見たい」は曖昧（0.209。タスク画面は2位の0.202）になった。候補の説明にCIやメンションを加えるかは未決とする。

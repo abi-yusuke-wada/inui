@@ -12,8 +12,6 @@ const QUERIES: readonly (readonly [GitHubReason, string])[] = [
   // 最新のコミットのCIが失敗している自分のPR。PRごとにCIの状態を読み直さず、検索の条件で絞る。
   ['ci_failed', 'is:open is:pr author:@me status:failure archived:false'],
   ['review_requested', 'is:open is:pr review-requested:@me archived:false'],
-  // 自分へのメンションを含む未完了のIssue・PR。既読かどうかは区別できない。
-  ['mentioned', 'is:open mentions:@me archived:false'],
 ];
 const REPOSITORY_URL = /^https:\/\/api\.github\.com\/repos\/([A-Za-z0-9_.-]{1,100})\/([A-Za-z0-9_.-]{1,100})$/;
 const HTML_URL = /^https:\/\/github\.com\/[A-Za-z0-9_.-]{1,100}\/[A-Za-z0-9_.-]{1,100}\/(?:issues|pull)\/\d{1,10}$/;
@@ -51,7 +49,16 @@ export async function fetchGitHubTasks(token: string, options: UpstreamOptions =
     'X-GitHub-Api-Version': '2022-11-28',
     'User-Agent': 'inui-local-poc',
   };
-  const results = await Promise.all(QUERIES.map(async ([reason, query]) => {
+  // GitHub Appのユーザーアクセストークンでは、IssueとPRをまとめて検索すると422になる。
+  const mentionQueries = token.startsWith('ghu_')
+    ? [
+      'is:open is:issue mentions:@me archived:false',
+      'is:open is:pull-request mentions:@me archived:false',
+    ]
+    : ['is:open mentions:@me archived:false'];
+  const queries = [...QUERIES, ...mentionQueries.map((query) => ['mentioned', query] as const)];
+
+  const results = await Promise.all(queries.map(async ([reason, query]) => {
     const params = new URLSearchParams({ q: query, sort: 'updated', order: 'desc', per_page: String(PER_QUERY) });
     const body = await getJson(`${API}/search/issues?${params.toString()}`, headers, options);
     if (!isRecord(body) || !Array.isArray(body.items) || body.items.length > PER_QUERY

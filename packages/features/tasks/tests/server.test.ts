@@ -114,6 +114,28 @@ test('GitHubは自分に関係する未完了のIssue・PRを5条件で検索し
   }
 });
 
+test('GitHub AppのユーザーアクセストークンではIssueとPRのメンションを別々に検索する', async (t) => {
+  const sources = readTaskSources({ INUI_GITHUB_TOKEN: 'ghu_' + 'x'.repeat(36) });
+  const { fetchImpl, calls } = fakeFetch((url) => {
+    const query = url.searchParams.get('q') ?? '';
+    if (query.includes('assignee:@me')) return search([issue(1)]);
+    if (query.includes('review-requested:@me')) return search([pull(2)]);
+    if (!query.includes('mentions:@me')) return search([]);
+    if (query.includes('is:issue')) return search([issue(1)]);
+    if (query.includes('is:pull-request')) return search([pull(2)]);
+    return new Response(null, { status: 422 });
+  });
+  const get = await app(t, sources, fetchImpl);
+  const response = await get('/api/tasks/github');
+  assert.equal(response.status, 200);
+  const body = await response.json();
+  assert.deepEqual(body.tasks.map((task: { key: string; reasons: string[] }) => [task.key, task.reasons]), [
+    ['example/inui#2', ['review_requested', 'mentioned']],
+    ['example/inui#1', ['assigned', 'mentioned']],
+  ]);
+  assert.equal(calls.length, 6);
+});
+
 test('連携先の失敗は固定コードへ置き換え、本文や例外を返さない', async (t) => {
   const cases: [() => Response | Promise<Response>, number, string][] = [
     [() => new Response(SECRET_BODY, { status: 401 }), 502, 'upstream_auth'],
