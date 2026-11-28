@@ -105,6 +105,16 @@ app-run: app-build ## アプリだけを127.0.0.1:8766で起動する（実NLI�
 
 app-reset: ## ローカルPoCの検証データ（自分のタスク）を空に戻す
 	node src/reset.ts
+
+.PHONY: app-redaction-preview-build app-redaction-preview
+
+app-redaction-preview-build: ## 伏せ字の試作画面をビルドする
+	node_modules/.bin/esbuild packages/features/redaction/src/preview.ts --bundle --format=esm --target=es2022 --outfile=dist/redaction-preview/preview.js
+	cp packages/features/redaction/preview/index.html packages/features/redaction/src/preview.css dist/redaction-preview/
+
+app-redaction-preview: app-redaction-preview-build ## 伏せ字の試作画面を127.0.0.1:8788で開けるようにする
+	python3 -m http.server 8788 --bind 127.0.0.1 --directory dist/redaction-preview
+
 .PHONY: help check sandbox-check jev-check jev-probe jev-probe-dry-run jev-probe-live jev-probe-local jev-prompt-study jev-local-setup jev-local-versions jev-local-pin-model jev-local-serve
 
 LOCAL_JEV_REV := 64a0b31ff343dca32142496cf9edca5a0174a18d

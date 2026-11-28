@@ -1,0 +1,51 @@
+<!doctype html>
+<html lang="ja" translate="no">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; connect-src 'none'; form-action 'none'; object-src 'none'; base-uri 'none'">
+  <title>文章の伏せ字 | inui</title>
+  <link rel="stylesheet" href="preview.css">
+  <script type="module" src="preview.js"></script>
+</head>
+<body>
+  <main>
+    <h1>文章の伏せ字</h1>
+    <p>貼り付けた文章をブラウザ内で処理します。</p>
+
+    <div class="panels">
+      <section aria-labelledby="input-heading">
+        <h2 id="input-heading">元の文章</h2>
+        <label for="format">コピー元</label>
+        <div class="actions">
+          <select id="format">
+            <option value="teams-direct">Teams 1対1</option>
+            <option value="teams-group">Teams グループ</option>
+            <option value="backlog">Backlog</option>
+          </select>
+          <button id="sample" type="button">架空の例を入れる</button>
+        </div>
+        <label for="source">文章を貼り付け（2万文字まで）</label>
+        <textarea id="source" rows="9" maxlength="20000" autocomplete="off" spellcheck="false"></textarea>
+        <label for="terms">追加で伏せる語句（1行に1つ、計2,000文字まで）</label>
+        <textarea id="terms" rows="3" maxlength="2000" autocomplete="off" spellcheck="false"></textarea>
+        <button id="analyze" type="button">伏せ字の候補を探す</button>
+      </section>
+
+      <section aria-labelledby="output-heading">
+        <h2 id="output-heading">置き換え結果</h2>
+        <fieldset>
+          <legend>伏せ字の候補</legend>
+          <div id="candidates"><p>候補を探すとここに表示します。</p></div>
+        </fieldset>
+        <pre id="output" tabindex="0" aria-label="出力するMarkdown"></pre>
+        <label class="check"><input id="confirmed" type="checkbox" disabled>出力を読み、伏せ漏れがないか確認した</label>
+        <div class="actions">
+          <button id="copy" type="button" disabled>Markdownをコピー</button>
+          <span id="status" role="status"></span>
+        </div>
+      </section>
+    </div>
+  </main>
+</body>
+</html>

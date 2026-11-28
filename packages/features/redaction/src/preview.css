@@ -1,0 +1,61 @@
+:root {
+  color-scheme: light;
+  font-family: system-ui, sans-serif;
+  line-height: 1.55;
+  background: #f2f5f7;
+  color: #1b2936;
+}
+
+* { box-sizing: border-box; }
+body { margin: 0; }
+main { max-width: 76rem; margin: 0 auto; padding: 2rem clamp(1rem, 4vw, 3rem); }
+h1 { margin: 0; font-size: clamp(1.8rem, 4vw, 2.5rem); }
+h2 { margin: 0 0 1rem; font-size: 1.2rem; }
+
+.panels {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 1rem;
+  margin-top: 1.5rem;
+}
+
+section {
+  background: white;
+  border: 1px solid #d5dfe6;
+  border-radius: 0.75rem;
+  padding: clamp(1rem, 3vw, 1.5rem);
+}
+
+.actions { display: flex; flex-wrap: wrap; gap: 0.5rem; align-items: center; }
+label { display: block; margin-top: 0.75rem; font-weight: 600; }
+.check { display: flex; gap: 0.5rem; align-items: baseline; overflow-wrap: anywhere; font-weight: 400; }
+textarea, select, button {
+  border: 1px solid #758894;
+  border-radius: 0.35rem;
+  font: inherit;
+  padding: 0.45rem 0.65rem;
+}
+
+textarea { display: block; width: 100%; resize: vertical; }
+button { background: #164e59; color: white; cursor: pointer; }
+button:disabled { opacity: 0.55; cursor: default; }
+#sample { background: white; color: #164e59; }
+#analyze, #copy { margin-top: 0.75rem; }
+fieldset { min-width: 0; border: 1px solid #d5dfe6; border-radius: 0.35rem; }
+fieldset p { margin: 0; }
+fieldset .check:first-child { margin-top: 0; }
+#candidates { max-height: 13rem; overflow: auto; }
+pre {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  background: #f2f5f7;
+  padding: 1rem;
+  min-height: 8rem;
+  border-radius: 0.35rem;
+}
+mark { color: #14372c; background: #c7ecdc; }
+:focus-visible { outline: 3px solid #0d7781; outline-offset: 2px; }
+
+@media (max-width: 46rem) {
+  .panels { grid-template-columns: 1fr; }
+}
