@@ -76,8 +76,8 @@ const fixedPatterns = [
 ];
 
 const credentialLabel = /(?:\b(?:[a-z_][a-z0-9_]*_)?(?:api[ _-]?key|token|password)\b|トークン|パスワード)[ \t　]*[:：=][ \t　]*/giu;
-// 引用符で始まらない値は、途中の引用符も値の一部として伏せる。
-const bareCredential = /^[^\s<>、。]+/u;
+// 引用符で始まらない値は、記号で区切らず空白の手前までを伏せる（漏らすより広めに伏せる）。
+const bareCredential = /^\S+/u;
 
 function findClosingQuotes(text: string, valueStarts: number[]) {
   const closings = new Map<number, number>();

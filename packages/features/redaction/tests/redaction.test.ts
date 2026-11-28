@@ -66,11 +66,22 @@ test('英語のラベルと接頭辞付きの環境変数名から認証情報�
     'INUI_GITHUB_TOKEN=[認証情報]\nPASSWORD=[認証情報]\nSERVICE_API_KEY="[認証情報]"');
 });
 
-test('引用符で始まらない値は途中の引用符も含めて伏せる', () => {
-  const source = 'PASSWORD=abc\'def\nTOKEN=ghi"jkl\n補足: 公開用の説明';
+test('引用符で始まらない値は途中の記号も含めて空白の手前まで伏せる', () => {
+  const source = [
+    'PASSWORD=abc\'def',
+    'TOKEN=ghi"jkl',
+    'API_KEY=ab<cd>ef',
+    'パスワード: ab、cd。ef 補足',
+    'SERVICE_TOKEN=plain-value 公開用の説明',
+  ].join('\n');
   const result = analyzeRedaction(source, 'backlog', '');
-  assert.equal(redact(result.markdown, result.candidates).map(({ text }) => text).join(''),
-    'PASSWORD=[認証情報]\nTOKEN=[認証情報]\n補足: 公開用の説明');
+  assert.equal(redact(result.markdown, result.candidates).map(({ text }) => text).join(''), [
+    'PASSWORD=[認証情報]',
+    'TOKEN=[認証情報]',
+    'API_KEY=[認証情報]',
+    'パスワード: [認証情報] 補足',
+    'SERVICE_TOKEN=[認証情報] 公開用の説明',
+  ].join('\n'));
 });
 
 test('閉じていない認証情報の次に別の代入がある場合は各行の値を伏せる', () => {
