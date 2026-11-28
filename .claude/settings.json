@@ -6,7 +6,8 @@
     "allow": [
       "Bash(gh *)",
       "Bash(git add *)",
-      "Bash(git commit *)"
+      "Bash(git commit *)",
+      "Bash(git worktree add .worktrees/*)"
     ],
     "deny": [
       "Read(./.env)",
@@ -93,7 +94,8 @@
       "Bash(git commit */home*)",
       "Bash(git commit */etc*)",
       "Bash(git commit */mnt*)",
-      "Bash(git commit */proc*)"
+      "Bash(git commit */proc*)",
+      "Bash(git worktree add *..*)"
     ],
     "ask": [
       "Bash(git config *)",
@@ -111,7 +113,8 @@
       "gh *",
       "git push *",
       "git add *",
-      "git commit *"
+      "git commit *",
+      "git worktree add *"
     ],
     "credentials": {
       "envVars": [
