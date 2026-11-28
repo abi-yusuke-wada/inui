@@ -23,7 +23,7 @@ inuiでCodex CLIとClaude Codeを使うときの権限設定・起動方法・�
 | --- | --- | --- | --- |
 | A. 調査 | 読み取り専用 | `codex`（既定のプロファイル `inui-readonly`） | `claude --permission-mode plan` |
 | B. 実装・テスト | 作業領域への書き込み | `codex` で起動し、`/permissions` で `inui-dev` に切り替える | `claude`（既定）。編集を自動で許可する場合は `claude --permission-mode acceptEdits` |
-| C. GitHubへの反映 | 制限付きの書き込み | 使わない（通信不可） | `gh` は毎回承認して実行する。作業ブランチへの `git push origin <ブランチ>` は、フックが条件を確認した場合だけ承認なしで実行する |
+| C. GitHubへの反映 | 制限付きの書き込み | 使わない（通信不可） | `gh` は承認なしで実行する（マージ等は拒否ルールで止める）。作業ブランチへの `git push origin <ブランチ>` は、フックが条件を確認した場合だけ承認なしで実行する |
 
 どちらのCLIも、devShellに入った状態（direnvまたは `nix develop`）で起動する。Codexは起動後と切り替え後に `/status` で権限が `inui-readonly`・`inui-dev` になっていることを確認してから作業する。起動オプション `-c 'default_permissions="…"'` での指定は、ワークスペースの要件設定の読み込みに失敗して起動できない（2026-11-02確認）。`codex` だけで起動すると `inui-readonly` が適用され、`/permissions` で `inui-dev` を選択できることを確認した。`-s/--sandbox`・`--full-auto` 等の起動オプションやエイリアスがあると、プロジェクトの権限プロファイルより優先される場合がある（2026-11-02、権限プロファイルが適用されず `workspace-write` で起動したセッションでは、GitHubのトークン等を読み取れることを確認した）。調査で整理した作業スコープをユーザーと合意してから、段階Bで起動し直す。
 
@@ -44,15 +44,17 @@ inuiでCodex CLIとClaude Codeを使うときの権限設定・起動方法・�
 
 設定: [.claude/settings.json](../.claude/settings.json)（共有）、`.claude/settings.local.json`（個人、Git管理外）
 
-- `permissions.defaultMode = "default"`。ファイル編集は承認を求める。自動編集は段階Bで明示的に指定したときだけ使う。Bashは、`sandbox.autoAllowBashIfSandboxed` の既定値（`true`）により、サンドボックス内で実行できるコマンドは承認なしで実行される。承認を求めるのは、`ask` に一致するコマンド（`gh`、`git config`、`git -c`・`git -C` を付けたpush等）、サンドボックス外での実行が必要なコマンド、拒否されていないサンドボックス外の通信先への接続である。例外として、作業ブランチへの `git push origin <ブランチ>` は、PreToolUseフック（`.claude/hooks/push-guard.py`）が条件を確認した場合だけ、サンドボックス外で承認なしに実行される。
-- `sandbox.enabled`・`failIfUnavailable`・`allowUnsandboxedCommands: false`。Bashはサンドボックス内で実行し、サンドボックスが使えなければ起動しない。サンドボックスを外した再実行はできない。例外は `excludedCommands` に指定した `gh`・`git push` で、ホスト上（サンドボックス外）で実行される。`gh` は毎回承認後に実行される。`git push` も承認後に実行されるが、作業ブランチへの `git push origin <ブランチ>` は、フックが条件を確認した場合だけ承認なしで実行される。`git config` は `ask` で毎回承認を求め、`remote.origin.push` 等でpushの送信先を書き換える設定を承認なしに入れられないようにする。push先の最終的な保護はGitHub側のRuleset（`main` の保護）で行う。
+- `permissions.defaultMode = "default"`。ファイル編集は承認を求める。自動編集は段階Bで明示的に指定したときだけ使う。Bashは、`sandbox.autoAllowBashIfSandboxed` の既定値（`true`）により、サンドボックス内で実行できるコマンドは承認なしで実行される。承認を求めるのは、`ask` に一致するコマンド（`git config`、`git -c`・`git -C` を付けたpush等）、サンドボックス外での実行が必要なコマンド、拒否されていないサンドボックス外の通信先への接続である。例外として、`allow` に一致する `gh`・`git add`・`git commit` と、`.worktrees/` 配下への `git worktree add` は、サンドボックス外で承認なしに実行される（2026-11-28）。作業ブランチへの `git push origin <ブランチ>` は、PreToolUseフック（`.claude/hooks/push-guard.py`）が条件を確認した場合だけ、サンドボックス外で承認なしに実行される。
+- `sandbox.enabled`・`failIfUnavailable`・`allowUnsandboxedCommands: false`。Bashはサンドボックス内で実行し、サンドボックスが使えなければ起動しない。サンドボックスを外した再実行はできない。例外は `excludedCommands` に指定した `gh`・`git push`・`git add`・`git commit`・`git worktree add` で、ホスト上（サンドボックス外）で実行される。`gh`・`git add`・`git commit` と、`.worktrees/` 配下への `git worktree add` は承認なしで実行される。`git push` は承認後に実行されるが、作業ブランチへの `git push origin <ブランチ>` は、フックが条件を確認した場合だけ承認なしで実行される。`git config` は `ask` で毎回承認を求め、`remote.origin.push` 等でpushの送信先を書き換える設定を承認なしに入れられないようにする。push先の最終的な保護はGitHub側のRuleset（`main` の保護）で行う。
 - `permissions.blockWritesOutsideWorkingDirectories`。ファイル操作ツール（Write・Edit等）による作業領域外への書き込みと、CLIの設定ファイルへの書き込みを拒否する。
 - `Read`・`Edit` の拒否ルールで、Codexと同じ機密ファイル・認証情報を対象にする。拒否ルールはサンドボックスの読み取り拒否にも反映される。
-- `gh` と `git push` はGitHubのトークンを使うため、サンドボックスの対象外（`excludedCommands`）とする。`gh` は `ask` で毎回承認を求める。`git push` は、利用者の指示（2026-11-16）により、PreToolUseフック `.claude/hooks/push-guard.py` が次をすべて確認したpushだけを承認なしにする。コマンドが `git push origin <ブランチ>` だけで記号（`:`・`+`・`;` 等）や余分な引数を含まないこと、ブランチが作業ブランチ（`feat/`・`docs/`・`fix/`・`chore/`）で現在のブランチと同じこと、`origin` の接続先（`remote.origin.url`）がこのリポジトリの1件だけで `remote.origin.push`・`pushurl`・`mirror`・`url.*.insteadOf`・`pushInsteadOf` の設定がなく、タグも送る `push.followTags` が有効でなく、`git config` だけに効く環境変数 `GIT_CONFIG` が設定されていない。さらに、リポジトリの設定（local・worktree）が許可リストの項目（gitが既定で作る `core.*`、`remote.origin.url`・`fetch`、ブランチの追跡設定、VS Codeが付ける項目、`user.name`・`user.email`）だけで、コマンドで与えた設定がなく、実行されうるgitフックがなく（`core.hooksPath` が未設定で、フックのディレクトリに `.sample` 以外がない）、サブモジュールも送る設定（`push.recurseSubmodules`・`submodule.recurse`）が有効でない。gitはpushの途中で認証ヘルパーやフック等の設定されたプログラムをサンドボックス外で実行しうるため、危険な項目を個別に探すのではなく、許可した項目以外があれば承認を求める。あわせて `.git/config`・`.git/config.worktree`・`.git/hooks/` への編集を `deny` にすること。条件を満たさないpushにはフックが承認を求める（`ask`）。設定の `ask` ルールはフックの `allow` より優先されるため、`git push` は `ask` ルールに入れない。フックはエージェントが書き換えられない `.claude/hooks/` に置き、判定は `tests/scripts/push-guard.test.mjs` で確認する。`deny` の規則（`main` への指定、force push、削除、ブランチ名の後ろに引数が続くpush、`:` で `main`・`refs/` を指定するpush）は防御を重ねるために残す。文字列一致の `allow` は `feat/x:release` 等を見分けられないため使わない（判断はADR-0002）。パイプ等で他のコマンドと組み合わせた場合はサンドボックス内で実行され、トークンを読めないため失敗する。`git -C <dir> push` のように `git push` で始まらない書き方や、引数にバッククォート・リダイレクト記号を含む `gh` もサンドボックス内で実行されるため、コマンドは単独で書き、本文は `-F body=@<ファイル>` で渡す。
+- `gh` と `git push` はGitHubのトークンを使うため、サンドボックスの対象外（`excludedCommands`）とする。`gh` は、利用者の指示（2026-11-28）により `allow` で承認なしに実行する（マージ等は後述の `deny` で拒否する）。`git push` は、利用者の指示（2026-11-16）により、PreToolUseフック `.claude/hooks/push-guard.py` が次をすべて確認したpushだけを承認なしにする。コマンドが `git push origin <ブランチ>` だけで記号（`:`・`+`・`;` 等）や余分な引数を含まないこと、ブランチが作業ブランチ（`feat/`・`docs/`・`fix/`・`chore/`）で現在のブランチと同じこと、`origin` の接続先（`remote.origin.url`）がこのリポジトリの1件だけで `remote.origin.push`・`pushurl`・`mirror`・`url.*.insteadOf`・`pushInsteadOf` の設定がなく、タグも送る `push.followTags` が有効でなく、`git config` だけに効く環境変数 `GIT_CONFIG` が設定されていない。さらに、リポジトリの設定（local・worktree）が許可リストの項目（gitが既定で作る `core.*`、`remote.origin.url`・`fetch`、ブランチの追跡設定、VS Codeが付ける項目、`user.name`・`user.email`）だけで、コマンドで与えた設定がなく、実行されうるgitフックがなく（`core.hooksPath` が未設定で、フックのディレクトリに `.sample` 以外がない）、サブモジュールも送る設定（`push.recurseSubmodules`・`submodule.recurse`）が有効でない。gitはpushの途中で認証ヘルパーやフック等の設定されたプログラムをサンドボックス外で実行しうるため、危険な項目を個別に探すのではなく、許可した項目以外があれば承認を求める。あわせて `.git/config`・`.git/config.worktree`・`.git/hooks/` への編集を `deny` にすること。条件を満たさないpushにはフックが承認を求める（`ask`）。設定の `ask` ルールはフックの `allow` より優先されるため、`git push` は `ask` ルールに入れない。フックはエージェントが書き換えられない `.claude/hooks/` に置き、判定は `tests/scripts/push-guard.test.mjs` で確認する。`deny` の規則（`main` への指定、force push、削除、ブランチ名の後ろに引数が続くpush、`:` で `main`・`refs/` を指定するpush）は防御を重ねるために残す。文字列一致の `allow` は `feat/x:release` 等を見分けられないため使わない（判断はADR-0002）。パイプ等で他のコマンドと組み合わせた場合はサンドボックス内で実行され、トークンを読めないため失敗する。`git -C <dir> push` のように `git push` で始まらない書き方や、引数にバッククォート・リダイレクト記号を含む `gh` もサンドボックス内で実行されるため、コマンドは単独で書き、本文は `-F body=@<ファイル>` で渡す。
+- `git add`・`git commit`・`git worktree add` は、利用者の指示（2026-11-28）により、サンドボックスの対象外（`excludedCommands`）とし、`allow` で承認なしにする。Claude Codeのサンドボックスは、そのセッション自身が作ったworktree以外の `.git/worktrees/`・`.git/objects/` を読み取り専用にし、`sandbox.filesystem.allowWrite` に指定しても組み込みの読み取り専用の指定が優先されるため（2026-11-28、サンドボックス内の `/proc/self/mountinfo` で確認）、`.worktrees/` 配下のworktreeではサンドボックス内からステージ・コミット・worktreeの作成ができない。サンドボックス外ではファイルの読み取り制限が効かないため、作業領域外のファイルを読み込む書き方（`~`・`/root`・`/home`・`/etc`・`/mnt`・`/proc`・`..`・`.env` を含む `git commit`、`--template`・`-t`・`--pathspec-from-file`）を `deny` にする。`git worktree add` を承認なしにするのは `.worktrees/` 配下に作る場合だけで、`..` を含む指定は拒否する。コミットメッセージはスクラッチパッドのファイルを `git commit -F <ファイル>` で渡す。`cd`・ヒアドキュメント・他のコマンドとの連結を含む呼び出しはサンドボックス内で実行され、worktreeでは失敗するため、単独で書く。gitフックはサンドボックス外のコミットでも実行されるため、`.git/hooks/`・`.git/config` をエージェントが書き換えられないこと（`Edit` の拒否とサンドボックスの読み取り専用）を前提とする。
+- 有効な設定は、Claude Codeを起動したディレクトリ（本体のチェックアウト）の `.claude/settings.json` である。作業場所をworktreeに移しても、worktree側の設定は読み込まれない（2026-11-28、古い設定のままのworktreeで `gh`・`git add` が承認なしに実行されたことで確認）。Claude Codeは本体で起動し、worktreeへは作業場所として移る。
 - マージ・Auto-mergeの有効化・承認（`gh pr review --approve`）・`gh auth`・リポジトリ設定・Secrets・Variables・Rulesetの変更、force push、`main` へのpush、ブランチの削除を `deny` で拒否する。`gh api` 経由のRuleset・ブランチ保護・Secrets・Variables・Actionsの権限の操作、`DELETE`、リポジトリ設定の `PATCH` も拒否する（Rulesetの確認・登録は人間が行う）。コマンドの書き方を変えれば回避できるパターン照合のため、マージ禁止の主な手段はGitHub側の保護設定とする。
-- サンドボックス外で動く `gh` がローカルの機密ファイルを読んで送信しないよう、`.env` を含む引数、`@` で始まる作業領域外・ドットファイルへのファイル参照、`--body-file`・`--input` を拒否する。本文はスクラッチパッド（`/tmp` 配下）のファイルを `-F body=@<ファイル>` で渡す。これもパターン照合のため、承認時にコマンド全体を確認する。
+- サンドボックス外で動く `gh` がローカルの機密ファイルを読んで送信しないよう、`.env` を含む引数、`@` で始まる作業領域外・ドットファイルへのファイル参照、`--body-file`・`--input` を拒否する。`/proc` 配下への参照も拒否する。本文はスクラッチパッド（`/tmp` 配下）のファイルを `-F body=@<ファイル>` で渡す。これもパターン照合で、書き方を変えれば回避できる。`gh` は承認なしで実行されるため、承認時の確認では補えない。
 - `git -C <dir> push` 等の別の書き方も承認の対象にする。これらはサンドボックス内で実行されトークンを読めないため、現状でも認証付きのpushはできない（2026-11-02、`git -C` 形式のpushがサンドボックスの通信制限で失敗することを確認）。
-- `sandbox.credentials.envVars` で、`GH_TOKEN`・`GITHUB_TOKEN`・AWSの認証情報・レジストリのトークン・LLMのAPIキー等の環境変数を、サンドボックス内のコマンドから見えなくする。`Read` の拒否やファイルシステムの制限は環境変数を保護しないため。サンドボックス外で動く `gh` は対象外で、トークンを使える（承認で制御）。
+- `sandbox.credentials.envVars` で、`GH_TOKEN`・`GITHUB_TOKEN`・AWSの認証情報・レジストリのトークン・LLMのAPIキー等の環境変数を、サンドボックス内のコマンドから見えなくする。`Read` の拒否やファイルシステムの制限は環境変数を保護しないため。サンドボックス外で動く `gh`・`git push`・`git add`・`git commit`・`git worktree add` は対象外で、`gh` と `git push` はトークンを使える（拒否ルールとpushのフックで制御する。`gh` は承認なし）。
 - `WebFetch` は毎回承認を求める。
 - `disableClaudeAiConnectors`。claude.aiのコネクタ（Gmail・Slack等のMCP）を、このプロジェクトでは読み込まない。
 - `bypassPermissions` は使わない。
@@ -75,11 +77,22 @@ inuiでCodex CLIとClaude Codeを使うときの権限設定・起動方法・�
 | 実行前から存在するダミー `.env` | 読み取り・削除ともにできない | 強制 |
 | `example.com` への通信 | 拒否 | 強制 |
 | トークンの読み取りを含む `cat ~/.config/gh/...` | 実行前に権限チェックで拒否 | 強制 |
-| `gh` 単体の実行 | サンドボックス外で実行され、毎回、利用者の画面に承認の確認が表示された | 強制 |
+| `gh` 単体の実行 | サンドボックス外で実行され、毎回、利用者の画面に承認の確認が表示された（2026-11-28の変更前） | — |
 | `gh` を他のコマンドと組み合わせた実行 | サンドボックス内でトークンを読めず失敗 | 強制 |
 | Readツールによる機密ファイルの読み取り | 以前の検証で `.env` の拒否を確認。認証情報の拒否は実ファイルで試していない | 強制（一部未検証） |
 | 同じコマンドの中で新しく作った `.env` | 読み取れた | 未対応（制約） |
 | 認証情報の環境変数（`sandbox.credentials.envVars`）を隠す | 現在の環境では対象の変数が設定されておらず、起動時に継承された変数が隠れることは確認していない | 強制（未検証） |
+
+### Claude Code（2026-11-28、`gh`・`git add`・`git commit`・`git worktree add` の承認をなくした設定で確認）
+
+| 項目 | 結果 | 状態 |
+| --- | --- | --- |
+| `gh` 単体の実行 | サンドボックス外で、承認の確認なしに実行された | 強制 |
+| `.worktrees/` 配下のworktreeでの `git add`・`git commit` | サンドボックス外で、承認の確認なしに実行された（`git commit` はこの変更のコミットで確認） | 強制 |
+| `.worktrees/` 配下への `git worktree add` | サンドボックス外で、承認の確認なしに作成された | 強制 |
+| `git commit --dry-run -F ~/…`（作業領域外のファイルの参照） | 実行前に権限チェックで拒否 | 強制 |
+| `git worktree add .worktrees/../…`（`..` を含む指定） | 実行前に権限チェックで拒否され、ブランチも作られなかった | 強制 |
+| `sandbox.filesystem.allowWrite` での `.git/worktrees` の書き込み許可 | `/proc/self/mountinfo` で書き込み可の上に読み取り専用が重なり、書き込めなかった | —（採用しない） |
 
 ### Codex（一部実施、2026-11-02）
 
@@ -102,7 +115,7 @@ inuiでCodex CLIとClaude Codeを使うときの権限設定・起動方法・�
 
 | 認証情報 | 配置 | 対策 | 状態 |
 | --- | --- | --- | --- |
-| GitHubのトークン（`gho_`、`repo`・`workflow`・`gist`・`read:org`） | `~/.config/gh` | 両CLIで読み取り拒否。Claudeの `gh` は毎回承認 | 強制（Claude・Codexの `inui-readonly` で確認済み、`inui-dev` は未検証） |
+| GitHubのトークン（`gho_`、`repo`・`workflow`・`gist`・`read:org`） | `~/.config/gh` | 両CLIで読み取り拒否。Claudeの `gh` は拒否ルールで制限（2026-11-28から承認なし） | 強制（Claude・Codexの `inui-readonly` で確認済み、`inui-dev` は未検証） |
 | AWS | `~/.aws`（空のディレクトリ） | 両CLIで拒否 | 強制（Codexは未検証） |
 | GnuPG | `~/.gnupg` | 両CLIで拒否 | 強制（Claude・Codexの `inui-readonly` で確認済み、`inui-dev` は未検証） |
 | CLI自身の認証 | `~/.claude/.credentials.json`・`~/.codex/auth.json` | 両CLIのサンドボックスで拒否 | 強制（Claudeは両方、Codexの `inui-readonly` は `~/.codex/auth.json` で確認済み。`inui-dev` は未検証） |
@@ -240,9 +253,10 @@ git diff main...pr-<番号> -- \
 
 | リスク | 状態 |
 | --- | --- |
-| AIが利用者本人のトークンでGitHubを操作するため、マージ・保護設定の変更を技術的に防げない（Claudeは承認と拒否ルールで抑制） | GitHub設定待ち |
+| AIが利用者本人のトークンでGitHubを操作するため、マージ・保護設定の変更を技術的に防げない（Claudeは拒否ルールで抑制。`gh` の承認は2026-11-28に外した） | GitHub設定待ち |
 | `main` が保護されていない | GitHub設定待ち |
-| 承認した `gh`・`git push` はサンドボックス外で動き、トークンを使える。承認時にコマンドを確認する必要がある | 指示 |
+| `gh`・`git push`・`git add`・`git commit`・`git worktree add` はサンドボックス外で動く。`gh` は承認なしで実行され、トークンを使える。外部の指示による不正なコメントやIssue・PRの更新は、拒否ルールとAGENTS.mdの指示だけで抑える | 指示（利用者が受け入れ、2026-11-28） |
+| サンドボックス外の `git add`・`git commit` はファイルの読み取り制限を受けない。作業領域外のファイルを読み込む書き方は拒否ルールで止めるが、パターン照合のため書き方を変えると回避できる | 指示 |
 | Bashの拒否ルールは書き方を変えると回避できる | 指示（GitHub設定で補う） |
 | Codexの各プロファイルの動作 | 未検証 |
 | 実行中に新しく作られた `.env`、深さ8を超える `.env` は拒否されない | 未対応（受容済みの制約） |

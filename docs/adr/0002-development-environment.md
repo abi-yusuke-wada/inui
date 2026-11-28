@@ -101,9 +101,30 @@ Linux・WSLの再帰globは `glob_scan_max_depth = 8` とし、各サンドボ�
 - pushは従来どおりサンドボックス外で実行され、gitは利用者のGitHubの認証情報を使う。
 - 影響: フックはこのリポジトリ内の判定であり、`main` の最終的な保護は、GitHub側のRuleset（[docs/agent-security.md](../agent-security.md) の人間による操作）で行う。
 
+### `gh` とworktreeでのコミットを承認なしにする（2026-11-28変更）
+
+上記で「`gh` は毎回承認」としたが、CodeRabbitへのレビュー依頼・指摘への返信・スレッドの解決のたびに `gh` の承認が発生した。また、`.worktrees/` 配下のworktreeでは、サンドボックス内からステージ・コミットができず、利用者が手でコミットしていた。Claude Codeのサンドボックスは、そのセッション自身が作ったworktree以外の `.git/worktrees/`・`.git/objects/` を読み取り専用にするためである。利用者は「gitへの操作で承認が必要なのはめんどくさいのでなくしたい」「個人開発のプロダクトなので影響はない」として、承認をなくすことを選んだ。
+
+| 案 | 費用・手間 | リスク |
+| --- | --- | --- |
+| A. 従来どおり `gh` は毎回承認し、worktreeでのコミットは利用者が行う | 指摘対応のたびに承認と手作業のコミットが必要 | 最小 |
+| B. `sandbox.filesystem.allowWrite` で `.git/worktrees` を書き込み可にする | — | 組み込みの読み取り専用の指定が重なって優先され、書き込めなかった（2026-11-28、`/proc/self/mountinfo` で確認）。`.git/objects` も読み取り専用のため、効いてもコミットできない |
+| C. Claude Codeのworktree機能（`claude --worktree`・EnterWorktree）に移る | `.claude/worktrees` 配下に作る | 作ったセッションの中でだけ書き込める。セッションをまたいで再開すると、再び読み取り専用になる |
+| D. `gh`・`git add`・`git commit`・`git worktree add` を `allow` にし、add・commit・worktreeの作成をサンドボックス外で実行する（採用） | 承認なし | 承認によるコマンドの確認がなくなる。サンドボックス外の add・commit はファイルの読み取り制限を受けない |
+
+採用した案Dの内容は次のとおり。追加の費用はない。
+
+- `permissions.ask` から `Bash(gh *)` を外し、`permissions.allow` に `Bash(gh *)`・`Bash(git add *)`・`Bash(git commit *)`・`Bash(git worktree add .worktrees/*)` を加える。
+- `sandbox.excludedCommands` に `git add *`・`git commit *`・`git worktree add *` を加える。コマンド全体がこの形に一致する場合だけサンドボックス外で動く（`cd`・ヒアドキュメント・他のコマンドとの連結を含むとサンドボックス内で動く）。
+- マージ・Auto-merge・承認・`gh auth`・リポジトリ設定・Secrets・Variables・Rulesetの変更等の `deny` は残す。`deny` は `allow` より優先される。
+- サンドボックス外の `git commit` が作業領域外のファイルをコミットメッセージ等に読み込まないよう、`~`・`/root`・`/home`・`/etc`・`/mnt`・`/proc`・`..`・`.env` を含む `git commit`、`--template`・`-t`・`--pathspec-from-file` を `deny` にする。`gh` の `@/proc` 参照と、`..` を含む `git worktree add` も拒否する。
+- gitフックはサンドボックス外のコミットでも実行されるため、`.git/hooks/`・`.git/config` をエージェントが書き換えられないこと（`Edit` の拒否とサンドボックスの読み取り専用）を前提とする。
+- 有効な設定は、Claude Codeを起動したディレクトリ（本体のチェックアウト）の `.claude/settings.json` である。作業場所をworktreeに移しても、worktree側の設定は読み込まれない。worktreeの設定ファイルを本体へのシンボリックリンクにする案は、Gitが管理するファイルの種類が変わって各ブランチで差分になるため採らない。Claude Codeは本体で起動し、worktreeへは作業場所として移る。
+- 影響: Issue・PRへの書き込みは承認の確認なしで実行されるため、外部の指示による不正なコメントやIssue・PRの更新は、拒否ルールと [AGENTS.md](../../AGENTS.md) の指示だけで抑える。マージの技術的な禁止をGitHubのRulesetで行う方針は変わらない。
+
 ## AI開発エージェントの権限・責務分離（2026-11-02追加）
 
-外部のIssue・PR・コメントに含まれる悪意ある指示による実行・認証情報へのアクセス・GitHubの不正操作を抑えるため、作業を「調査（読み取り専用）」「実装・テスト（作業領域への書き込み）」「GitHubへの反映（承認付きの書き込み）」の3段階に分け、段階ごとの権限で起動する。
+外部のIssue・PR・コメントに含まれる悪意ある指示による実行・認証情報へのアクセス・GitHubの不正操作を抑えるため、作業を「調査（読み取り専用）」「実装・テスト（作業領域への書き込み）」「GitHubへの反映（制限付きの書き込み）」の3段階に分け、段階ごとの権限で起動する。
 
 | 案 | 評価 |
 | --- | --- |
