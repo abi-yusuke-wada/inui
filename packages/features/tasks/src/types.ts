@@ -14,7 +14,12 @@ export interface LocalTask {
   createdAt: string;
 }
 
-export type GitHubReason = 'assigned' | 'authored' | 'review_requested';
+/**
+ * GitHubのIssue・PRを一覧に出す理由（検索の条件）。画面の札もこの順に並べる。
+ * ci_failedは自分が作ったPRのうちCIが失敗したもの、mentionedは自分へのメンションを含むもの。
+ */
+export const GITHUB_REASONS = ['assigned', 'authored', 'ci_failed', 'review_requested', 'mentioned'] as const;
+export type GitHubReason = typeof GITHUB_REASONS[number];
 
 /** GitHubから読み取ったIssue・PR。inuiでは保存・更新しない。 */
 export interface ExternalTask {
@@ -28,7 +33,10 @@ export interface ExternalTask {
   reasons?: GitHubReason[];
 }
 
-/** GitHubの取得結果。設定がなければ取得せず、未設定であることだけを返す。omittedは表示しきれなかった件数。 */
+/**
+ * GitHubの取得結果。設定がなければ取得せず、未設定であることだけを返す。
+ * omittedは、条件ごとの上限を超えて表示しなかった件数の合計。同じIssue・PRが複数の条件に当てはまると重ねて数えるため、上限の目安になる。
+ */
 export type ExternalResult =
   | { configured: false }
   | { configured: true; tasks: ExternalTask[]; omitted: number };

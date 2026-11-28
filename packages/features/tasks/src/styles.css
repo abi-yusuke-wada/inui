@@ -18,6 +18,8 @@
 .task-key { color: #607c50; font-size: .72rem; font-weight: 600; }
 .task-meta { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; margin: 8px 0 0; color: var(--muted); font-size: .72rem; }
 .task-meta .status-pill { background: #eef3eb; color: #3d5a44; padding: 2px 8px; }
+/* CIが失敗した自分のPRは、エラーの案内と同じ色で目立たせる。 */
+.task-meta .status-pill.task-alert { background: #fff2ee; color: #8b382b; }
 .task-column .empty-state { padding: 22px 14px; }
 /* 看板表示では自分のタスクを横幅いっぱいに広げ、GitHubの欄は下に置く。 */
 .task-view-switch { display: flex; gap: 8px; margin-bottom: 16px; }

@@ -136,7 +136,9 @@ test('PoCの利用経路をJSDOMで操作する（実ブラウザではない）
         if (url.pathname === '/api/tasks/github') {
           return response({ configured: true, tasks: [{ id: 'github-1', source: 'github', kind: 'pull_request', key: 'example/inui#12',
             title: 'ADRを更新する', url: 'https://github.com/example/inui/pull/12', updatedAt: '2026-11-15T00:00:00Z',
-            reasons: ['review_requested'] }], omitted: 3 });
+            reasons: ['review_requested'] }, { id: 'github-2', source: 'github', kind: 'pull_request', key: 'example/inui#13',
+            title: 'CIを直す', url: 'https://github.com/example/inui/pull/13', updatedAt: '2026-11-14T00:00:00Z',
+            reasons: ['authored', 'ci_failed', 'mentioned'] }], omitted: 3 });
         }
         throw new Error('想定外のAPI: ' + url.pathname);
       };
@@ -150,9 +152,14 @@ test('PoCの利用経路をJSDOMで操作する（実ブラウザではない）
         const link = [...document.querySelectorAll('a')].find((node) => node.textContent?.includes('example/inui#12'));
         assert.equal(link?.getAttribute('rel'), 'noopener noreferrer');
         assert.match(link?.closest('li')?.textContent ?? '', /PR.*レビュー依頼/);
+        // CIが失敗した自分のPRには、目立つ札を付ける。
+        const failing = [...document.querySelectorAll('a')].find((node) => node.textContent?.includes('example/inui#13'))?.closest('li');
+        assert.match(failing?.textContent ?? '', /PR.*自分のPR.*CI失敗.*メンション/);
+        const alerts = [...(failing?.querySelectorAll('.task-alert') ?? [])].map((node) => node.textContent);
+        assert.deepEqual(alerts, ['CI失敗']);
         // 連携先はGitHubだけで、Backlogの欄は出さない。上限を超えて表示しなかった件数は知らせる。
         assert.equal(document.body.textContent?.includes('Backlog'), false);
-        assert.match(document.body.textContent ?? '', /3件を表示していません/);
+        assert.match(document.body.textContent ?? '', /最大3件を表示していません/);
         await change('追加するタスク', 'ADRの下書きを書く');
         const form = field('追加するタスク').closest('form');
         assert.ok(form);

@@ -79,7 +79,7 @@ read -rs INUI_GITHUB_TOKEN && export INUI_GITHUB_TOKEN
 make app-dev
 ```
 
-`make app-dev`・`app-smoke`は、この変数だけをアプリのプロセスへ渡し、推論サーバーには渡さない。`GH_TOKEN`・`GITHUB_TOKEN`は使わない。自分が担当のIssue・自分が作ったPR・レビューを依頼されたPRを読み取り、inuiからは更新しない。Backlogの連携は2026-11-18に削除したため、`INUI_BACKLOG_SPACE`・`INUI_BACKLOG_API_KEY`を設定していても使わない。
+`make app-dev`・`app-smoke`は、この変数だけをアプリのプロセスへ渡し、推論サーバーには渡さない。`GH_TOKEN`・`GITHUB_TOKEN`は使わない。自分が担当のIssue・自分が作ったPR（CIが失敗したものには印を付ける）・レビューを依頼されたPR・自分へのメンションを含むIssue・PRを読み取り、inuiからは更新しない。Backlogの連携は2026-11-18に削除したため、`INUI_BACKLOG_SPACE`・`INUI_BACKLOG_API_KEY`を設定していても使わない。
 
 ## 作業の再開画面のリポジトリ（任意）
 
