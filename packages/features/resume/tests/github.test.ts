@@ -126,6 +126,8 @@ test('連携先の失敗や不正な応答は固定のコードへ置き換え�
     [() => Response.json({ data: { r0: search([pull(1, { title: 'line\u0000break' })]) } }), 'upstream_invalid'],
     [() => Response.json({ data: { r0: search([pull(1, { reviewDecision: 'DISMISSED' })]) } }), 'upstream_invalid'],
     [() => Response.json({ data: { r0: search([pull(1, rollup('UNKNOWN'))]) } }), 'upstream_invalid'],
+    // 形式は合っていても実在しない日時は、並べ替えが崩れるため受け付けない。
+    [() => Response.json({ data: { r0: search([pull(1, { updatedAt: '2026-13-01T00:00:00Z' })]) } }), 'upstream_invalid'],
   ];
   for (const [handler, code] of cases) {
     const { fetchImpl } = fakeFetch(handler);

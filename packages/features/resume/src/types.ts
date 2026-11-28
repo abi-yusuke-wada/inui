@@ -1,9 +1,11 @@
+import type { UpstreamErrorCode } from '@inui/feature-kit/upstream';
+
 /** 作業の再開画面に出す、登録したリポジトリの状況。リポジトリが未登録なら、未登録であることだけを返す。 */
 export type ResumeResult =
   | { configured: false }
   | { configured: true; github: GitHubState; repositories: RepositoryStatus[] };
 
-export type UpstreamErrorCode = 'upstream_auth' | 'upstream_unavailable' | 'upstream_timeout' | 'upstream_invalid';
+export type { UpstreamErrorCode } from '@inui/feature-kit/upstream';
 
 /** GitHubから自分のPRを読めたか。失敗しても、手元のgitの状況は返す。 */
 export type GitHubState =

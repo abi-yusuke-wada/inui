@@ -1,3 +1,8 @@
+/**
+ * 業務機能が連携先（GitHub等）を読むときの共通の部品。
+ * 要求の組み立てと応答の検証は、各機能に置く。ここには、どの連携先でも同じ送信の方針とエラーの種類だけを置く。
+ */
+
 export type UpstreamErrorCode = 'upstream_auth' | 'upstream_unavailable' | 'upstream_timeout' | 'upstream_invalid';
 
 /** 連携先の失敗。URL・応答本文・例外の内容は保持しない。 */
@@ -15,15 +20,21 @@ export interface UpstreamOptions {
   timeoutMs?: number;
 }
 
+export interface UpstreamRequest {
+  method: 'GET' | 'POST';
+  headers: Record<string, string>;
+  body?: string;
+}
+
 export const DEFAULT_UPSTREAM_TIMEOUT_MS = 10_000;
 
-export const isRecord = (value: unknown): value is Record<string, unknown> =>
-  value !== null && typeof value === 'object' && !Array.isArray(value);
-
-/** 読み取り専用のGETだけを行い、リダイレクトに従わず、本文の受信まで期限を設ける。 */
-export async function getJson(
+/**
+ * 連携先へ要求を1回だけ送り、応答のJSONを返す。リダイレクトに従わず、本文の受信まで期限を設ける。
+ * 失敗は固定のコードへ置き換え、HTTPの状態が成功でなければ本文を読まずに接続を解放する。
+ */
+export async function requestJson(
   url: string,
-  headers: Record<string, string>,
+  { method, headers, body }: UpstreamRequest,
   { fetchImpl = globalThis.fetch, timeoutMs = DEFAULT_UPSTREAM_TIMEOUT_MS }: UpstreamOptions = {},
 ): Promise<unknown> {
   const controller = new AbortController();
@@ -32,7 +43,9 @@ export async function getJson(
   try {
     let response: Response;
     try {
-      response = await fetchImpl(url, { method: 'GET', headers, redirect: 'error', signal: controller.signal });
+      response = await fetchImpl(url, {
+        method, headers, redirect: 'error', signal: controller.signal, ...(body === undefined ? {} : { body }),
+      });
     } catch {
       throw new UpstreamError(timedOut ? 'upstream_timeout' : 'upstream_unavailable');
     }
